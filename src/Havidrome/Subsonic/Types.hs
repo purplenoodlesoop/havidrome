@@ -1,3 +1,6 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 -- | The vocabulary of the Subsonic client: what it is pointed at, what it
 -- hands back, and the ways it can fail.
 module Havidrome.Subsonic.Types
@@ -16,9 +19,11 @@ module Havidrome.Subsonic.Types
 
     -- * Failure
   , SubsonicError (..)
+  , explain
   ) where
 
 import Data.Text (Text)
+import Data.Text qualified as Text
 
 -- | The base address of a Navidrome server, as typed at the login screen —
 -- @https:\/\/music.example.org@, with or without a trailing slash. Nothing is
@@ -99,3 +104,13 @@ data SubsonicError
   | -- | The answer was not a Subsonic response we understand.
     MalformedResponse Text
   deriving stock (Eq, Show)
+
+-- | What went wrong, in a sentence for the strip along the bottom of whatever
+-- screen is up.
+explain :: SubsonicError -> Text
+explain = \case
+  NetworkFailure reason -> "The server could not be reached: " <> reason
+  AuthRejected reason -> "The server refused these credentials: " <> reason
+  ServerFailure code reason ->
+    "The server answered with an error (" <> Text.pack (show code) <> "): " <> reason
+  MalformedResponse reason -> "The server's answer could not be read: " <> reason

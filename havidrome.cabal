@@ -22,6 +22,7 @@ library
         Havidrome.Browse.Strip
         Havidrome.Credentials
         Havidrome.Library
+        Havidrome.Login
         Havidrome.Playback
         Havidrome.Playback.Queue
         Havidrome.Subsonic
@@ -75,6 +76,7 @@ test-suite havidrome-test
         Havidrome.Browse.ScreenSpec
         Havidrome.Browse.StripSpec
         Havidrome.BrowseSpec
+        Havidrome.LoginSpec
         Havidrome.Playback.QueueSpec
         Havidrome.Playback.Standin
         Havidrome.PlaybackSpec
