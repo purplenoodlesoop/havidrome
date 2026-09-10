@@ -4,12 +4,14 @@
   ...
 }:
 let
-  inherit (pkgs) haskellPackages;
+  inherit (pkgs) haskellPackages mpv-unwrapped;
   inherit (pkgs.haskell.lib.compose)
+    addTestToolDepends
     disableOptimization
     enableDWARFDebugging
     dontStrip
     doCheck
+    overrideCabal
     ;
   inherit (lib.fileset)
     toSource
@@ -27,7 +29,17 @@ let
     ];
   };
 
-  release = haskellPackages.callCabal2nix "havidrome" source { };
+  # The audio comes out of mpv, and the build is what supplies it: the
+  # installed player carries its own on its PATH, so a machine with no mpv
+  # installed still plays.
+  withPlayer = overrideCabal (drv: {
+    buildTools = (drv.buildTools or [ ]) ++ [ pkgs.makeBinaryWrapper ];
+    postInstall = (drv.postInstall or "") + ''
+      wrapProgram $out/bin/havidrome --prefix PATH : ${lib.makeBinPath [ mpv-unwrapped ]}
+    '';
+  });
+
+  release = withPlayer (haskellPackages.callCabal2nix "havidrome" source { });
 
   # The debug build is unoptimised and keeps its DWARF symbols, so a debugger
   # can follow it and `file` tells the two builds apart.
@@ -54,9 +66,17 @@ in
     shell = [
       ghc
       haskellPackages.cabal-install
+      # The same player the built executable carries, so `cabal run` and
+      # `cabal test` in the shell make sound the same way.
+      mpv-unwrapped
     ];
 
-    # `nix flake check` builds the package with its test suite enabled.
-    output.checks.havidrome-test = doCheck release;
+    # `nix flake check` builds the package with its test suite enabled. The
+    # tests that drive a real player need one to drive, on a null audio
+    # output: no device, but no stand-in either.
+    output.checks.havidrome-test = lib.pipe release [
+      (addTestToolDepends [ mpv-unwrapped ])
+      doCheck
+    ];
   };
 }
