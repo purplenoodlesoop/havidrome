@@ -5,14 +5,27 @@ synopsis:        A CLI player for a Navidrome server.
 build-type:      Simple
 
 common language
-    default-language: GHC2021
-    ghc-options:      -Wall -Wcompat -Wredundant-constraints
+    default-language:   GHC2021
+    default-extensions: DerivingStrategies
+    ghc-options:        -Wall -Wcompat -Wredundant-constraints
 
 library
     import:          language
     hs-source-dirs:  src
     exposed-modules: Havidrome
+                     Havidrome.Subsonic
+                     Havidrome.Subsonic.Protocol
+                     Havidrome.Subsonic.Transport
+                     Havidrome.Subsonic.Types
     build-depends:   base
+                   , aeson
+                   , bytestring
+                   , crypton
+                   , http-client
+                   , http-client-tls
+                   , http-types
+                   , random
+                   , text
 
 executable havidrome
     import:         language
@@ -25,4 +38,13 @@ test-suite havidrome-test
     type:           exitcode-stdio-1.0
     hs-source-dirs: test
     main-is:        Main.hs
-    build-depends:  base, havidrome, hspec
+    other-modules:  Havidrome.Subsonic.ClientSpec
+                    Havidrome.Subsonic.ProtocolSpec
+                    Havidrome.Subsonic.Fixtures
+    build-depends:  base
+                  , bytestring
+                  , havidrome
+                  , hspec
+                  , http-client
+                  , http-types
+                  , text
