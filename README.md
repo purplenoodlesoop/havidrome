@@ -36,11 +36,21 @@ variable is unset), one `field=value` line each and the password in the clear â€
 no keyring, no encryption. The file is the user's own, readable by nobody else;
 deleting it discards the credentials.
 
+## Audio
+
+Sound comes from [mpv](https://mpv.io), which the build supplies: the installed
+executable carries one on its `PATH`, so nothing has to be installed to play.
+It runs with no window, no terminal and none of your own mpv configuration, and
+is driven over its JSON IPC.
+
 ## Tests
 
 ```sh
 nix flake check      # builds the package and runs its test suite
 ```
+
+The tests that drive a real player run it on a null audio output, so they need
+no sound device.
 
 ## Development
 
