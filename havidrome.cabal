@@ -41,6 +41,7 @@ library
         http-client,
         http-client-tls,
         http-types,
+        microlens,
         mtl,
         network,
         process,

@@ -12,8 +12,10 @@ module Havidrome.Browse.ScreenSpec (spec) where
 
 import Control.Monad (foldM)
 import Control.Monad.Trans.Except (ExceptT)
+import Data.Char (isControl)
 import Data.Either (fromRight)
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Graphics.Vty qualified as Vty
 import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Browse.Fixtures
@@ -40,18 +42,19 @@ import Havidrome.Browse.Screen
       , Seek
       )
   , Ending (LoggedOut, Quit)
-  , Screen (browse, strip)
+  , Screen (strip)
   , command
   , draw
   , onBeat
   , opening
   , row
+  , shorten
   , step
   , theme
-  , title
   )
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Overlay, Wrong), showing)
-import Havidrome.Library (Library)
+import Havidrome.Library (Library (Library))
+import Havidrome.Library qualified as Library
 import Havidrome.Playback (Playing (playingElapsed, playingSong), Session, nowPlaying)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Playback.Standin
@@ -69,8 +72,10 @@ import Havidrome.Subsonic
   , Song (songId)
   , SubsonicError (NetworkFailure)
   )
-import Terminal (highlighted, screenshot)
-import Test.Hspec (Spec, describe, it, shouldBe, shouldReturn)
+import Terminal (inBold, inReverse, screenshot)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldNotContain, shouldReturn, shouldSatisfy)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (NonNegative (NonNegative))
 
 spec :: Spec
 spec = do
@@ -131,17 +136,19 @@ spec = do
 
     it "descends into the level the library holds" $ withStandin $ \_ session -> do
       screen <- after session [Descend]
-      title (browse screen) `shouldBe` "anohni"
+      onKeys screen `shouldBe` ["2016  Hopelessness"]
 
     it "returns to the level above, still on what was descended into" $
       withStandin $ \_ session -> do
         screen <- after session [MoveDown, Descend, Ascend]
-        title (browse screen) `shouldBe` "Artists"
+        wide 6 screen `shouldBe` wide 6 start
+        onKeys screen `shouldBe` ["Aphex Twin"]
 
     it "keeps the level it is on when the library will not answer" $
       withStandin $ \_ session -> do
         screen <- stumbling session [Descend]
-        title (browse screen) `shouldBe` "Artists"
+        take 5 (wide 6 screen) `shouldBe` take 5 (wide 6 start)
+        onKeys screen `shouldBe` ["anohni"]
 
     it "says in the strip why the library did not answer" $ withStandin $ \_ session -> do
       screen <- stumbling session [Descend]
@@ -202,7 +209,7 @@ spec = do
             session
             playingDrukqs
             [MoveDown, MoveUp, Ascend, Ascend, MoveDown, Descend]
-        title (browse screen) `shouldBe` "zebra"
+        emboldened screen `shouldBe` ["Artists", "Albums", "zebra"]
         loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
         playing session `shouldReturn` Just (drukqsSongs !! 0)
         motionOf standin `shouldReturn` Just Running
@@ -418,7 +425,7 @@ spec = do
         screen <- breaking session standin (Unreachable "the server could not be reached: it is down")
         moved <- taking library session screen MoveDown
         onStrip moved `shouldBe` Nothing
-        highlighted theme (60, 6) (draw moved) `shouldBe` ["  1  Jynweythek"]
+        onKeys moved `shouldBe` ["  1  Jynweythek"]
 
   describe "row" $ do
     it "shows an artist by name" $
@@ -436,39 +443,172 @@ spec = do
     it "leaves the column blank for a song the server gave no track number" $
       row (song "s" "Btoum Roumada" 96 Nothing) `shouldBe` "     Btoum Roumada"
 
-  describe "draw" $ do
-    it "fills the screen with the artist list under its title" $
-      shown (60, 6) start `shouldBe` ["Artists", "anohni", "Aphex Twin", "zebra", "", ""]
+  describe "the columns" $ do
+    it "open on the artist list alone, one column at the left" $ do
+      wide 6 start `shouldBe` ["Artists", "anohni", "Aphex Twin", "zebra", "", ""]
+      wide 6 start `shouldSatisfy` all ((<= 40) . Text.length)
 
-    it "marks the selected row and no other" $ withStandin $ \_ session -> do
+    it "put the keys on the first artist, and on no other row" $ withStandin $ \_ session -> do
+      onKeys start `shouldBe` ["anohni"]
       screen <- after session [MoveDown]
-      highlighted theme (60, 6) (draw screen) `shouldBe` ["Aphex Twin"]
+      onKeys screen `shouldBe` ["Aphex Twin"]
 
-    it "names the level it is on by what was descended into" $
+    it "put an artist's albums in a second column, the artist marked in the first" $
       withStandin $ \_ session -> do
         screen <- after session [MoveDown, Descend]
-        shown (60, 3) screen
-          `shouldBe` ["Aphex Twin", "      Sketches", "1992  Selected Ambient Works 85-92"]
+        wide 5 screen
+          `shouldBe` [ across ["Artists", "Albums"]
+                     , across ["anohni", "      Sketches"]
+                     , across ["Aphex Twin", "1992  Selected Ambient Works 85-92"]
+                     , across ["zebra", "2001  Drukqs"]
+                     , across ["", ""]
+                     ]
+        emboldened screen `shouldBe` ["Artists", "Albums", "Aphex Twin"]
+        onKeys screen `shouldBe` ["      Sketches"]
 
-    it "shows the songs of the album that was descended into" $
+    it "put an album's songs in a third column, the artist and the album marked" $
       withStandin $ \_ session -> do
-        screen <- after session [MoveDown, Descend, MoveDown, Descend]
-        shown (60, 3) screen
-          `shouldBe` ["Aphex Twin — Selected Ambient Works 85-92", "  1  Xtal", "  2  Tha"]
+        screen <- after session toDrukqs
+        wide 5 screen `shouldBe` drukqsColumns
+        emboldened screen `shouldBe` ["Artists", "Albums", "Songs", "Aphex Twin", "2001  Drukqs"]
+        onKeys screen `shouldBe` ["     Btoum Roumada"]
 
-    it "scrolls the list to keep the selection on screen" $ withStandin $ \_ session -> do
-      let many = opening (map (\name -> artist name name) ["one", "two", "three", "four"])
-      shown (20, 3) many `shouldBe` ["Artists", "one", "two"]
-      scrolled <- foldM (taking library session) many [MoveDown, MoveDown]
-      shown (20, 3) scrolled `shouldBe` ["Artists", "two", "three"]
+    it "move the keys in the rightmost column, and no picked row with them" $
+      withStandin $ \_ session -> do
+        songs <- after session toDrukqs
+        movedSongs <- pressing session songs [MoveDown, MoveDown, MoveUp]
+        onKeys movedSongs `shouldBe` ["  1  Jynweythek"]
+        emboldened movedSongs `shouldBe` emboldened songs
+        albums <- after session [MoveDown, Descend]
+        movedAlbums <- pressing session albums [MoveDown, MoveDown]
+        onKeys movedAlbums `shouldBe` ["2001  Drukqs"]
+        emboldened movedAlbums `shouldBe` emboldened albums
 
-    it "keeps what went wrong in the strip along the bottom" $ withStandin $ \_ session -> do
+    it "draw the keys' row and the rows picked left of it differently" $
+      withStandin $ \_ session -> do
+        screen <- after session toDrukqs
+        emboldened screen `shouldNotContain` onKeys screen
+        onKeys screen `shouldNotContain` ["Aphex Twin"]
+        onKeys screen `shouldNotContain` ["2001  Drukqs"]
+
+    it "lose the rightmost on Esc, leaving the rest exactly as they were left" $
+      withStandin $ \_ session -> do
+        songs <- after session toDrukqs
+        albums <- pressing session songs [Ascend]
+        artistsAlone <- pressing session albums [Ascend]
+        unmoved <- pressing session artistsAlone [Ascend]
+        leftAtAlbums <- after session [MoveDown, Descend, MoveDown, MoveDown]
+        leftAtArtists <- after session [MoveDown]
+        looks albums `shouldBe` looks leftAtAlbums
+        looks artistsAlone `shouldBe` looks leftAtArtists
+        looks unmoved `shouldBe` looks artistsAlone
+
+    it "give another album's songs after Esc, the albums changed only in their mark" $
+      withStandin $ \_ session -> do
+        screen <- after session (toDrukqs <> [Ascend, MoveUp, Descend])
+        wide 5 screen `shouldBe` ambientColumns
+        emboldened screen
+          `shouldBe` ["Artists", "Albums", "Songs", "Aphex Twin", "1992  Selected Ambient Works 85-92"]
+
+    it "scroll each on its own" $ withStandin $ \_ session -> do
+      let crowded =
+            Library
+              { Library.artists = pure []
+              , Library.albums =
+                  const . pure $
+                    zipWith
+                      (\year name -> album name name (Just year))
+                      [2001 ..]
+                      ["First", "Second", "Third", "Fourth", "Fifth"]
+              , Library.songs = const (pure [])
+              }
+          crowding = foldM (taking crowded session)
+          many = opening (map (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
+      artistsScrolled <- crowding many [MoveDown, MoveDown, MoveDown, MoveDown]
+      wide 4 artistsScrolled `shouldBe` ["Artists", "three", "four", "five"]
+      albums <- crowding artistsScrolled [Descend]
+      wide 4 albums
+        `shouldBe` [ across ["Artists", "Albums"]
+                   , across ["three", "2001  First"]
+                   , across ["four", "2002  Second"]
+                   , across ["five", "2003  Third"]
+                   ]
+      albumsScrolled <- crowding albums [MoveDown, MoveDown, MoveDown]
+      wide 4 albumsScrolled
+        `shouldBe` [ across ["Artists", "Albums"]
+                   , across ["three", "2002  Second"]
+                   , across ["four", "2003  Third"]
+                   , across ["five", "2004  Fourth"]
+                   ]
+
+    it "give an empty second column for an artist with no albums, left again on Esc" $
+      withStandin $ \_ session -> do
+        screen <- after session [MoveDown, MoveDown, Descend]
+        wide 5 screen
+          `shouldBe` [ across ["Artists", "Albums"]
+                     , across ["anohni", ""]
+                     , across ["Aphex Twin", ""]
+                     , across ["zebra", ""]
+                     , across ["", ""]
+                     ]
+        onKeys screen `shouldBe` []
+        back <- pressing session screen [Ascend]
+        leftAtArtists <- after session [MoveDown, MoveDown]
+        looks back `shouldBe` looks leftAtArtists
+        onKeys back `shouldBe` ["zebra"]
+
+    it "all behave the same with a song playing, which plays on" $
+      withStandin $ \standin session -> do
+        screen <- resuming session playingDrukqs [MoveDown, Ascend, MoveUp, Descend]
+        caught <- beaten session 1 screen
+        wide 6 caught `shouldBe` ambientColumns <> ["Btoum Roumada  0:00 / 1:36"]
+        emboldened caught
+          `shouldBe` ["Artists", "Albums", "Songs", "Aphex Twin", "1992  Selected Ambient Works 85-92", "Btoum Roumada  0:00 / 1:36"]
+        onKeys caught `shouldBe` ["  1  Xtal"]
+        artistsAlone <- pressing session caught [Ascend, Ascend]
+        take 5 (wide 6 artistsAlone) `shouldBe` take 5 (wide 6 start)
+        onKeys artistsAlone `shouldBe` ["Aphex Twin"]
+        playing session `shouldReturn` Just (drukqsSongs !! 0)
+        motionOf standin `shouldReturn` Just Running
+
+    it "shorten a row too long for its column, and wrap none onto another line" $
+      withStandin $ \_ session -> do
+        screen <- after session toDrukqs
+        shown (24, 5) screen
+          `shouldBe` [ "Artists │Albums │Songs"
+                     , "anohni  │      …│     B…"
+                     , "Aphex T…│1992  …│  1  J…"
+                     , "zebra   │2001  …│  2  V…"
+                     , "        │       │"
+                     ]
+        let broken = opening [artist "x" "one\ntwo", artist "y" "three"]
+        wide 3 broken `shouldBe` ["Artists", "one two", "three"]
+
+    it "keep what went wrong in the strip along the bottom" $ withStandin $ \_ session -> do
       screen <- stumbling session [Descend]
-      last (shown (60, 6) screen) `shouldBe` "The server could not be reached: down"
+      last (wide 6 screen) `shouldBe` "The server could not be reached: down"
 
-    it "shows an empty level under an artist with no albums" $ withStandin $ \_ session -> do
-      screen <- after session [MoveDown, MoveDown, Descend]
-      shown (30, 3) screen `shouldBe` ["zebra", "", ""]
+  describe "shorten" $ do
+    it "leaves text that fits as it is" $
+      shorten 10 "Aphex Twin" `shouldBe` "Aphex Twin"
+
+    it "cuts text that does not fit, and ends it in an ellipsis" $
+      shorten 8 "Aphex Twin" `shouldBe` "Aphex T…"
+
+    it "leaves nothing where there is no room at all" $
+      shorten 0 "Aphex Twin" `shouldBe` ""
+
+    it "measures by the terminal's columns, splitting no wide character" $
+      shorten 4 "日本語" `shouldBe` "日…"
+
+    it "puts a space for whatever would move the terminal elsewhere" $
+      shorten 20 "one\ntwo\tthree" `shouldBe` "one two three"
+
+    prop "takes no more columns than it is given" $ \(NonNegative room) said ->
+      Vty.safeWctwidth (shorten room (Text.pack said)) <= room
+
+    prop "leaves nothing that would move the terminal" $ \room said ->
+      not (Text.any isControl (shorten room (Text.pack said)))
 
 -- | The screen a run opens on, over the stand-in library.
 start :: Screen
@@ -574,3 +714,49 @@ from picked = (address (songId picked), Seconds 0)
 -- | What the terminal shows, top row first, the blanks at the ends trimmed.
 shown :: (Int, Int) -> Screen -> [Text]
 shown region = screenshot theme region . draw
+
+-- | What a terminal 120 columns wide and this many rows high shows: 40
+-- columns to each level, which no row of the stand-in library outgrows.
+wide :: Int -> Screen -> [Text]
+wide height = shown (120, height)
+
+-- | A row of that terminal as the columns it crosses read, left to right.
+-- Each column takes 40 of its columns, the second and third starting with the
+-- rule between them and the column to the left.
+across :: [Text] -> Text
+across = Text.stripEnd . Text.intercalate "│" . zipWith (`Text.justifyLeft` ' ') (40 : repeat 39)
+
+-- | Where the keys are on that terminal: each stretch of it in reverse video.
+onKeys :: Screen -> [Text]
+onKeys = inReverse theme (120, 6) . draw
+
+-- | Each stretch of it in bold: the columns' headings, the row picked in each
+-- column left of the one being browsed, and the now-playing overlay.
+emboldened :: Screen -> [Text]
+emboldened = inBold theme (120, 6) . draw
+
+-- | Everything a look at that terminal takes in: what it says, where the keys
+-- are, and what stands out in bold.
+looks :: Screen -> ([Text], [Text], [Text])
+looks screen = (wide 6 screen, onKeys screen, emboldened screen)
+
+-- | The three columns down to the songs of Drukqs, five rows high.
+drukqsColumns :: [Text]
+drukqsColumns =
+  [ across ["Artists", "Albums", "Songs"]
+  , across ["anohni", "      Sketches", "     Btoum Roumada"]
+  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1  Jynweythek"]
+  , across ["zebra", "2001  Drukqs", "  2  Vordhosbn"]
+  , across ["", "", ""]
+  ]
+
+-- | The three columns down to the songs of Selected Ambient Works 85-92, five
+-- rows high.
+ambientColumns :: [Text]
+ambientColumns =
+  [ across ["Artists", "Albums", "Songs"]
+  , across ["anohni", "      Sketches", "  1  Xtal"]
+  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  2  Tha"]
+  , across ["zebra", "2001  Drukqs", ""]
+  , across ["", "", ""]
+  ]
