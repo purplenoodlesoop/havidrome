@@ -14,10 +14,15 @@ library
     hs-source-dirs:  src
     exposed-modules:
         Havidrome
+        Havidrome.Audio
+        Havidrome.Audio.Ipc
+        Havidrome.Audio.State
         Havidrome.Browse
         Havidrome.Browse.Screen
         Havidrome.Credentials
         Havidrome.Library
+        Havidrome.Playback
+        Havidrome.Playback.Queue
         Havidrome.Subsonic
         Havidrome.Subsonic.Protocol
         Havidrome.Subsonic.Transport
@@ -35,7 +40,10 @@ library
         http-client-tls,
         http-types,
         mtl,
+        network,
+        process,
         random,
+        stm,
         text,
         transformers,
         unix,
@@ -59,9 +67,15 @@ test-suite havidrome-test
     other-modules:
         CredentialsSpec
         HavidromeSpec
+        Havidrome.AudioSpec
+        Havidrome.Audio.IpcSpec
+        Havidrome.Audio.StateSpec
         Havidrome.Browse.Fixtures
         Havidrome.Browse.ScreenSpec
         Havidrome.BrowseSpec
+        Havidrome.Playback.QueueSpec
+        Havidrome.Playback.Standin
+        Havidrome.PlaybackSpec
         Havidrome.Subsonic.ClientSpec
         Havidrome.Subsonic.Fixtures
         Havidrome.Subsonic.ProtocolSpec
@@ -69,6 +83,7 @@ test-suite havidrome-test
 
     build-depends:
         QuickCheck,
+        aeson,
         base,
         brick,
         bytestring,
@@ -79,6 +94,7 @@ test-suite havidrome-test
         hspec,
         http-client,
         http-types,
+        stm,
         temporary,
         text,
         transformers,
