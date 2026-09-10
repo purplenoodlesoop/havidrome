@@ -9,14 +9,16 @@
 module Havidrome.Browse.StripSpec (spec) where
 
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Havidrome.Audio (Failure (Unplayable, Unreachable))
-import Havidrome.Browse.Fixtures (drukqsSongs)
+import Havidrome.Browse.Fixtures (bar, drukqsSongs, filledIn, unnumbered)
 import Havidrome.Browse.Strip
   ( Moment (Moment)
   , Showing (Overlay, Wrong)
   , Strip
   , beat
   , clock
+  , overlaid
   , pressed
   , quiet
   , showing
@@ -25,6 +27,8 @@ import Havidrome.Browse.Strip
 import Havidrome.Playback (Arrival (Followed, Picked), Playing (Playing))
 import Havidrome.Subsonic (Seconds (Seconds))
 import Test.Hspec (Spec, describe, it, shouldBe)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (NonNegative (NonNegative), (===))
 
 spec :: Spec
 spec = do
@@ -35,35 +39,78 @@ spec = do
     it "has nothing on it once the album has run out" $
       showing (played Nothing quiet) `shouldBe` Nothing
 
-    it "carries the track name and its elapsed and total time" $
-      showing (playing (vordhosbn 0)) `shouldBe` Just (Overlay "Vordhosbn  0:00 / 4:53")
-
-    it "moves the elapsed time on as the audio does" $
-      showing (playing (vordhosbn 83)) `shouldBe` Just (Overlay "Vordhosbn  1:23 / 4:53")
+    it "carries the overlay for the song playing and how far into it the audio is" $
+      showing (playing (vordhosbn 83)) `shouldBe` Just (Overlay (Moment 0) (vordhosbn 83))
 
     it "carries the song playing now, not the one that was" $
       showing (played (Just (jynweythek 4)) (playing (vordhosbn 83)))
-        `shouldBe` Just (Overlay "Jynweythek  0:04 / 2:09")
+        `shouldBe` Just (Overlay (Moment 0) (jynweythek 4))
+
+    it "carries the moment of the last beat, which turns a loading indicator" $
+      showing (beat (Moment 0.35) (Just pickingBtoum) [] quiet)
+        `shouldBe` Just (Overlay (Moment 0.35) pickingBtoum)
+
+  describe "overlaid" $ do
+    it "lays the track name, the bar and the elapsed and total time across the width" $
+      overlaid (Moment 0) 44(btoum 0) `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+
+    it "moves the elapsed time on as the audio does" $
+      overlaid (Moment 0) 44(btoum 83) `shouldBe` "Btoum Roumada  " <> bar 13 3 <> "  1:23 / 1:36"
+
+    it "fills the same part of the bar as has played of the track" $ do
+      overlaid (Moment 0) 44(btoum 24) `shouldBe` "Btoum Roumada  " <> bar 4 12 <> "  0:24 / 1:36"
+      overlaid (Moment 0) 44(btoum 48) `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+      overlaid (Moment 0) 44(btoum 96) `shouldBe` "Btoum Roumada  " <> bar 16 0 <> "  1:36 / 1:36"
+
+    it "fills a column only once a whole column's worth has played" $
+      map (filledIn . overlaid (Moment 0) 44. btoum) [5, 6, 95, 96] `shouldBe` [0, 1, 15, 16]
+
+    it "gives the bar the width the name and the times leave" $ do
+      overlaid (Moment 0) 30(btoum 48) `shouldBe` "Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
+      overlaid (Moment 0) 80 (btoum 48) `shouldBe` "Btoum Roumada  " <> bar 26 26 <> "  0:48 / 1:36"
+
+    it "has no bar once the name and the times leave no width for one" $ do
+      overlaid (Moment 0) 28 (btoum 48) `shouldBe` "Btoum Roumada    0:48 / 1:36"
+      overlaid (Moment 0) 10 (btoum 48) `shouldBe` "Btoum Roumada    0:48 / 1:36"
+
+    it "leaves the bar of a track with no length empty, however long it runs" $ do
+      overlaid (Moment 0) 30(silence 0) `shouldBe` "Silence  " <> bar 0 8 <> "  0:00 / 0:00"
+      overlaid (Moment 0) 30(silence 7) `shouldBe` "Silence  " <> bar 0 8 <> "  0:07 / 0:00"
+
+    prop "fills exactly the width it is given, wherever in the track the audio is" $
+      \(NonNegative spare) (NonNegative seconds) ->
+        Text.length (overlaid (Moment 0) (28 + spare) (btoum (seconds `mod` 97))) === 28 + spare
+
+    prop "fills as many whole columns as the part of the track played is worth" $
+      \(NonNegative spare) (NonNegative seconds) ->
+        let at = seconds `mod` 97
+         in filledIn (overlaid (Moment 0) (28 + spare) (btoum at)) === spare * at `div` 96
+
+    prop "never fills less of the bar for more of the track" $
+      \width (NonNegative sooner) (NonNegative later) ->
+        filledIn (overlaid (Moment 0) width(btoum (min sooner later)))
+          <= filledIn (overlaid (Moment 0) width(btoum (max sooner later)))
 
   describe "a song picked, while it loads" $ do
-    it "carries a loading indicator in place of the elapsed time, beside the track name" $
-      showing (playing pickingVordhosbn) `shouldBe` Just (Overlay "Vordhosbn  ⠋ / 4:53")
+    it "has a loading indicator where the elapsed time goes, the name, bar and total as usual" $
+      overlaid (Moment 0) 44 pickingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
 
     it "turns the indicator as the beats go by" $ do
-      showing (beat (Moment 0.35) (Just pickingVordhosbn) [] quiet)
-        `shouldBe` Just (Overlay "Vordhosbn  ⠸ / 4:53")
-      showing (beat (Moment 1.95) (Just pickingVordhosbn) [] quiet)
-        `shouldBe` Just (Overlay "Vordhosbn  ⠏ / 4:53")
+      overlaid (Moment 0.35) 44 pickingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠸ / 1:36"
+      overlaid (Moment 1.95) 44 pickingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠏ / 1:36"
 
-    it "gives the elapsed time back its place once the audio has begun" $
-      showing (played (Just (vordhosbn 0)) (playing pickingVordhosbn))
-        `shouldBe` Just (Overlay "Vordhosbn  0:00 / 4:53")
+    it "gives the elapsed time its place back, the bar unmoved, once the audio has begun" $
+      overlaid (Moment 0) 44 (btoum 0) `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
-    it "carries no indicator for a song the album moved on to, loading or not" $
-      showing (playing followingJynweythek) `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
+    it "has no indicator for a song the album moved on to, loading or not" $
+      overlaid (Moment 0) 44 followingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+
+    prop "fills exactly the width it is given, whatever the moment" $
+      \(NonNegative spare) (NonNegative at) ->
+        Text.length (overlaid (Moment at) (28 + spare) pickingBtoum) === 28 + spare
 
     it "gives the whole strip to a failure, the indicator included" $
-      showing (beat (Moment 0) (Just pickingVordhosbn) [broken] quiet) `shouldBe` Just (Wrong brokenly)
+      showing (beat (Moment 0) (Just pickingBtoum) [broken] quiet) `shouldBe` Just (Wrong brokenly)
 
   describe "clock" $ do
     it "reads a length in minutes and seconds" $ do
@@ -86,7 +133,7 @@ spec = do
 
     it "gives way to the next song's line a few seconds on" $
       showing (beat (Moment 10) (Just (jynweythek 1)) [] (skipped quiet))
-        `shouldBe` Just (Overlay "Jynweythek  0:01 / 2:09")
+        `shouldBe` Just (Overlay (Moment 10) (jynweythek 1))
 
     it "keeps its few seconds through a key press" $
       showing (pressed (skipped quiet)) `shouldBe` Just (Wrong brokenly)
@@ -104,7 +151,7 @@ spec = do
 
     it "leaves whatever plays next behind it when a key press takes it down" $
       showing (pressed (beat (Moment 1) (Just (vordhosbn 83)) [] (unreachable quiet)))
-        `shouldBe` Just (Overlay "Vordhosbn  1:23 / 4:53")
+        `shouldBe` Just (Overlay (Moment 1) (vordhosbn 83))
 
   describe "what the player itself has to say" $ do
     it "takes the strip over from the overlay" $
@@ -147,6 +194,20 @@ brokenly, offlinely :: Text
 brokenly = "The file will not play: it is broken"
 offlinely = "The server could not be reached: it is down"
 
+-- | The first song of Drukqs, 1:36 long, picked and its audio started, this
+-- far into it. Its name and times take 28 columns with the gaps between them,
+-- so each column past those is one of the bar's.
+btoum :: Int -> Playing
+btoum at = Playing (drukqsSongs !! 0) (Seconds at) Picked True
+
+-- | The same song just picked, its audio not yet started.
+pickingBtoum :: Playing
+pickingBtoum = Playing (drukqsSongs !! 0) (Seconds 0) Picked False
+
+-- | The same song moved on to by the album, its audio not yet started.
+followingBtoum :: Playing
+followingBtoum = Playing (drukqsSongs !! 0) (Seconds 0) Followed False
+
 -- | The third song of Drukqs, 4:53 long, picked and its audio started, this
 -- far into it.
 vordhosbn :: Int -> Playing
@@ -156,10 +217,7 @@ vordhosbn at = Playing (drukqsSongs !! 2) (Seconds at) Picked True
 jynweythek :: Int -> Playing
 jynweythek at = Playing (drukqsSongs !! 1) (Seconds at) Picked True
 
--- | The third song picked, its audio not yet started.
-pickingVordhosbn :: Playing
-pickingVordhosbn = Playing (drukqsSongs !! 2) (Seconds 0) Picked False
-
--- | The second song, moved on to by the album, its audio not yet started.
-followingJynweythek :: Playing
-followingJynweythek = Playing (drukqsSongs !! 1) (Seconds 0) Followed False
+-- | A song the server gives no length for, picked and its audio started, this
+-- far into it.
+silence :: Int -> Playing
+silence at = Playing (unnumbered "s9" "Silence" 0) (Seconds at) Picked True
