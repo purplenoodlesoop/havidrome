@@ -28,7 +28,6 @@ module Havidrome.Browse.Screen
   , theme
   , title
   , row
-  , explain
   ) where
 
 import Brick
@@ -78,7 +77,8 @@ import Havidrome.Subsonic
   ( Album (albumName, albumYear)
   , Artist (artistName)
   , Song (songId, songTitle, songTrack)
-  , SubsonicError (AuthRejected, MalformedResponse, NetworkFailure, ServerFailure)
+  , SubsonicError
+  , explain
   )
 
 -- | Everything on screen: the level being browsed, and whatever went wrong
@@ -300,15 +300,6 @@ instance Row Song where
 column :: Int -> Maybe Int -> Text
 column width =
   maybe (Text.replicate width " ") (Text.justifyRight width ' ' . Text.pack . show)
-
--- | What went wrong, in a sentence for the bottom strip.
-explain :: SubsonicError -> Text
-explain = \case
-  NetworkFailure reason -> "The server could not be reached: " <> reason
-  AuthRejected reason -> "The server refused these credentials: " <> reason
-  ServerFailure code reason ->
-    "The server answered with an error (" <> Text.pack (show code) <> "): " <> reason
-  MalformedResponse reason -> "The server's answer could not be read: " <> reason
 
 -- | The selected row is the one in reverse video; the title is bold and the
 -- bottom strip red. Everything else is the terminal's own colours.
