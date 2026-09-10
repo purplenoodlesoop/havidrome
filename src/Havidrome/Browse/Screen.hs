@@ -3,16 +3,25 @@
 
 -- | The browsing screen: the level's list under its title, the keys that move
 -- through it, and the brick application that puts the two together.
+--
+-- The screen is also where a song is picked: Enter on one hands its album to
+-- the playback session, and the audio runs on underneath while the lists go on
+-- being browsed.
 module Havidrome.Browse.Screen
   ( -- * The screen
     Screen (..)
   , opening
+  , browsing
   , application
 
     -- * The keys
   , Command (..)
   , command
   , step
+
+    -- * The beat the audio is carried on
+  , Beat (..)
+  , onBeat
 
     -- * What it looks like
   , draw
@@ -26,12 +35,13 @@ import Brick
   ( App (..)
   , AttrMap
   , AttrName
-  , BrickEvent (VtyEvent)
+  , BrickEvent (AppEvent, VtyEvent)
   , EventM
   , Padding (Max)
   , Widget
   , attrMap
   , attrName
+  , customMainWithDefaultVty
   , emptyWidget
   , halt
   , neverShowCursor
@@ -40,25 +50,34 @@ import Brick
   , vBox
   , withAttr
   )
+import Brick.BChan (BChan, newBChan, writeBChan)
 import Brick.Widgets.List (listSelectedFocusedAttr, renderList)
+import Control.Concurrent (forkIO, killThread, threadDelay)
+import Control.Exception (bracket)
+import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get, put)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Data.Foldable (traverse_)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Graphics.Vty qualified as Vty
+import Havidrome.Audio (Failure)
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
   , Name
   , atArtists
+  , picked
   , selected
   )
 import Havidrome.Browse qualified as Browse
 import Havidrome.Library (Library)
+import Havidrome.Playback (Session, startingAt)
+import Havidrome.Playback qualified as Playback
 import Havidrome.Subsonic
   ( Album (albumName, albumYear)
   , Artist (artistName)
-  , Song (songTitle, songTrack)
+  , Song (songId, songTitle, songTrack)
   , SubsonicError (AuthRejected, MalformedResponse, NetworkFailure, ServerFailure)
   )
 
@@ -103,50 +122,101 @@ command key modifiers = case (key, modifiers) of
 
 
 -- | The screen a command leaves behind, or nothing at all when the command was
--- to leave the player. Descending is the one command that asks the library
--- anything, and a library that will not answer leaves the level where it is,
--- with the reason in the bottom strip.
+-- to leave the player.
+--
+-- Descending on a song is not descending at all: there is no level under a
+-- song, so Enter there hands that song's album to the session, which plays it
+-- from that song in place of whatever was playing. The list stays exactly
+-- where it is, and so does every list above it — picking a song moves the
+-- audio and nothing else.
+--
+-- Descending anywhere else is the one command that asks the library anything,
+-- and a library that will not answer leaves the level where it is, with the
+-- reason in the bottom strip. Moving and going back up ask nothing and touch
+-- no audio, which is what keeps browsing live under a playing song.
 step ::
-  (Monad f) =>
-  Library (ExceptT SubsonicError f) ->
+  Library (ExceptT SubsonicError IO) ->
+  Session ->
   Command ->
   Screen ->
-  f (Maybe Screen)
-step library instruction screen = case instruction of
-  Quit -> pure Nothing
+  IO (Maybe Screen)
+step library session instruction screen = case instruction of
+  Quit -> Playback.stop session >> pure Nothing
   MoveUp -> here Browse.moveUp
   MoveDown -> here Browse.moveDown
   Ascend -> here Browse.ascend
-  Descend -> do
-    descended <- runExceptT (Browse.descend library (browse screen))
-    pure . Just $ case descended of
-      Left failure -> quiet {trouble = Just (explain failure)}
-      Right level -> quiet {browse = level}
+  Descend -> case picked (browse screen) of
+    Just (album, song) -> do
+      traverse_ (Playback.start session) (startingAt album (songId song))
+      pure (Just quiet)
+    Nothing -> do
+      descended <- runExceptT (Browse.descend library (browse screen))
+      pure . Just $ case descended of
+        Left failure -> quiet {trouble = Just (explain failure)}
+        Right level -> quiet {browse = level}
   where
     -- Whatever a key press does, it first clears what went wrong before it.
     quiet = screen {trouble = Nothing}
     here move = pure (Just quiet {browse = move (browse screen)})
 
--- | The player, browsing the library it is given until @q@.
-application :: Library (ExceptT SubsonicError IO) -> App Screen e Name
-application library =
+-- | The beat the player hears between key presses. There is nothing to it: it
+-- is the moment on which what the audio has done is taken in.
+data Beat = Beat
+  deriving stock (Eq, Show)
+
+-- | What the player takes in on a beat: everything the audio has done since
+-- the last one. This is where an album carries itself — a song running out
+-- starts the next song of that album, with no key pressed.
+--
+-- It hands back the failures the bottom strip is to show; putting them there
+-- is the now-playing overlay's, which is not built yet.
+onBeat :: Session -> IO [Failure]
+onBeat = Playback.attend
+
+-- | Hands the terminal to the browsing screen, and takes it back when the
+-- player is left. The beat runs for exactly as long as the screen is up.
+browsing :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> IO ()
+browsing library session screen = do
+  beats <- newBChan 1
+  bracket (forkIO (beating beats)) killThread $ \_ ->
+    void (customMainWithDefaultVty (Just beats) (application library session) screen)
+
+-- | A beat, then the next, for as long as it is left running.
+beating :: BChan Beat -> IO ()
+beating beats = forever (writeBChan beats Beat >> threadDelay interval)
+
+-- | How long a beat lasts, in microseconds: short enough that one song follows
+-- another without a silence to hear, long enough that the player is idle
+-- between beats.
+interval :: Int
+interval = 100_000
+
+-- | The player, browsing the library it is given until @q@, over the session
+-- that plays what is picked in it.
+application :: Library (ExceptT SubsonicError IO) -> Session -> App Screen Beat Name
+application library session =
   App
     { appDraw = draw
     , appChooseCursor = neverShowCursor
-    , appHandleEvent = handle library
+    , appHandleEvent = handle library session
     , appStartEvent = pure ()
     , appAttrMap = const theme
     }
 
-handle :: Library (ExceptT SubsonicError IO) -> BrickEvent Name e -> EventM Name Screen ()
-handle library = \case
+handle ::
+  Library (ExceptT SubsonicError IO) ->
+  Session ->
+  BrickEvent Name Beat ->
+  EventM Name Screen ()
+handle library session = \case
   VtyEvent (Vty.EvKey key modifiers) ->
     case command key modifiers of
       Nothing -> pure ()
       Just instruction -> do
         screen <- get
-        stepped <- liftIO (step library instruction screen)
+        stepped <- liftIO (step library session instruction screen)
         maybe halt put stepped
+  AppEvent Beat -> void (liftIO (onBeat session))
   _ -> pure ()
 
 -- | The whole screen: the title of the level, its list under it filling

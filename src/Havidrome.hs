@@ -1,21 +1,22 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | The player itself: the stored credentials, the server they reach, and the
--- browsing screen over its library.
+-- | The player itself: the stored credentials, the server they reach, the
+-- browsing screen over its library, and the audio a song picked in it plays
+-- through.
 module Havidrome (run) where
 
-import Brick (defaultMain)
-import Control.Monad (void)
 import Control.Monad.Trans.Except (runExceptT)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import Havidrome.Browse.Screen (application, explain, opening)
+import Havidrome.Audio (withAudio)
+import Havidrome.Browse.Screen (browsing, explain, opening)
 import Havidrome.Credentials (Stored (Absent, Present, Unreadable))
 import Havidrome.Credentials qualified as Credentials
 import Havidrome.Library qualified as Library
-import Havidrome.Subsonic (Credentials (Credentials), Server (Server), newClient)
+import Havidrome.Playback (newSession)
+import Havidrome.Subsonic (Credentials (Credentials), Server (Server), newClient, songAudioUrl)
 import System.Exit (exitFailure)
 import System.IO (stderr)
 
@@ -35,6 +36,10 @@ run =
 
 -- | Opens the artist list of the server these credentials reach, and hands the
 -- terminal over to it.
+--
+-- The audio backend is started only once there is a library to browse, and is
+-- gone again when browsing ends, so a run that never reaches a list never
+-- reaches for a player either.
 browse :: Credentials.Credentials -> IO ()
 browse credentials = do
   client <-
@@ -44,7 +49,9 @@ browse credentials = do
   let library = Library.subsonic client
   runExceptT (Library.artists library) >>= \case
     Left failure -> stop (explain failure)
-    Right artists -> void (defaultMain (application library) (opening artists))
+    Right artists -> withAudio $ \audio -> do
+      session <- newSession audio (songAudioUrl client)
+      browsing library session (opening artists)
 
 -- | Says why the player cannot go on, and stops.
 stop :: Text -> IO ()
