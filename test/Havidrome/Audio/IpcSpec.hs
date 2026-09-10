@@ -74,8 +74,14 @@ spec = do
     it "hears nothing in a track it was told to stop" $
       heard "{\"event\":\"end-file\",\"reason\":\"stop\",\"playlist_entry_id\":5}" `shouldBe` Nothing
 
-    it "hears nothing in a track starting" $
-      heard "{\"event\":\"start-file\",\"playlist_entry_id\":1}" `shouldBe` Nothing
+    it "reads the player starting on the track it was told to play" $
+      heard "{\"event\":\"start-file\",\"playlist_entry_id\":1}" `shouldBe` Just Fetching
+
+    it "reads the audio getting underway" $
+      heard "{\"event\":\"playback-restart\"}" `shouldBe` Just Underway
+
+    it "hears nothing in a track being loaded" $
+      heard "{\"event\":\"file-loaded\"}" `shouldBe` Nothing
 
     it "hears nothing in the answer to a command" $
       heard "{\"data\":{\"playlist_entry_id\":1},\"request_id\":0,\"error\":\"success\"}" `shouldBe` Nothing

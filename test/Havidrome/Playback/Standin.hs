@@ -21,6 +21,7 @@ module Havidrome.Playback.Standin
   , motionOf
 
     -- * What it says back
+  , begin
   , reach
   , finish
   , breakWith
@@ -96,6 +97,11 @@ motionOf standin = do
   pure $ case state of
     Stopped -> Nothing
     Loaded playback -> Just (playbackMotion playback)
+
+-- | The loaded track has been opened and its audio has started, as mpv says
+-- it: the opening first, then the start.
+begin :: Standin -> IO ()
+begin standin = perform standin Opened >> perform standin Began
 
 -- | The audio of the loaded track has come this far into it.
 reach :: Standin -> Seconds -> IO ()

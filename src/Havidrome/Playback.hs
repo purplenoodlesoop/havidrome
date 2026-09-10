@@ -31,6 +31,7 @@ module Havidrome.Playback
 
     -- * What it is doing, and what it has to say
   , Playing (..)
+  , Arrival (..)
   , nowPlaying
   , attend
 
@@ -45,6 +46,7 @@ import Havidrome.Audio
   , Event (..)
   , Failure (..)
   , Motion (..)
+  , Phase (..)
   , Playback (..)
   , State (..)
   , Track (..)
@@ -53,55 +55,74 @@ import Havidrome.Audio qualified as Audio
 import Havidrome.Playback.Queue
 import Havidrome.Subsonic.Types (Seconds (..), Song (..), SongId)
 
--- | An album being played through one audio backend. It holds the album and
--- the place in it; how far into a song the audio has come is the backend's to
--- say, and is asked of it rather than kept here twice.
+-- | An album being played through one audio backend. It holds the album, the
+-- place in it and how the session came to that place; how far into a song the
+-- audio has come is the backend's to say, and is asked of it rather than kept
+-- here twice.
 data Session = Session
   { sessionAudio :: Audio
   , sessionAddress :: SongId -> Text
-  , sessionQueue :: MVar (Maybe Queue)
+  , sessionPlace :: MVar (Maybe Place)
   }
+
+-- | The album position the session is on, and how it got there.
+data Place = Place
+  { placeQueue :: Queue
+  , placeArrival :: Arrival
+  }
+
+-- | How the song playing came to be the one playing.
+data Arrival
+  = -- | It was picked: the album was started from it.
+    Picked
+  | -- | The album came to it from another of its songs, by running on to it
+    -- or by being moved through with next or previous.
+    Followed
+  deriving stock (Eq, Show)
 
 -- | A session over a backend, told where a song's audio lives — the address
 -- the Subsonic client gives for a song id. Nothing is playing yet.
 newSession :: Audio -> (SongId -> Text) -> IO Session
 newSession audio address = do
-  queue <- newMVar Nothing
-  pure Session {sessionAudio = audio, sessionAddress = address, sessionQueue = queue}
+  place <- newMVar Nothing
+  pure Session {sessionAudio = audio, sessionAddress = address, sessionPlace = place}
 
--- | The song playing and how far into it the audio has come. Everything else
--- the now-playing overlay shows — the track name, the total time — is the
--- song's own.
+-- | The song playing, how far into it the audio has come, how it came to be
+-- playing, and whether its audio has started yet or it is still loading.
+-- Everything else the now-playing overlay shows — the track name, the total
+-- time — is the song's own.
 data Playing = Playing
   { playingSong :: Song
   , playingElapsed :: Seconds
+  , playingArrival :: Arrival
+  , playingBegun :: Bool
   }
   deriving stock (Eq, Show)
 
 -- | Play this album from the song it is on, in place of whatever was playing.
 start :: Session -> Queue -> IO ()
-start session queue = onQueue session $ \_ -> do
+start session queue = onPlace session $ \_ -> do
   discard session
-  settle session (Just queue)
+  settle session (Just (Place queue Picked))
 
 -- | Play the next song of the album; on the last song, end the playing.
 next :: Session -> IO ()
-next session = onQueue session $ withQueue $ \queue -> do
+next session = onPlace session $ withPlace $ \place -> do
   discard session
-  settle session (forward queue)
+  settle session (followed <$> forward (placeQueue place))
 
 -- | Play the previous song of the album, from its beginning, however far into
 -- the current song the audio has come; on the first song, play that song
 -- again from its beginning.
 previous :: Session -> IO ()
-previous session = onQueue session $ withQueue $ \queue -> do
+previous session = onPlace session $ withPlace $ \place -> do
   discard session
-  settle session (Just (backward queue))
+  settle session (Just (followed (backward (placeQueue place))))
 
 -- | Play nothing, and forget the album — on the way out of the player, or out
 -- of the account.
 stop :: Session -> IO ()
-stop session = onQueue session $ \_ -> do
+stop session = onPlace session $ \_ -> do
   discard session
   settle session Nothing
 
@@ -135,14 +156,29 @@ seekBy session = Audio.seekBy (sessionAudio session)
 -- picked out of an unreachable server, or nothing has been picked yet.
 nowPlaying :: Session -> IO (Maybe Playing)
 nowPlaying session = do
-  current <- readMVar (sessionQueue session)
+  current <- readMVar (sessionPlace session)
   state <- Audio.nowPlaying (sessionAudio session)
-  pure (fmap (\queue -> Playing (playing queue) (elapsedIn state)) current)
+  pure (playingAt state <$> current)
+
+playingAt :: State -> Place -> Playing
+playingAt state place =
+  Playing
+    { playingSong = playing (placeQueue place)
+    , playingElapsed = elapsedIn state
+    , playingArrival = placeArrival place
+    , playingBegun = begunIn state
+    }
 
 elapsedIn :: State -> Seconds
 elapsedIn state = case state of
   Stopped -> Seconds 0
   Loaded playback -> playbackElapsed playback
+
+-- | Whether the audio has started. With nothing loaded, no audio has.
+begunIn :: State -> Bool
+begunIn state = case state of
+  Stopped -> False
+  Loaded playback -> playbackPhase playback == Begun
 
 -- | Takes in everything the backend has said since it was last asked, and
 -- answers with the failures the player has to show.
@@ -153,7 +189,7 @@ elapsedIn state = case state of
 -- of the album starts — while a server that cannot be reached ends the
 -- playing, so that nothing further is started.
 attend :: Session -> IO [Failure]
-attend session = modifyMVar (sessionQueue session) (heed [])
+attend session = modifyMVar (sessionPlace session) (heed [])
  where
   heed shown current = do
     heard <- Audio.nextEvent (sessionAudio session)
@@ -163,17 +199,21 @@ attend session = modifyMVar (sessionQueue session) (heed [])
       Just (Failed failure) -> case failure of
         Unplayable _ -> advance current >>= heed (failure : shown)
         Unreachable _ -> settle session Nothing >>= heed (failure : shown)
-  advance = withQueue (\queue -> settle session (forward queue))
+  advance = withPlace (\place -> settle session (followed <$> forward (placeQueue place)))
 
 -- | Puts the session on an album position and plays the song there, or, where
 -- the album has run out, leaves it playing nothing. Every change of what is
 -- playing goes through here.
-settle :: Session -> Maybe Queue -> IO (Maybe Queue)
-settle session queue = do
-  case queue of
+settle :: Session -> Maybe Place -> IO (Maybe Place)
+settle session place = do
+  case place of
     Nothing -> Audio.stop (sessionAudio session)
-    Just at -> Audio.play (sessionAudio session) (trackOf session (playing at)) (Seconds 0)
-  pure queue
+    Just at -> Audio.play (sessionAudio session) (trackOf session (playing (placeQueue at))) (Seconds 0)
+  pure place
+
+-- | An album position the session was moved to from another of its songs.
+followed :: Queue -> Place
+followed queue = Place queue Followed
 
 trackOf :: Session -> Song -> Track
 trackOf session song =
@@ -192,10 +232,10 @@ discard session = do
     Nothing -> pure ()
     Just _ -> discard session
 
-onQueue :: Session -> (Maybe Queue -> IO (Maybe Queue)) -> IO ()
-onQueue session act = modifyMVar_ (sessionQueue session) act
+onPlace :: Session -> (Maybe Place -> IO (Maybe Place)) -> IO ()
+onPlace session act = modifyMVar_ (sessionPlace session) act
 
 -- | With no album in hand there is nothing to move through, so a control that
 -- would move within one does nothing at all.
-withQueue :: (Queue -> IO (Maybe Queue)) -> Maybe Queue -> IO (Maybe Queue)
-withQueue act = maybe (pure Nothing) act
+withPlace :: (Place -> IO (Maybe Place)) -> Maybe Place -> IO (Maybe Place)
+withPlace act = maybe (pure Nothing) act

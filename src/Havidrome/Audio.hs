@@ -24,6 +24,7 @@ module Havidrome.Audio
   , State (..)
   , Playback (..)
   , Motion (..)
+  , Phase (..)
   , Event (..)
   , Failure (..)
   , Seconds (..)
@@ -51,6 +52,7 @@ import Havidrome.Audio.State
   , Event (..)
   , Failure (..)
   , Motion (..)
+  , Phase (..)
   , Playback (..)
   , State (..)
   , Track (..)
@@ -222,6 +224,8 @@ drain player = do
 react :: Player -> Notice -> IO ()
 react player heard = case heard of
   Reached at -> perform player (Observed at)
+  Fetching -> perform player Opened
+  Underway -> perform player Began
   RanOut -> perform player Ended
   Broken detail -> broke player detail
 

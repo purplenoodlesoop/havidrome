@@ -7,7 +7,7 @@
 --
 -- mpv's IPC is one JSON object per line in each direction. Everything it says
 -- that this player has no use for — replies to its own commands, the file
--- starting, the playlist going idle — reads as 'Nothing'.
+-- being loaded, the playlist going idle — reads as 'Nothing'.
 module Havidrome.Audio.Ipc
   ( -- * Speaking
     render
@@ -33,6 +33,13 @@ import Havidrome.Subsonic.Types (Seconds (..))
 data Notice
   = -- | The audio has reached this position, in whole seconds.
     Reached Seconds
+  | -- | mpv has started on the file it was last told to play: it is fetching
+    -- and opening it, and no audio has come of it yet.
+    Fetching
+  | -- | The audio is underway: the file has been opened and its audio has
+    -- started, or a seek has landed. mpv says so even for a file held while
+    -- it loads, once it is ready to play.
+    Underway
   | -- | The track ran out on its own.
     RanOut
   | -- | The track will not play, in mpv's words.
@@ -84,6 +91,8 @@ notice = withObject "mpv event" $ \event -> do
         -- between tracks, say — and says nothing about a position.
         "time-pos" -> Reached . position <$> event .: "data"
         _ -> fail "a property this player did not ask about"
+    "start-file" -> pure Fetching
+    "playback-restart" -> pure Underway
     "end-file" -> do
       reason <- event .: "reason"
       case reason :: Text of

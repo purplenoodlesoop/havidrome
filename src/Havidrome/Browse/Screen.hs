@@ -354,7 +354,7 @@ draw screen =
   where
     bottom = \case
       Wrong said -> withAttr troubleAttribute (line said)
-      Overlay playing -> withAttr overlayAttribute (across (`Strip.overlaid` playing))
+      Overlay at playing -> withAttr overlayAttribute (across (\width -> Strip.overlaid at width playing))
 
 -- | A row laid out for the width the screen has for it when it is drawn, and
 -- across the whole of that width. What it lays out is left whole, so a row
