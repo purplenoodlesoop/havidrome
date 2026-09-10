@@ -12,11 +12,19 @@ import Test.QuickCheck
 track :: Track
 track = Track {trackUrl = "https://music.example.org/rest/stream?id=s1", trackDuration = Seconds 180}
 
-running :: Int -> State
-running at = Loaded (Playback track Running (Seconds at))
+-- | The track loaded, moving this way, this far along towards its audio
+-- starting, and this far into it.
+loaded :: Motion -> Phase -> Int -> State
+loaded motion phase at = Loaded (Playback track motion (Seconds at) phase)
 
-paused :: Int -> State
-paused at = Loaded (Playback track Paused (Seconds at))
+-- | The track just told to play, its audio not yet started.
+requested :: Int -> State
+requested = loaded Running Requested
+
+-- | The track with its audio started, running or held.
+running, paused :: Int -> State
+running = loaded Running Begun
+paused = loaded Paused Begun
 
 -- | The state a run of commands leaves behind, from nothing playing.
 stateAfter :: [Command] -> State
@@ -31,14 +39,17 @@ spec = do
   describe "starting" $ do
     it "plays a track from its beginning" $
       step (Start track (Seconds 0)) initial
-        `shouldBe` (running 0, [Load (trackUrl track) (Seconds 0), SetPaused False])
+        `shouldBe` (requested 0, [Load (trackUrl track) (Seconds 0), SetPaused False])
 
     it "plays a track from a position inside it" $
       step (Start track (Seconds 42)) initial
-        `shouldBe` (running 42, [Load (trackUrl track) (Seconds 42), SetPaused False])
+        `shouldBe` (requested 42, [Load (trackUrl track) (Seconds 42), SetPaused False])
 
     it "replaces whatever was playing, and keeps running" $
-      stateAfter [Start track (Seconds 0), Pause, Start track (Seconds 5)] `shouldBe` running 5
+      stateAfter [Start track (Seconds 0), Pause, Start track (Seconds 5)] `shouldBe` requested 5
+
+    it "replaces a track whose audio had started with one whose audio has not" $
+      step (Start track (Seconds 0)) (running 30) `shouldBe` step (Start track (Seconds 0)) initial
 
     it "lets the audio run even where it was held before" $
       told (Start track (Seconds 0)) (paused 10)
@@ -49,7 +60,7 @@ spec = do
       step Pause (running 30) `shouldBe` (paused 30, [SetPaused True])
 
     it "keeps the position while held" $
-      stateAfter [Start track (Seconds 30), Pause] `shouldBe` paused 30
+      stateAfter [Start track (Seconds 30), Opened, Began, Pause] `shouldBe` paused 30
 
     it "continues from that same position" $
       step Resume (paused 30) `shouldBe` (running 30, [SetPaused False])
@@ -62,6 +73,33 @@ spec = do
 
     it "has nothing to pause when nothing is playing" $
       step Pause initial `shouldBe` (Stopped, [])
+
+  describe "the audio starting" $ do
+    it "has not happened while the player is opening the track" $
+      stateAfter [Start track (Seconds 0), Opened] `shouldBe` loaded Running Opening 0
+
+    it "happens when the player says so, once it has said it opened the track" $
+      stateAfter [Start track (Seconds 0), Opened, Began] `shouldBe` running 0
+
+    it "is not taken from a start heard before the opening, which is the replaced track's" $
+      stateAfter [Start track (Seconds 0), Began] `shouldBe` requested 0
+
+    it "is not undone by the start the player reports after a seek" $
+      stateAfter [Start track (Seconds 0), Opened, Began, SeekBy 5, Began] `shouldBe` running 5
+
+    it "is not undone by a late opening either" $
+      stateAfter [Start track (Seconds 0), Opened, Began, Opened] `shouldBe` running 0
+
+    it "leaves a track held while it loaded held at its start" $
+      stateAfter [Start track (Seconds 0), Pause, Opened, Began] `shouldBe` paused 0
+
+    it "tells the player nothing, so a held track stays held" $ do
+      told Opened (requested 0) `shouldBe` []
+      told Began (loaded Paused Opening 0) `shouldBe` []
+
+    it "is nobody's when nothing is playing" $ do
+      step Opened initial `shouldBe` (Stopped, [])
+      step Began initial `shouldBe` (Stopped, [])
 
   describe "the position the audio has reached" $ do
     it "follows what the player reports" $
@@ -96,7 +134,7 @@ spec = do
       property $ \at delta duration ->
         let long = track {trackDuration = Seconds (abs duration)}
             start = clampTo long (Seconds at)
-            (sought, _) = step (SeekBy delta) (Loaded (Playback long Running start))
+            (sought, _) = step (SeekBy delta) (Loaded (Playback long Running start Begun))
          in case sought of
               Stopped -> False
               Loaded playback ->

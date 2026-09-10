@@ -22,7 +22,7 @@ import Havidrome.Browse.Strip
   , showing
   , wrong
   )
-import Havidrome.Playback (Playing (Playing))
+import Havidrome.Playback (Arrival (Followed, Picked), Playing (Playing))
 import Havidrome.Subsonic (Seconds (Seconds))
 import Test.Hspec (Spec, describe, it, shouldBe)
 
@@ -44,6 +44,26 @@ spec = do
     it "carries the song playing now, not the one that was" $
       showing (played (Just (jynweythek 4)) (playing (vordhosbn 83)))
         `shouldBe` Just (Overlay "Jynweythek  0:04 / 2:09")
+
+  describe "a song picked, while it loads" $ do
+    it "carries a loading indicator in place of the elapsed time, beside the track name" $
+      showing (playing pickingVordhosbn) `shouldBe` Just (Overlay "Vordhosbn  ⠋ / 4:53")
+
+    it "turns the indicator as the beats go by" $ do
+      showing (beat (Moment 0.35) (Just pickingVordhosbn) [] quiet)
+        `shouldBe` Just (Overlay "Vordhosbn  ⠸ / 4:53")
+      showing (beat (Moment 1.95) (Just pickingVordhosbn) [] quiet)
+        `shouldBe` Just (Overlay "Vordhosbn  ⠏ / 4:53")
+
+    it "gives the elapsed time back its place once the audio has begun" $
+      showing (played (Just (vordhosbn 0)) (playing pickingVordhosbn))
+        `shouldBe` Just (Overlay "Vordhosbn  0:00 / 4:53")
+
+    it "carries no indicator for a song the album moved on to, loading or not" $
+      showing (playing followingJynweythek) `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
+
+    it "gives the whole strip to a failure, the indicator included" $
+      showing (beat (Moment 0) (Just pickingVordhosbn) [broken] quiet) `shouldBe` Just (Wrong brokenly)
 
   describe "clock" $ do
     it "reads a length in minutes and seconds" $ do
@@ -127,10 +147,19 @@ brokenly, offlinely :: Text
 brokenly = "The file will not play: it is broken"
 offlinely = "The server could not be reached: it is down"
 
--- | The third song of Drukqs, 4:53 long, this far into it.
+-- | The third song of Drukqs, 4:53 long, picked and its audio started, this
+-- far into it.
 vordhosbn :: Int -> Playing
-vordhosbn = Playing (drukqsSongs !! 2) . Seconds
+vordhosbn at = Playing (drukqsSongs !! 2) (Seconds at) Picked True
 
--- | The second, 2:09 long, this far into it.
+-- | The second, 2:09 long, picked and its audio started, this far into it.
 jynweythek :: Int -> Playing
-jynweythek = Playing (drukqsSongs !! 1) . Seconds
+jynweythek at = Playing (drukqsSongs !! 1) (Seconds at) Picked True
+
+-- | The third song picked, its audio not yet started.
+pickingVordhosbn :: Playing
+pickingVordhosbn = Playing (drukqsSongs !! 2) (Seconds 0) Picked False
+
+-- | The second song, moved on to by the album, its audio not yet started.
+followingJynweythek :: Playing
+followingJynweythek = Playing (drukqsSongs !! 1) (Seconds 0) Followed False

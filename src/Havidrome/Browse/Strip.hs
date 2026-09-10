@@ -7,8 +7,9 @@
 -- were.
 --
 -- While a song is playing the strip is the now-playing overlay — the track
--- name, how far into it the audio has come, and how long it runs. With
--- nothing playing there is no line at all.
+-- name, how far into it the audio has come, and how long it runs. A song
+-- picked with Enter has a loading indicator where the elapsed time goes until
+-- its audio starts. With nothing playing there is no line at all.
 --
 -- What goes wrong takes the strip over from the overlay for as long as it
 -- has to be read, and the overlay is underneath it the whole time. How long
@@ -43,7 +44,10 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Clock (getMonotonicTime)
 import Havidrome.Audio (Failure (Unplayable, Unreachable))
-import Havidrome.Playback (Playing (playingElapsed, playingSong))
+import Havidrome.Playback
+  ( Arrival (Picked)
+  , Playing (playingArrival, playingBegun, playingElapsed, playingSong)
+  )
 import Havidrome.Subsonic (Seconds (Seconds), Song (songDuration, songTitle))
 
 -- | A moment on the player's own clock, in seconds. Only the distance between
@@ -65,11 +69,13 @@ after seconds (Moment at) = Moment (at + seconds)
 briefly :: Double
 briefly = 3
 
--- | The strip: the song the audio is on, if it is on one, and whatever is
--- being said over the top of it.
+-- | The strip: the song the audio is on, if it is on one, whatever is being
+-- said over the top of it, and the moment of the last beat, which is what
+-- turns the loading indicator.
 data Strip = Strip
   { stripPlaying :: Maybe Playing
   , stripSaid :: Maybe Said
+  , stripAt :: Moment
   }
   deriving stock (Eq, Show)
 
@@ -88,7 +94,7 @@ data Life
 
 -- | Nothing playing and nothing to say, which is no strip on screen at all.
 quiet :: Strip
-quiet = Strip {stripPlaying = Nothing, stripSaid = Nothing}
+quiet = Strip {stripPlaying = Nothing, stripSaid = Nothing, stripAt = Moment 0}
 
 -- | What the strip has on it, and 'Nothing' when it has nothing and so is not
 -- on screen.
@@ -102,15 +108,30 @@ data Showing
 showing :: Strip -> Maybe Showing
 showing strip = case stripSaid strip of
   Just (Said said _) -> Just (Wrong said)
-  Nothing -> Overlay . overlaid <$> stripPlaying strip
+  Nothing -> Overlay . overlaid (stripAt strip) <$> stripPlaying strip
 
--- | The overlay's line: the track name, then how far into it the audio has
--- come and how long it runs.
-overlaid :: Playing -> Text
-overlaid playing =
-  songTitle song <> "  " <> clock (playingElapsed playing) <> " / " <> clock (songDuration song)
+-- | The overlay's line at a moment: the track name, then how far into it the
+-- audio has come and how long it runs.
+--
+-- A song picked with Enter whose audio has not started has come nowhere yet,
+-- so the loading indicator stands where the elapsed time goes. A song the
+-- album moved on to shows its elapsed time throughout, loading or not.
+overlaid :: Moment -> Playing -> Text
+overlaid at playing =
+  songTitle song <> "  " <> progress <> " / " <> clock (songDuration song)
   where
     song = playingSong playing
+    progress
+      | playingArrival playing == Picked && not (playingBegun playing) = spinner at
+      | otherwise = clock (playingElapsed playing)
+
+-- | The loading indicator at a moment: a dot running round a braille cell, a
+-- step every tenth of a second, which is as often as a beat comes.
+spinner :: Moment -> Text
+spinner (Moment at) = Text.take 1 (Text.drop turn turns)
+  where
+    turns = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    turn = floor (at * 10) `mod` Text.length turns
 
 -- | A length of time as a clock reads it: minutes and seconds, and hours as
 -- well once there are any.
@@ -138,6 +159,7 @@ beat at playing failures strip =
     , stripSaid = case failures of
         [] -> stripSaid strip >>= lasting at
         _ -> Just (saidOf at (last failures))
+    , stripAt = at
     }
 
 -- | What a playback failure says, and for how long.

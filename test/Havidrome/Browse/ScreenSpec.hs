@@ -57,6 +57,7 @@ import Havidrome.Playback qualified as Playback
 import Havidrome.Playback.Standin
   ( Standin
   , address
+  , begin
   , breakWith
   , finish
   , loaded
@@ -341,19 +342,19 @@ spec = do
 
   describe "the now-playing overlay" $ do
     it "shows the playing song's name and its elapsed and total time" $
-      withStandin $ \_ session -> do
-        screen <- onDrukqs session
+      withStandin $ \standin session -> do
+        screen <- onDrukqs standin session
         onStrip screen `shouldBe` Just (Overlay "Btoum Roumada  0:00 / 1:36")
 
     it "moves the elapsed time on as the audio does" $ withStandin $ \standin session -> do
-      screen <- onDrukqs session
+      screen <- onDrukqs standin session
       reach standin (Seconds 42)
       moved <- beaten session 1 screen
       onStrip moved `shouldBe` Just (Overlay "Btoum Roumada  0:42 / 1:36")
 
     it "leaves the elapsed time where a held song left it" $
       withStandin $ \standin session -> do
-        screen <- onDrukqs session
+        screen <- onDrukqs standin session
         reach standin (Seconds 42)
         running <- beaten session 1 screen
         Playback.pause session
@@ -362,7 +363,7 @@ spec = do
 
     it "shows the next song of the album once playback moves on" $
       withStandin $ \standin session -> do
-        screen <- onDrukqs session
+        screen <- onDrukqs standin session
         moved <- ranOut standin session screen 1
         onStrip moved `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
 
@@ -370,17 +371,19 @@ spec = do
       screen <- after session toDrukqs >>= beaten session 0
       onStrip screen `shouldBe` Nothing
 
-    it "is there at every one of the three levels" $ withStandin $ \_ session -> do
-      songs <- onDrukqs session
+    it "is there at every one of the three levels" $ withStandin $ \standin session -> do
+      songs <- onDrukqs standin session
       albums <- taking library session songs Ascend >>= beaten session 1
       names <- taking library session albums Ascend >>= beaten session 2
       map onStrip [songs, albums, names]
         `shouldBe` replicate 3 (Just (Overlay "Btoum Roumada  0:00 / 1:36"))
 
     it "takes the bottom row of the screen and no more of the list" $
-      withStandin $ \_ session -> do
+      withStandin $ \standin session -> do
         browsing <- after session toDrukqs
-        started <- taking library session browsing Descend >>= beaten session 0
+        picking <- taking library session browsing Descend
+        begin standin
+        started <- beaten session 0 picking
         shown (60, 5) started
           `shouldBe` take 4 (shown (60, 5) browsing) <> ["Btoum Roumada  0:00 / 1:36"]
 
@@ -392,6 +395,73 @@ spec = do
         onStrip ended `shouldBe` Nothing
         nowPlaying session `shouldReturn` Nothing
         shown (60, 6) ended `shouldBe` shown (60, 6) browsing
+
+  describe "a song picked with Enter, while it loads" $ do
+    it "shows the track name and a loading indicator, and no elapsed time" $
+      withStandin $ \_ session -> do
+        screen <- loadingDrukqs session
+        onStrip screen `shouldBe` Just (Overlay "Btoum Roumada  ⠋ / 1:36")
+
+    it "shows the elapsed time in its place once the audio starts, moving on as it plays" $
+      withStandin $ \standin session -> do
+        screen <- loadingDrukqs session
+        begin standin
+        started <- beaten session 1 screen
+        onStrip started `shouldBe` Just (Overlay "Btoum Roumada  0:00 / 1:36")
+        reach standin (Seconds 42)
+        moved <- beaten session 2 started
+        onStrip moved `shouldBe` Just (Overlay "Btoum Roumada  0:42 / 1:36")
+
+    it "shows it for a song picked while another still loads, until that one's audio starts" $
+      withStandin $ \standin session -> do
+        screen <- loadingDrukqs session
+        repicked <- pressing session screen [MoveDown, Descend] >>= beaten session 1
+        onStrip repicked `shouldBe` Just (Overlay "Jynweythek  ⠋ / 2:09")
+        begin standin
+        started <- beaten session 2 repicked
+        onStrip started `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
+
+    it "is never shown for the song the album moves on to by itself" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs standin session
+        moved <- ranOut standin session screen 1
+        onStrip moved `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
+
+    it "nor for the songs n and p move to, even away from a song still loading" $
+      withStandin $ \_ session -> do
+        screen <- loadingDrukqs session
+        forward <- pressing session screen [NextSong] >>= beaten session 1
+        onStrip forward `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
+        back <- pressing session forward [PreviousSong] >>= beaten session 2
+        onStrip back `shouldBe` Just (Overlay "Btoum Roumada  0:00 / 1:36")
+
+    it "finishes loading held on space, at 0:00, until space again plays it from its start" $
+      withStandin $ \standin session -> do
+        screen <- loadingDrukqs session
+        holding <- pressing session screen [PauseOrResume] >>= beaten session 1
+        onStrip holding `shouldBe` Just (Overlay "Btoum Roumada  ⠋ / 1:36")
+        begin standin
+        ready <- beaten session 2 holding >>= beaten session 60
+        onStrip ready `shouldBe` Just (Overlay "Btoum Roumada  0:00 / 1:36")
+        motionOf standin `shouldReturn` Just Paused
+        _ <- pressing session ready [PauseOrResume]
+        motionOf standin `shouldReturn` Just Running
+        elapsed session `shouldReturn` Just (Seconds 0)
+        loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
+
+    it "gives the whole strip to a file that will not play" $
+      withStandin $ \standin session -> do
+        screen <- loadingDrukqs session
+        breakWith standin (Unplayable "the file will not play: it is corrupt")
+        failed <- beaten session 1 screen
+        onStrip failed `shouldBe` Just (Wrong "The file will not play: it is corrupt")
+
+    it "gives it to a server that cannot be reached just the same" $
+      withStandin $ \standin session -> do
+        screen <- loadingDrukqs session
+        breakWith standin (Unreachable "the server could not be reached: it is down")
+        failed <- beaten session 1 screen
+        onStrip failed `shouldBe` Just (Wrong "The server could not be reached: it is down")
 
   describe "a playback failure in the strip" $ do
     it "puts a skipped track's reason in place of the overlay's contents" $
@@ -550,16 +620,25 @@ ranOut standin session screen times =
 beaten :: Session -> Double -> Screen -> IO Screen
 beaten session at = onBeat session (Moment at)
 
--- | The screen with the first song of Drukqs playing and the strip caught up
--- with it, which is where every spec about the overlay starts.
-onDrukqs :: Session -> IO Screen
-onDrukqs session = after session playingDrukqs >>= beaten session 0
+-- | The screen with the first song of Drukqs picked, its audio started, and
+-- the strip caught up with it, which is where every spec about the overlay
+-- starts.
+onDrukqs :: Standin -> Session -> IO Screen
+onDrukqs standin session = do
+  picking <- after session playingDrukqs
+  begin standin
+  beaten session 0 picking
+
+-- | The screen with the first song of Drukqs just picked, its audio not yet
+-- started, and the strip caught up with it.
+loadingDrukqs :: Session -> IO Screen
+loadingDrukqs session = after session playingDrukqs >>= beaten session 0
 
 -- | The screen the first song of Drukqs failing this way leaves behind: the
 -- backend says so, and the next beat takes it in.
 breaking :: Session -> Standin -> Failure -> IO Screen
 breaking session standin failure = do
-  screen <- onDrukqs session
+  screen <- onDrukqs standin session
   breakWith standin failure
   beaten session 0 screen
 

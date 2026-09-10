@@ -14,6 +14,7 @@ module Havidrome.Audio.State
   , State (..)
   , Playback (..)
   , Motion (..)
+  , Phase (..)
   , initial
 
     -- * What is heard about it
@@ -45,11 +46,34 @@ data Track = Track
 data Motion = Running | Paused
   deriving stock (Eq, Show)
 
--- | A loaded track, how it is moving, and how far into it the audio has come.
+-- | How far a loaded track has got towards its audio starting. A track is
+-- loaded the moment the player is told to play it, but its audio starts only
+-- once the player has fetched and opened it, which over a network takes a
+-- while.
+--
+-- The player opening a track is heard before its audio starts, and anything
+-- the player said before that is about a track it was playing earlier. So the
+-- audio starting counts only once the opening has been heard: a start the
+-- player reports late, about the track just replaced, is never taken for the
+-- new one's.
+data Phase
+  = -- | The player has been told to play it, and has not yet said it is
+    -- opening it.
+    Requested
+  | -- | The player is opening it, and its audio has not started.
+    Opening
+  | -- | Its audio has started. A held track can have begun: it is waiting at
+    -- its position, and nothing is left to load.
+    Begun
+  deriving stock (Eq, Show)
+
+-- | A loaded track, how it is moving, how far into it the audio has come, and
+-- whether that audio has started yet.
 data Playback = Playback
   { playbackTrack :: Track
   , playbackMotion :: Motion
   , playbackElapsed :: Seconds
+  , playbackPhase :: Phase
   }
   deriving stock (Eq, Show)
 
@@ -94,6 +118,11 @@ data Command
   | Stop
   | -- | The player says the audio has reached this position.
     Observed Seconds
+  | -- | The player says it is opening the track it was last told to play.
+    Opened
+  | -- | The player says the audio has started: after a track is opened, and
+    -- again after every seek.
+    Began
   | -- | The player says the track ran out.
     Ended
   | -- | The player says it could not play the track.
@@ -119,7 +148,7 @@ step :: Command -> State -> (State, [Effect])
 step command state = case command of
   Start track from ->
     let at = clampTo track from
-     in (Loaded (Playback track Running at), [Load (trackUrl track) at, SetPaused False])
+     in (Loaded (Playback track Running at Requested), [Load (trackUrl track) at, SetPaused False])
   Pause -> onPlayback $ \playback -> case playbackMotion playback of
     Running -> (Loaded playback {playbackMotion = Paused}, [SetPaused True])
     Paused -> (Loaded playback, [])
@@ -132,6 +161,14 @@ step command state = case command of
   Stop -> onPlayback $ \_ -> (Stopped, [Unload])
   Observed at -> onPlayback $ \playback ->
     (Loaded playback {playbackElapsed = clampTo (playbackTrack playback) at}, [])
+  Opened -> onPlayback $ \playback -> case playbackPhase playback of
+    Requested -> (Loaded playback {playbackPhase = Opening}, [])
+    _ -> (Loaded playback, [])
+  -- Held or running, a track whose audio starts has begun: a track held
+  -- while it loads finishes loading held.
+  Began -> onPlayback $ \playback -> case playbackPhase playback of
+    Opening -> (Loaded playback {playbackPhase = Begun}, [])
+    _ -> (Loaded playback, [])
   Ended -> onPlayback $ \_ -> (Stopped, [Announce Finished])
   Broke failure -> onPlayback $ \_ -> (Stopped, [Announce (Failed failure)])
  where

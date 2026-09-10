@@ -47,6 +47,25 @@ spec = do
         moved <- waitUntil (fmap (>= Just (Seconds 3)) (reached audio))
         moved `shouldBe` True
 
+  describe "the audio starting" $ do
+    it "is reported once the track has been opened" $
+      withTone (answering True) $ \audio track -> do
+        play audio track (Seconds 0)
+        started <- waitUntil (fmap (== Just Begun) (phase audio))
+        started `shouldBe` True
+
+    it "is reported for a track held while it loads, which stays held at its start" $
+      withTone (answering True) $ \audio track -> do
+        play audio track (Seconds 0)
+        pause audio
+        started <- waitUntil (fmap (== Just Begun) (phase audio))
+        started `shouldBe` True
+        threadDelay 1500000
+        reached audio `shouldReturn` Just (Seconds 0)
+        resume audio
+        moved <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
+        moved `shouldBe` True
+
   describe "pausing" $
     it "freezes the position, and resuming continues from it" $
       withTone (answering True) $ \audio track -> do
@@ -157,6 +176,14 @@ reached audio = fmap position (nowPlaying audio)
  where
   position Stopped = Nothing
   position (Loaded playback) = Just (playbackElapsed playback)
+
+-- | How far the loaded track has got towards its audio starting, if anything
+-- is loaded.
+phase :: Audio -> IO (Maybe Phase)
+phase audio = fmap phaseOf (nowPlaying audio)
+ where
+  phaseOf Stopped = Nothing
+  phaseOf (Loaded playback) = Just (playbackPhase playback)
 
 -- | The next thing the backend reports, or nothing if it stays silent for
 -- long enough that it never will.
