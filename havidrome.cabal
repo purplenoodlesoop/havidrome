@@ -14,7 +14,10 @@ library
     hs-source-dirs:  src
     exposed-modules:
         Havidrome
+        Havidrome.Browse
+        Havidrome.Browse.Screen
         Havidrome.Credentials
+        Havidrome.Library
         Havidrome.Subsonic
         Havidrome.Subsonic.Protocol
         Havidrome.Subsonic.Transport
@@ -23,6 +26,7 @@ library
     build-depends:
         aeson,
         base,
+        brick,
         bytestring,
         crypton,
         directory,
@@ -30,14 +34,21 @@ library
         http-client,
         http-client-tls,
         http-types,
+        mtl,
         random,
         text,
-        unix
+        transformers,
+        unix,
+        vector,
+        vty
 
 executable havidrome
     import:         language
     hs-source-dirs: app
     main-is:        Main.hs
+
+    -- vty runs its input on threads of its own.
+    ghc-options:    -threaded
     build-depends:  base, havidrome
 
 test-suite havidrome-test
@@ -47,14 +58,21 @@ test-suite havidrome-test
     main-is:        Main.hs
     other-modules:
         CredentialsSpec
+        HavidromeSpec
+        Havidrome.Browse.Fixtures
+        Havidrome.Browse.ScreenSpec
+        Havidrome.BrowseSpec
         Havidrome.Subsonic.ClientSpec
         Havidrome.Subsonic.Fixtures
         Havidrome.Subsonic.ProtocolSpec
+        Terminal
 
     build-depends:
         QuickCheck,
         base,
+        brick,
         bytestring,
+        containers,
         directory,
         filepath,
         havidrome,
@@ -63,4 +81,7 @@ test-suite havidrome-test
         http-types,
         temporary,
         text,
-        unix
+        transformers,
+        unix,
+        vector,
+        vty
