@@ -39,6 +39,10 @@ that variable is unset), one `field=value` line each and the password in the
 clear — no keyring, no encryption. The file is the user's own, readable by
 nobody else; deleting it discards the credentials.
 
+`l` while browsing logs out: the audio stops, the file goes, and the login
+screen comes back for another server or account. Later runs then ask again, as
+a first one does.
+
 ## Audio
 
 Sound comes from [mpv](https://mpv.io), which the build supplies: the installed

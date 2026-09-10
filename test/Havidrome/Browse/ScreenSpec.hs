@@ -12,7 +12,7 @@ module Havidrome.Browse.ScreenSpec (spec) where
 
 import Control.Monad (foldM)
 import Control.Monad.Trans.Except (ExceptT)
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Either (fromRight)
 import Data.Text (Text)
 import Graphics.Vty qualified as Vty
 import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
@@ -30,14 +30,16 @@ import Havidrome.Browse.Screen
   ( Command
       ( Ascend
       , Descend
+      , Leave
+      , LogOut
       , MoveDown
       , MoveUp
       , NextSong
       , PauseOrResume
       , PreviousSong
-      , Quit
       , Seek
       )
+  , Ending (LoggedOut, Quit)
   , Screen (browse, strip)
   , command
   , draw
@@ -68,7 +70,7 @@ import Havidrome.Subsonic
   , SubsonicError (NetworkFailure)
   )
 import Terminal (highlighted, screenshot)
-import Test.Hspec (Spec, describe, it, shouldBe, shouldReturn, shouldSatisfy)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldReturn)
 
 spec :: Spec
 spec = do
@@ -85,8 +87,11 @@ spec = do
       command Vty.KEnter [] `shouldBe` Just Descend
       command Vty.KEsc [] `shouldBe` Just Ascend
 
-    it "quits on Ctrl+C" $
-      command (Vty.KChar 'c') [Vty.MCtrl] `shouldBe` Just Quit
+    it "leaves the player on Ctrl+C" $
+      command (Vty.KChar 'c') [Vty.MCtrl] `shouldBe` Just Leave
+
+    it "leaves the account on l" $
+      command (Vty.KChar 'l') [] `shouldBe` Just LogOut
 
     it "reaches the playing song with space, n and p" $ do
       command (Vty.KChar ' ') [] `shouldBe` Just PauseOrResume
@@ -110,9 +115,19 @@ spec = do
 
   describe "step" $ do
     it "leaves the player on Ctrl+C, at any level" $ withStandin $ \_ session -> do
-      quitting session [] >>= (`shouldSatisfy` isNothing)
-      quitting session [Descend] >>= (`shouldSatisfy` isNothing)
-      quitting session [Descend, Descend] >>= (`shouldSatisfy` isNothing)
+      ends session Leave [] `shouldReturn` Just Quit
+      ends session Leave [Descend] `shouldReturn` Just Quit
+      ends session Leave [Descend, Descend] `shouldReturn` Just Quit
+
+    it "leaves the account on l, at any level" $ withStandin $ \_ session -> do
+      ends session LogOut [] `shouldReturn` Just LoggedOut
+      ends session LogOut [Descend] `shouldReturn` Just LoggedOut
+      ends session LogOut [Descend, Descend] `shouldReturn` Just LoggedOut
+
+    it "ends browsing on no other key" $ withStandin $ \_ session -> do
+      ends session MoveDown [] `shouldReturn` Nothing
+      ends session Descend [] `shouldReturn` Nothing
+      ends session Ascend [Descend] `shouldReturn` Nothing
 
     it "descends into the level the library holds" $ withStandin $ \_ session -> do
       screen <- after session [Descend]
@@ -202,12 +217,24 @@ spec = do
         _ <- ranOut standin session screen 2
         loaded standin `shouldReturn` map from drukqsSongs
 
-  describe "Ctrl+C with a song playing" $
+  describe "leaving the player and leaving the account" $ do
     it "stops the audio on the way out of the player" $ withStandin $ \standin session -> do
-      left <- quitting session playingDrukqs
-      left `shouldSatisfy` isNothing
+      ends session Leave playingDrukqs `shouldReturn` Just Quit
       nowPlaying session `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
+
+    it "stops it on the way to the login screen just the same" $
+      withStandin $ \standin session -> do
+        ends session LogOut playingDrukqs `shouldReturn` Just LoggedOut
+        nowPlaying session `shouldReturn` Nothing
+        motionOf standin `shouldReturn` Nothing
+
+    it "logs out of an account with nothing playing" $
+      withStandin $ \standin session -> do
+        ends session LogOut toDrukqs `shouldReturn` Just LoggedOut
+        loaded standin `shouldReturn` []
+        nowPlaying session `shouldReturn` Nothing
+        motionOf standin `shouldReturn` Nothing
 
   describe "controlling the song that is playing" $ do
     it "holds the audio on space, and freezes the elapsed time with it" $
@@ -490,17 +517,18 @@ resuming session already next = do
 walking :: Library (ExceptT SubsonicError IO) -> Session -> [Command] -> IO Screen
 walking held session = foldM (taking held session) start
 
--- | The screen one key press leaves behind. @q@ leaves none, and for that the
--- screen it was pressed on stands.
+-- | The screen one key press leaves behind. A key that ends browsing leaves
+-- none, and for that the screen it was pressed on stands.
 taking :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> Command -> IO Screen
 taking held session screen instruction =
-  fromMaybe screen <$> step held session instruction screen
+  fromRight screen <$> step held session instruction screen
 
--- | What @q@ leaves behind after these key presses: nothing at all.
-quitting :: Session -> [Command] -> IO (Maybe Screen)
-quitting session path = do
+-- | How this key ends browsing, pressed after those ones — and nothing at all
+-- when it leaves browsing going on.
+ends :: Session -> Command -> [Command] -> IO (Maybe Ending)
+ends session instruction path = do
   screen <- after session path
-  step library session Quit screen
+  either Just (const Nothing) <$> step library session instruction screen
 
 -- | The song the session is playing, if it is playing one.
 playing :: Session -> IO (Maybe Song)

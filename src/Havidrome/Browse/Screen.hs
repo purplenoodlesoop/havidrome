@@ -8,6 +8,10 @@
 -- The screen is also where a song is picked: Enter on one hands its album to
 -- the playback session, and the audio runs on underneath while the lists go on
 -- being browsed. What that audio is doing is what the bottom strip says.
+--
+-- Browsing ends in exactly one of two ways, and the audio is stopped either
+-- way: the player was left, or the account was. The second hands the run back
+-- to the login screen, where another account can be entered.
 module Havidrome.Browse.Screen
   ( -- * The screen
     Screen (..)
@@ -18,6 +22,7 @@ module Havidrome.Browse.Screen
     -- * The keys
   , Command (..)
   , command
+  , Ending (..)
   , step
 
     -- * The beat the audio is carried on
@@ -54,11 +59,12 @@ import Brick.BChan (BChan, newBChan, writeBChan)
 import Brick.Widgets.List (listSelectedFocusedAttr, renderList)
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (bracket)
-import Control.Monad (forever, void)
+import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get, put)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Data.Foldable (traverse_)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Graphics.Vty qualified as Vty
@@ -83,18 +89,21 @@ import Havidrome.Subsonic
   , explain
   )
 
--- | Everything on screen: the level being browsed, and the strip along the
--- bottom that says what the audio is doing and what last went wrong.
+-- | Everything on screen: the level being browsed, the strip along the bottom
+-- that says what the audio is doing and what last went wrong, and how browsing
+-- ended, once it has ended.
 data Screen = Screen
   { browse :: Browse
   , strip :: Strip
+  , ending :: Maybe Ending
   }
   deriving stock (Show)
 
 -- | The screen a run opens on: the artist list, nothing playing, nothing
--- wrong yet.
+-- wrong yet, and browsing still going on.
 opening :: [Artist] -> Screen
-opening artists = Screen {browse = atArtists artists, strip = Strip.quiet}
+opening artists =
+  Screen {browse = atArtists artists, strip = Strip.quiet, ending = Nothing}
 
 -- | What a key press means. Nothing else on the browsing screen does anything.
 data Command
@@ -107,7 +116,9 @@ data Command
   | -- | Back to the list above.
     Ascend
   | -- | Leave the player.
-    Quit
+    Leave
+  | -- | Leave the account, and go back to the login screen for another.
+    LogOut
   | -- | Hold the playing audio where it is, or let a held one run on again.
     PauseOrResume
   | -- | Play the next song of the album being played.
@@ -118,10 +129,11 @@ data Command
     Seek Int
   deriving stock (Eq, Show)
 
--- | The key map. Arrows and @j@\/@k@ move, Enter descends, Esc goes back, and
--- Ctrl+C leaves the player; @space@, @n@, @p@ and left\/right reach past the
--- lists to the song being played. Every other key does nothing: no letter
--- quits, @q@ included, so it is as inert here as any other unbound key.
+-- | The key map. Arrows and @j@\/@k@ move, Enter descends, Esc goes back,
+-- Ctrl+C leaves the player and @l@ leaves the account; @space@, @n@, @p@ and
+-- left\/right reach past the lists to the song being played. Every other key
+-- does nothing: no letter quits, @q@ included, so it is as inert here as any
+-- other unbound key.
 command :: Vty.Key -> [Vty.Modifier] -> Maybe Command
 command key modifiers = case (key, modifiers) of
   (Vty.KUp, []) -> Just MoveUp
@@ -130,7 +142,8 @@ command key modifiers = case (key, modifiers) of
   (Vty.KChar 'j', []) -> Just MoveDown
   (Vty.KEnter, []) -> Just Descend
   (Vty.KEsc, []) -> Just Ascend
-  (Vty.KChar 'c', [Vty.MCtrl]) -> Just Quit
+  (Vty.KChar 'c', [Vty.MCtrl]) -> Just Leave
+  (Vty.KChar 'l', []) -> Just LogOut
   (Vty.KChar ' ', []) -> Just PauseOrResume
   (Vty.KChar 'n', []) -> Just NextSong
   (Vty.KChar 'p', []) -> Just PreviousSong
@@ -146,8 +159,20 @@ nudge, stride :: Int
 nudge = 5
 stride = 30
 
--- | The screen a command leaves behind, or nothing at all when the command was
--- to leave the player.
+-- | How browsing ended.
+data Ending
+  = -- | The player was left.
+    Quit
+  | -- | The account was left. What comes of that is not browsing's business:
+    -- it only says that this is how the screen ended.
+    LoggedOut
+  deriving stock (Eq, Show)
+
+-- | The screen a command leaves behind, or the ending it brought about.
+--
+-- Leaving the player and logging out are the two commands that end browsing,
+-- and both stop the audio on the way: neither leaves a song playing behind a
+-- screen that is gone.
 --
 -- Descending on a song is not descending at all: there is no level under a
 -- song, so Enter there hands that song's album to the session, which plays it
@@ -169,9 +194,10 @@ step ::
   Session ->
   Command ->
   Screen ->
-  IO (Maybe Screen)
+  IO (Either Ending Screen)
 step library session instruction screen = case instruction of
-  Quit -> Playback.stop session >> pure Nothing
+  Leave -> ends Quit
+  LogOut -> ends LoggedOut
   MoveUp -> here Browse.moveUp
   MoveDown -> here Browse.moveDown
   Ascend -> here Browse.ascend
@@ -182,17 +208,19 @@ step library session instruction screen = case instruction of
   Descend -> case picked (browse screen) of
     Just (album, song) -> do
       traverse_ (Playback.start session) (startingAt album (songId song))
-      pure (Just taken)
+      stays taken
     Nothing -> do
       descended <- runExceptT (Browse.descend library (browse screen))
-      pure . Just $ case descended of
+      stays $ case descended of
         Left failure -> taken {strip = Strip.wrong (explain failure) (strip taken)}
         Right level -> taken {browse = level}
   where
     -- Whatever a key press does, the strip hears about it first.
     taken = screen {strip = Strip.pressed (strip screen)}
-    here move = pure (Just taken {browse = move (browse screen)})
-    toAudio act = act >> pure (Just taken)
+    stays = pure . Right
+    here move = stays taken {browse = move (browse screen)}
+    toAudio act = act >> stays taken
+    ends ended = Playback.stop session >> pure (Left ended)
 
 -- | The beat the player hears between key presses: the moment it happened at,
 -- which is both when what the audio has done is taken in and the clock a line
@@ -213,13 +241,23 @@ onBeat session at screen = do
   playing <- Playback.nowPlaying session
   pure screen {strip = Strip.beat at playing failures (strip screen)}
 
--- | Hands the terminal to the browsing screen, and takes it back when the
--- player is left. The beat runs for exactly as long as the screen is up.
-browsing :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> IO ()
+-- | Hands the terminal to the browsing screen, takes it back when browsing
+-- ends, and says how it ended. The beat runs for exactly as long as the screen
+-- is up.
+browsing :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> IO Ending
 browsing library session screen = do
   beats <- newBChan 1
-  bracket (forkIO (beating beats)) killThread $ \_ ->
-    void (customMainWithDefaultVty (Just beats) (application library session) screen)
+  bracket (forkIO (beating beats)) killThread $ \_ -> do
+    (final, vty) <- customMainWithDefaultVty (Just beats) (application library session) screen
+    -- brick hands back the terminal it was driving rather than putting it
+    -- down, so that one screen can hand it to the next. This one hands it to
+    -- nobody: the login screen a logout goes to takes a terminal of its own,
+    -- and a run that ends here leaves the terminal as it found it.
+    Vty.shutdown vty
+    -- Only the two commands that end browsing take the screen down, and each
+    -- writes down which of them it was; a screen that is gone for any other
+    -- reason is one the player was left at.
+    pure (fromMaybe Quit (ending final))
 
 -- | A beat, then the next, for as long as it is left running.
 beating :: BChan Beat -> IO ()
@@ -234,7 +272,7 @@ beating beats = forever $ do
 interval :: Int
 interval = 100_000
 
--- | The player, browsing the library it is given until Ctrl+C, over the
+-- | The player, browsing the library it is given until it is left, over the
 -- session that plays what is picked in it.
 application :: Library (ExceptT SubsonicError IO) -> Session -> App Screen Beat Name
 application library session =
@@ -258,7 +296,9 @@ handle library session = \case
       Just instruction -> do
         screen <- get
         stepped <- liftIO (step library session instruction screen)
-        maybe halt put stepped
+        case stepped of
+          Left ended -> put screen {ending = Just ended} >> halt
+          Right stepping -> put stepping
   AppEvent (Beat at) -> get >>= liftIO . onBeat session at >>= put
   _ -> pure ()
 
