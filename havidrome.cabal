@@ -12,20 +12,27 @@ common language
 library
     import:          language
     hs-source-dirs:  src
-    exposed-modules: Havidrome
-                     Havidrome.Subsonic
-                     Havidrome.Subsonic.Protocol
-                     Havidrome.Subsonic.Transport
-                     Havidrome.Subsonic.Types
-    build-depends:   base
-                   , aeson
-                   , bytestring
-                   , crypton
-                   , http-client
-                   , http-client-tls
-                   , http-types
-                   , random
-                   , text
+    exposed-modules:
+        Havidrome
+        Havidrome.Credentials
+        Havidrome.Subsonic
+        Havidrome.Subsonic.Protocol
+        Havidrome.Subsonic.Transport
+        Havidrome.Subsonic.Types
+
+    build-depends:
+        aeson,
+        base,
+        bytestring,
+        crypton,
+        directory,
+        filepath,
+        http-client,
+        http-client-tls,
+        http-types,
+        random,
+        text,
+        unix
 
 executable havidrome
     import:         language
@@ -38,13 +45,22 @@ test-suite havidrome-test
     type:           exitcode-stdio-1.0
     hs-source-dirs: test
     main-is:        Main.hs
-    other-modules:  Havidrome.Subsonic.ClientSpec
-                    Havidrome.Subsonic.ProtocolSpec
-                    Havidrome.Subsonic.Fixtures
-    build-depends:  base
-                  , bytestring
-                  , havidrome
-                  , hspec
-                  , http-client
-                  , http-types
-                  , text
+    other-modules:
+        CredentialsSpec
+        Havidrome.Subsonic.ClientSpec
+        Havidrome.Subsonic.Fixtures
+        Havidrome.Subsonic.ProtocolSpec
+
+    build-depends:
+        QuickCheck,
+        base,
+        bytestring,
+        directory,
+        filepath,
+        havidrome,
+        hspec,
+        http-client,
+        http-types,
+        temporary,
+        text,
+        unix
