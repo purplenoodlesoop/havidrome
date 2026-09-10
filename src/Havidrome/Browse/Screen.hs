@@ -105,11 +105,20 @@ data Command
     Ascend
   | -- | Leave the player.
     Quit
+  | -- | Hold the playing audio where it is, or let a held one run on again.
+    PauseOrResume
+  | -- | Play the next song of the album being played.
+    NextSong
+  | -- | Play the previous song of the album being played.
+    PreviousSong
+  | -- | Move the song being played this many seconds, forwards or back.
+    Seek Int
   deriving stock (Eq, Show)
 
--- | The key map: arrows and @j@\/@k@ move, Enter descends, Esc goes back, and
--- Ctrl+C leaves the player. Every other key does nothing: no letter quits,
--- @q@ included, so it is as inert here as any other unbound key.
+-- | The key map. Arrows and @j@\/@k@ move, Enter descends, Esc goes back, and
+-- Ctrl+C leaves the player; @space@, @n@, @p@ and left\/right reach past the
+-- lists to the song being played. Every other key does nothing: no letter
+-- quits, @q@ included, so it is as inert here as any other unbound key.
 command :: Vty.Key -> [Vty.Modifier] -> Maybe Command
 command key modifiers = case (key, modifiers) of
   (Vty.KUp, []) -> Just MoveUp
@@ -119,8 +128,20 @@ command key modifiers = case (key, modifiers) of
   (Vty.KEnter, []) -> Just Descend
   (Vty.KEsc, []) -> Just Ascend
   (Vty.KChar 'c', [Vty.MCtrl]) -> Just Quit
+  (Vty.KChar ' ', []) -> Just PauseOrResume
+  (Vty.KChar 'n', []) -> Just NextSong
+  (Vty.KChar 'p', []) -> Just PreviousSong
+  (Vty.KRight, []) -> Just (Seek nudge)
+  (Vty.KLeft, []) -> Just (Seek (-nudge))
+  (Vty.KRight, [Vty.MShift]) -> Just (Seek stride)
+  (Vty.KLeft, [Vty.MShift]) -> Just (Seek (-stride))
   _ -> Nothing
 
+-- | How far a seek moves the song being played: the arrows alone nudge it,
+-- and shift held with them strides.
+nudge, stride :: Int
+nudge = 5
+stride = 30
 
 -- | The screen a command leaves behind, or nothing at all when the command was
 -- to leave the player.
@@ -135,6 +156,11 @@ command key modifiers = case (key, modifiers) of
 -- and a library that will not answer leaves the level where it is, with the
 -- reason in the bottom strip. Moving and going back up ask nothing and touch
 -- no audio, which is what keeps browsing live under a playing song.
+--
+-- The last four go the other way about: they reach the song being played and
+-- leave the level and the selection exactly as they were, at whichever of the
+-- three levels they were pressed. With nothing playing the session has no song
+-- to hold, move through or move past, and so they do nothing at all.
 step ::
   Library (ExceptT SubsonicError IO) ->
   Session ->
@@ -146,6 +172,10 @@ step library session instruction screen = case instruction of
   MoveUp -> here Browse.moveUp
   MoveDown -> here Browse.moveDown
   Ascend -> here Browse.ascend
+  PauseOrResume -> toAudio (Playback.togglePause session)
+  NextSong -> toAudio (Playback.next session)
+  PreviousSong -> toAudio (Playback.previous session)
+  Seek by -> toAudio (Playback.seekBy session by)
   Descend -> case picked (browse screen) of
     Just (album, song) -> do
       traverse_ (Playback.start session) (startingAt album (songId song))
@@ -159,6 +189,7 @@ step library session instruction screen = case instruction of
     -- Whatever a key press does, it first clears what went wrong before it.
     quiet = screen {trouble = Nothing}
     here move = pure (Just quiet {browse = move (browse screen)})
+    toAudio act = act >> pure (Just quiet)
 
 -- | The beat the player hears between key presses. There is nothing to it: it
 -- is the moment on which what the audio has done is taken in.
