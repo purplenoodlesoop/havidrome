@@ -7,7 +7,9 @@
 --
 -- The screen is also where a song is picked: Enter on one hands its album to
 -- the playback session, and the audio runs on underneath while the lists go on
--- being browsed. What that audio is doing is what the bottom strip says.
+-- being browsed. What that audio is doing is what the bottom strip says, and
+-- the song it is on carries a mark of its own in the song list, wherever the
+-- selection is.
 --
 -- Browsing ends in exactly one of two ways, and the audio is stopped either
 -- way: the player was left, or the account was. The second hands the run back
@@ -34,6 +36,8 @@ module Havidrome.Browse.Screen
   , theme
   , title
   , row
+  , marking
+  , mark
   ) where
 
 import Brick
@@ -79,22 +83,26 @@ import Havidrome.Browse qualified as Browse
 import Havidrome.Browse.Strip (Moment, Showing (Overlay, Wrong), Strip)
 import Havidrome.Browse.Strip qualified as Strip
 import Havidrome.Library (Library)
-import Havidrome.Playback (Session, startingAt)
+import Havidrome.Playback (Playing (playingSong), Session, startingAt)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Subsonic
   ( Album (albumName, albumYear)
   , Artist (artistName)
   , Song (songId, songTitle, songTrack)
+  , SongId
   , SubsonicError
   , explain
   )
 
 -- | Everything on screen: the level being browsed, the strip along the bottom
--- that says what the audio is doing and what last went wrong, and how browsing
--- ended, once it has ended.
+-- that says what the audio is doing and what last went wrong, the song the
+-- audio is on, and how browsing ended, once it has ended.
 data Screen = Screen
   { browse :: Browse
   , strip :: Strip
+  , marked :: Maybe SongId
+  -- ^ The song playback is on, which carries the mark in whichever song list
+  -- it is in; nothing while nothing is playing.
   , ending :: Maybe Ending
   }
   deriving stock (Show)
@@ -103,7 +111,12 @@ data Screen = Screen
 -- wrong yet, and browsing still going on.
 opening :: [Artist] -> Screen
 opening artists =
-  Screen {browse = atArtists artists, strip = Strip.quiet, ending = Nothing}
+  Screen
+    { browse = atArtists artists
+    , strip = Strip.quiet
+    , marked = Nothing
+    , ending = Nothing
+    }
 
 -- | What a key press means. Nothing else on the browsing screen does anything.
 data Command
@@ -189,6 +202,10 @@ data Ending
 -- leave the level and the selection exactly as they were, at whichever of the
 -- three levels they were pressed. With nothing playing the session has no song
 -- to hold, move through or move past, and so they do nothing at all.
+--
+-- Whichever it was, the screen that stays asks the session afterwards which
+-- song it is on, so the mark is on a picked song from the key press that
+-- picked it — while it is still loading — and follows @n@ and @p@ at once.
 step ::
   Library (ExceptT SubsonicError IO) ->
   Session ->
@@ -217,7 +234,9 @@ step library session instruction screen = case instruction of
   where
     -- Whatever a key press does, the strip hears about it first.
     taken = screen {strip = Strip.pressed (strip screen)}
-    stays = pure . Right
+    stays next = do
+      on <- Playback.nowPlaying session
+      pure (Right next {marked = markOf on})
     here move = stays taken {browse = move (browse screen)}
     toAudio act = act >> stays taken
     ends ended = Playback.stop session >> pure (Left ended)
@@ -234,12 +253,22 @@ newtype Beat = Beat Moment
 -- This is where an album carries itself — a song running out starts the next
 -- song of that album, with no key pressed — and where the bottom strip is kept
 -- true: the overlay's elapsed time moves on with the audio, and a failure the
--- audio reports lands on the strip in place of the overlay's contents.
+-- audio reports lands on the strip in place of the overlay's contents. The mark
+-- moves with the audio too — onto the song an album moved on to or a skip
+-- landed on, and off every song once the playing has ended.
 onBeat :: Session -> Moment -> Screen -> IO Screen
 onBeat session at screen = do
   failures <- Playback.attend session
   playing <- Playback.nowPlaying session
-  pure screen {strip = Strip.beat at playing failures (strip screen)}
+  pure
+    screen
+      { strip = Strip.beat at playing failures (strip screen)
+      , marked = markOf playing
+      }
+
+-- | The song that carries the mark: the one being played, if any is.
+markOf :: Maybe Playing -> Maybe SongId
+markOf = fmap (songId . playingSong)
 
 -- | Hands the terminal to the browsing screen, takes it back when browsing
 -- ends, and says how it ended. The beat runs for exactly as long as the screen
@@ -320,7 +349,7 @@ draw screen =
     level = \case
       AtArtists artists -> renderList (const (line . row)) True artists
       AtAlbums _ albums -> renderList (const (line . row)) True albums
-      AtSongs _ _ songs -> renderList (const (line . row)) True songs
+      AtSongs _ _ songs -> renderList (const (line . marking (marked screen))) True songs
 
 -- | A row of text across the full width, so that highlighting one covers the
 -- line and not just its letters.
@@ -351,6 +380,22 @@ instance Row Album where
 
 instance Row Song where
   row song = column 3 (songTrack song) <> "  " <> songTitle song
+
+-- | What a song reads as in the song list: its row, and when it is the song
+-- playback is on, the mark immediately before its name. The mark takes the
+-- place of the second of the two spaces there, so a marked name stays in line
+-- with the names above and below it.
+--
+-- Only a song has this: an album or an artist is never marked for the song
+-- playing out of it.
+marking :: Maybe SongId -> Song -> Text
+marking on song
+  | on == Just (songId song) = column 3 (songTrack song) <> " " <> mark <> songTitle song
+  | otherwise = row song
+
+-- | The mark on the song playback is on.
+mark :: Text
+mark = "▶"
 
 column :: Int -> Maybe Int -> Text
 column width =

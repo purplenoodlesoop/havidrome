@@ -71,7 +71,7 @@ artists = [artist "a1" "anohni", artist "a2" "Aphex Twin", artist "a3" "zebra"]
 albumsByArtist :: Map ArtistId [Album]
 albumsByArtist =
   Map.fromList
-    [ (ArtistId "a1", [album "b0" "Hopelessness" (Just 2016)])
+    [ (ArtistId "a1", [album "b0" "Hopelessness" (Just 2016), album "b4" "Paradise" (Just 2017)])
     , (ArtistId "a2", aphexAlbums)
     , (ArtistId "a3", [])
     ]
@@ -91,6 +91,7 @@ songsByAlbum =
     [ (AlbumId "b1", sketchesSongs)
     , (AlbumId "b2", [song "s1" "Xtal" 293 (Just 1), song "s2" "Tha" 549 (Just 2)])
     , (AlbumId "b3", drukqsSongs)
+    , (AlbumId "b4", [song "s6" "Paradise" 222 (Just 1)])
     ]
 
 -- | An album of a single song, so that playing it through takes one ending.
