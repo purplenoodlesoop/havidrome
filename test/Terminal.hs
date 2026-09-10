@@ -7,16 +7,27 @@
 module Terminal
   ( screenshot
   , highlighted
+  , inReverse
+  , inBold
   ) where
 
 import Brick (AttrMap, Widget)
 import Brick.Main (renderWidget)
+import Data.Function (on)
+import Data.List (groupBy)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Lazy qualified as Lazy
 import Data.Vector qualified as Vector
 import Graphics.Vty (DisplayRegion)
-import Graphics.Vty.Attributes (Attr (attrStyle), MaybeDefault (SetTo), hasStyle, reverseVideo)
+import Graphics.Vty.Attributes
+  ( Attr (attrStyle)
+  , MaybeDefault (SetTo)
+  , Style
+  , bold
+  , hasStyle
+  , reverseVideo
+  )
 import Graphics.Vty.PictureToSpans (displayOpsForPic)
 import Graphics.Vty.Span (SpanOp (RowEnd, Skip, TextSpan), textSpanAttr, textSpanText)
 
@@ -29,13 +40,31 @@ screenshot theme region = map (Text.stripEnd . text) . rows theme region
 -- selection is.
 highlighted :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
 highlighted theme region =
-  map (Text.stripEnd . text) . filter (any reversed) . rows theme region
-  where
-    reversed = \case
-      TextSpan {textSpanAttr = attribute} -> case attrStyle attribute of
-        SetTo style -> hasStyle style reverseVideo
-        _ -> False
-      _ -> False
+  map (Text.stripEnd . text) . filter (any (drawnIn reverseVideo)) . rows theme region
+
+-- | Each stretch of the same screen drawn in reverse video, top row first and
+-- left to right along a row: where a row has several things side by side,
+-- only the one in reverse video.
+inReverse :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
+inReverse = stretches reverseVideo
+
+-- | Each stretch of it drawn in bold, the same way.
+inBold :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
+inBold = stretches bold
+
+stretches :: (Ord name) => Style -> AttrMap -> DisplayRegion -> [Widget name] -> [Text]
+stretches style theme region =
+  filter (not . Text.null)
+    . map (Text.stripEnd . text)
+    . concatMap (filter (all (drawnIn style)) . groupBy ((==) `on` drawnIn style))
+    . rows theme region
+
+drawnIn :: Style -> SpanOp -> Bool
+drawnIn wanted = \case
+  TextSpan {textSpanAttr = attribute} -> case attrStyle attribute of
+    SetTo style -> hasStyle style wanted
+    _ -> False
+  _ -> False
 
 rows :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [[SpanOp]]
 rows theme region widgets =
