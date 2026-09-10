@@ -15,6 +15,8 @@ module Havidrome.Subsonic.Fixtures
   , wrongPasswordAnswer
   , notFoundAnswer
   , unexplainedFailureAnswer
+  , albumsWithoutYearAnswer
+  , songsWithoutTrackAnswer
   , songWithoutDurationAnswer
   , emptyAlbumAnswer
   ) where
@@ -96,6 +98,24 @@ notFoundAnswer =
 unexplainedFailureAnswer :: ByteString
 unexplainedFailureAnswer =
   json "{'subsonic-response':{'status':'failed','version':'1.16.1'}}"
+
+-- | One artist's albums, two of which the server gives no year for.
+albumsWithoutYearAnswer :: ByteString
+albumsWithoutYearAnswer =
+  json
+    "{'subsonic-response':{'status':'ok','artist':{'id':'a4','name':'Nadia','album':[\
+    \{'id':'b5','name':'Live','artistId':'a4','year':1998},\
+    \{'id':'b7','name':'Tapes','artistId':'a4'},\
+    \{'id':'b6','name':'Demos','artistId':'a4'}]}}}"
+
+-- | Songs of one album, two of which the server gives no track number for.
+songsWithoutTrackAnswer :: ByteString
+songsWithoutTrackAnswer =
+  json
+    "{'subsonic-response':{'status':'ok','album':{'id':'b4','name':'Tape','song':[\
+    \{'id':'s1','title':'Opener','duration':120,'track':1},\
+    \{'id':'s3','title':'Sketch','duration':60},\
+    \{'id':'s2','title':'Loose end','duration':90}]}}}"
 
 -- | A song the server gives no duration for.
 songWithoutDurationAnswer :: ByteString

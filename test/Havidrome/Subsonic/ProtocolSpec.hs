@@ -150,6 +150,14 @@ spec = do
       fmap (map songTitle . byTrackOrder) (decodeSongs songsAnswer)
         `shouldBe` Right ["Xtal", "Tha", "Pulsewidth"]
 
+    it "puts an album the server gave no year for above the oldest, by name" $
+      fmap (map albumName . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
+        `shouldBe` Right ["Demos", "Tapes", "Live"]
+
+    it "puts a song the server gave no track number for first, by name" $
+      fmap (map songTitle . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
+        `shouldBe` Right ["Loose end", "Sketch", "Opener"]
+
 isMalformed :: Either SubsonicError a -> Bool
 isMalformed answer = case answer of
   Left (MalformedResponse _) -> True
