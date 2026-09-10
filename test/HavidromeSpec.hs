@@ -1,29 +1,49 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | The player as a whole, at the points where it has nowhere to browse.
+-- | The player as a whole: where a run starts, and the points where it has
+-- nowhere to browse.
 module HavidromeSpec (spec) where
 
 import Control.Exception (bracket, finally)
 import Data.Text (Text)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Havidrome (run)
-import Havidrome.Credentials (Credentials (Credentials), save)
+import Havidrome (Start (Ask, Browse, Stop), run, start)
+import Havidrome.Credentials
+  ( Credentials (Credentials)
+  , Fault (MissingField)
+  , Stored (Absent, Present, Unreadable)
+  , save
+  )
 import System.Environment (setEnv, unsetEnv)
 import System.Exit (ExitCode (ExitFailure))
 import System.IO (IOMode (WriteMode), hClose, stderr, withFile)
 import System.IO.Temp (withSystemTempDirectory)
-import Test.Hspec (Spec, describe, it, shouldThrow)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, shouldThrow)
 
 spec :: Spec
-spec = describe "run" $ do
-  it "stops instead of browsing when no credentials are stored" $
-    withConfigHome $
-      quietly run `shouldThrow` (== ExitFailure 1)
+spec = do
+  describe "start" $ do
+    it "asks for credentials when none are stored" $
+      start Absent `shouldBe` Ask
 
-  it "stops instead of browsing when the artist list cannot be fetched" $
-    withConfigHome $ do
-      save (Credentials nowhere "someone" "secret")
-      quietly run `shouldThrow` (== ExitFailure 1)
+    it "browses with the credentials that are stored, asking nothing" $
+      start (Present someone) `shouldBe` Browse someone
+
+    it "stops when what is stored cannot be read as credentials" $
+      start (Unreadable (MissingField "password")) `shouldSatisfy` \started ->
+        case started of
+          Stop _ -> True
+          _ -> False
+
+  describe "run" $
+    it "stops instead of browsing when the artist list cannot be fetched" $
+      withConfigHome $ do
+        save (Credentials nowhere "someone" "secret")
+        quietly run `shouldThrow` (== ExitFailure 1)
+
+-- | An account to start a run with. Nothing answers at its server.
+someone :: Credentials
+someone = Credentials nowhere "someone" "secret"
 
 -- | An address nothing answers on, so that the artist list fails to arrive
 -- the way it fails against a server that cannot be reached.

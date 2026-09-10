@@ -1,7 +1,8 @@
 # havidrome
 
 A CLI player for a [Navidrome](https://www.navidrome.org) server, written in
-Haskell. At this stage the executable only starts and exits.
+Haskell. It asks for a server on first open, then browses and plays its
+library.
 
 Nix owns everything: the compiler, the dependencies, the builds and the tests.
 Nothing else needs installing.
@@ -30,11 +31,13 @@ result-debug/bin/havidrome: ... with debug_info, not stripped
 
 ## Configuration
 
-The server URL, username and password are kept in
-`$XDG_CONFIG_HOME/havidrome/config` (`~/.config/havidrome/config` when that
-variable is unset), one `field=value` line each and the password in the clear —
-no keyring, no encryption. The file is the user's own, readable by nobody else;
-deleting it discards the credentials.
+A run with nothing stored opens on a login screen asking for the server URL, a
+username and a password: Tab and the up and down arrows move between the three
+fields, Enter submits them, and Ctrl+C leaves. Credentials a server accepts are
+kept in `$XDG_CONFIG_HOME/havidrome/config` (`~/.config/havidrome/config` when
+that variable is unset), one `field=value` line each and the password in the
+clear — no keyring, no encryption. The file is the user's own, readable by
+nobody else; deleting it discards the credentials.
 
 ## Audio
 
