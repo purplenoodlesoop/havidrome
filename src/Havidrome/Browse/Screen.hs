@@ -43,14 +43,18 @@ import Brick
   , BrickEvent (AppEvent, VtyEvent)
   , EventM
   , Padding (Max)
-  , Widget
+  , Size (Fixed, Greedy)
+  , Widget (Widget)
   , attrMap
   , attrName
+  , availWidth
   , customMainWithDefaultVty
   , emptyWidget
+  , getContext
   , halt
   , neverShowCursor
   , padRight
+  , render
   , txt
   , vBox
   , withAttr
@@ -316,7 +320,7 @@ draw screen =
   where
     bottom = \case
       Wrong said -> withAttr troubleAttribute (line said)
-      Overlay said -> withAttr overlayAttribute (line said)
+      Overlay playing -> withAttr overlayAttribute (across (`Strip.overlaid` playing))
     level = \case
       AtArtists artists -> renderList (const (line . row)) True artists
       AtAlbums _ albums -> renderList (const (line . row)) True albums
@@ -326,6 +330,13 @@ draw screen =
 -- line and not just its letters.
 line :: Text -> Widget Name
 line = padRight Max . txt
+
+-- | A row laid out for the width the screen has for it when it is drawn, and
+-- across the whole of that width.
+across :: (Int -> Text) -> Widget Name
+across laidOut = Widget Greedy Fixed $ do
+  context <- getContext
+  render (line (laidOut (availWidth context)))
 
 -- | Where in the library the level on screen is: the artist list says so, and
 -- the lists under it are named by what was descended into.

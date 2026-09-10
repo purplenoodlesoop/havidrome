@@ -20,8 +20,10 @@ import Havidrome.Browse.Fixtures
   ( album
   , artist
   , artists
+  , bar
   , drukqsSongs
   , failing
+  , filledIn
   , library
   , sketchesSongs
   , song
@@ -52,7 +54,7 @@ import Havidrome.Browse.Screen
   )
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Overlay, Wrong), showing)
 import Havidrome.Library (Library)
-import Havidrome.Playback (Playing (playingElapsed, playingSong), Session, nowPlaying)
+import Havidrome.Playback (Playing (..), Session, nowPlaying)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Playback.Standin
   ( Standin
@@ -343,13 +345,13 @@ spec = do
     it "shows the playing song's name and its elapsed and total time" $
       withStandin $ \_ session -> do
         screen <- onDrukqs session
-        onStrip screen `shouldBe` Just (Overlay "Btoum Roumada  0:00 / 1:36")
+        onStrip screen `shouldBe` overlayOf 0 0
 
     it "moves the elapsed time on as the audio does" $ withStandin $ \standin session -> do
       screen <- onDrukqs session
       reach standin (Seconds 42)
       moved <- beaten session 1 screen
-      onStrip moved `shouldBe` Just (Overlay "Btoum Roumada  0:42 / 1:36")
+      onStrip moved `shouldBe` overlayOf 0 42
 
     it "leaves the elapsed time where a held song left it" $
       withStandin $ \standin session -> do
@@ -358,13 +360,13 @@ spec = do
         running <- beaten session 1 screen
         Playback.pause session
         held <- beaten session 2 running >>= beaten session 3
-        onStrip held `shouldBe` Just (Overlay "Btoum Roumada  0:42 / 1:36")
+        onStrip held `shouldBe` overlayOf 0 42
 
     it "shows the next song of the album once playback moves on" $
       withStandin $ \standin session -> do
         screen <- onDrukqs session
         moved <- ranOut standin session screen 1
-        onStrip moved `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
+        onStrip moved `shouldBe` overlayOf 1 0
 
     it "is not on screen while nothing is playing" $ withStandin $ \_ session -> do
       screen <- after session toDrukqs >>= beaten session 0
@@ -375,14 +377,14 @@ spec = do
       albums <- taking library session songs Ascend >>= beaten session 1
       names <- taking library session albums Ascend >>= beaten session 2
       map onStrip [songs, albums, names]
-        `shouldBe` replicate 3 (Just (Overlay "Btoum Roumada  0:00 / 1:36"))
+        `shouldBe` replicate 3 (overlayOf 0 0)
 
     it "takes the bottom row of the screen and no more of the list" $
       withStandin $ \_ session -> do
         browsing <- after session toDrukqs
         started <- taking library session browsing Descend >>= beaten session 0
         shown (60, 5) started
-          `shouldBe` take 4 (shown (60, 5) browsing) <> ["Btoum Roumada  0:00 / 1:36"]
+          `shouldBe` take 4 (shown (60, 5) browsing) <> ["Btoum Roumada  " <> bar 0 32 <> "  0:00 / 1:36"]
 
     it "is gone when the album's last song finishes, the list left where it was" $
       withStandin $ \standin session -> do
@@ -392,6 +394,86 @@ spec = do
         onStrip ended `shouldBe` Nothing
         nowPlaying session `shouldReturn` Nothing
         shown (60, 6) ended `shouldBe` shown (60, 6) browsing
+
+  describe "the progress bar" $ do
+    it "sits on the strip's one line, between the track name and the times" $
+      withStandin $ \_ session -> do
+        screen <- onDrukqs session
+        stripRow screen `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+
+    it "fills as the track plays, by the part of it that has played" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs session
+        let at seconds = reach standin (Seconds seconds) >> beaten session 1 screen
+        partWay <- at 48
+        stripRow partWay `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+        filled <- traverse (fmap (filledIn . stripRow) . at) [6, 24, 72, 90]
+        filled `shouldBe` [1, 4, 12, 15]
+
+    it "stands still with the elapsed time while held, and moves on with it again" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs session
+        reach standin (Seconds 48)
+        held <- pressing session screen [PauseOrResume] >>= beaten session 1 >>= beaten session 2
+        motionOf standin `shouldReturn` Just Paused
+        stripRow held `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+        resumed <- pressing session held [PauseOrResume]
+        motionOf standin `shouldReturn` Just Running
+        reach standin (Seconds 72)
+        moved <- beaten session 3 resumed
+        stripRow moved `shouldBe` "Btoum Roumada  " <> bar 12 4 <> "  1:12 / 1:36"
+
+    it "moves forward and back with a seek, as far as the elapsed time moves" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs session
+        reach standin (Seconds 48)
+        let seeking sought by = pressing session sought [Seek by] >>= beaten session 1
+        forward <- seeking screen 30
+        stripRow forward `shouldBe` "Btoum Roumada  " <> bar 13 3 <> "  1:18 / 1:36"
+        back <- seeking forward (-30)
+        stripRow back `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+        nudgedBack <- seeking back (-5)
+        stripRow nudgedBack `shouldBe` "Btoum Roumada  " <> bar 7 9 <> "  0:43 / 1:36"
+        nudged <- seeking nudgedBack 5
+        stripRow nudged `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+
+    it "stays at whichever end of the track a seek past it stops at" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs session
+        reach standin (Seconds 90)
+        ended <- pressing session screen [Seek 30] >>= beaten session 1
+        stripRow ended `shouldBe` "Btoum Roumada  " <> bar 16 0 <> "  1:36 / 1:36"
+        reach standin (Seconds 10)
+        started <- pressing session ended [Seek (-30)] >>= beaten session 2
+        stripRow started `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+
+    it "gives way, with the track name and the times, to a playback error" $
+      withStandin $ \standin session -> do
+        screen <- breaking session standin (Unplayable "the file will not play: it is corrupt")
+        stripRow screen `shouldBe` "The file will not play: it is corrupt"
+
+    it "stays empty for a track the server gives no length for, and nothing goes wrong" $
+      withStandin $ \_ session -> do
+        screen <- after session toSilence >>= beaten session 0
+        later <- beaten session 10 screen
+        map stripRow [screen, later]
+          `shouldBe` replicate 2 ("Silence  " <> bar 0 22 <> "  0:00 / 0:00")
+
+    it "shrinks and grows with the width of the screen" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs session
+        reach standin (Seconds 48)
+        partWay <- beaten session 1 screen
+        let across width = last (shown (width, 5) partWay)
+        across 30 `shouldBe` "Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
+        across 80 `shouldBe` "Btoum Roumada  " <> bar 26 26 <> "  0:48 / 1:36"
+
+    it "never wraps the strip onto a second row, however narrow the screen" $
+      withStandin $ \_ session -> do
+        browsing <- after session toDrukqs
+        started <- taking library session browsing Descend >>= beaten session 0
+        shown (20, 5) started
+          `shouldBe` take 4 (shown (20, 5) browsing) <> ["Btoum Roumada    0:0"]
 
   describe "a playback failure in the strip" $ do
     it "puts a skipped track's reason in place of the overlay's contents" $
@@ -403,7 +485,7 @@ spec = do
       withStandin $ \standin session -> do
         screen <- breaking session standin (Unplayable "the file will not play: it is corrupt")
         later <- beaten session 10 screen
-        onStrip later `shouldBe` Just (Overlay "Jynweythek  0:00 / 2:09")
+        onStrip later `shouldBe` overlayOf 1 0
         loaded standin `shouldReturn` map from (take 2 drukqsSongs)
 
     it "keeps a network failure's reason there however long it is left" $
@@ -478,6 +560,11 @@ start = opening artists
 -- first song is then the one Enter picks.
 toDrukqs :: [Command]
 toDrukqs = [MoveDown, Descend, MoveDown, MoveDown, Descend]
+
+-- | The keys that walk to the last song of Selected Ambient Works, which the
+-- server gives no length for, and start it.
+toSilence :: [Command]
+toSilence = [MoveDown, Descend, MoveDown, Descend, MoveDown, MoveDown, Descend]
 
 -- | The keys that walk to the songs of Drukqs and start the first of them, so
 -- that the controls have a song to reach.
@@ -566,6 +653,17 @@ breaking session standin failure = do
 -- | What the strip along the bottom has on it.
 onStrip :: Screen -> Maybe Showing
 onStrip = showing . strip
+
+-- | The overlay for this song of Drukqs, counted from its first, this far
+-- into it.
+overlayOf :: Int -> Int -> Maybe Showing
+overlayOf which seconds = Just (Overlay (Playing (drukqsSongs !! which) (Seconds seconds)))
+
+-- | The strip's row as a terminal 44 columns wide shows it: wide enough to
+-- give the first song of Drukqs a bar of 16 columns, one for every 6s of its
+-- 1:36.
+stripRow :: Screen -> Text
+stripRow = last . shown (44, 5)
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
