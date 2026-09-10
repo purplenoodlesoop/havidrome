@@ -17,6 +17,10 @@ module Havidrome.Browse.Fixtures
   , album
   , song
   , unnumbered
+
+    -- * The progress bar
+  , bar
+  , filledIn
   ) where
 
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
@@ -24,6 +28,7 @@ import Data.Functor.Identity (Identity, runIdentity)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
 import Havidrome.Subsonic
@@ -89,9 +94,13 @@ songsByAlbum :: Map AlbumId [Song]
 songsByAlbum =
   Map.fromList
     [ (AlbumId "b1", sketchesSongs)
-    , (AlbumId "b2", [song "s1" "Xtal" 293 (Just 1), song "s2" "Tha" 549 (Just 2)])
+    , (AlbumId "b2", [song "s1" "Xtal" 293 (Just 1), song "s2" "Tha" 549 (Just 2), silence])
     , (AlbumId "b3", drukqsSongs)
     ]
+
+-- | A song the server gives no length for.
+silence :: Song
+silence = song "s6" "Silence" 0 (Just 3)
 
 -- | An album of a single song, so that playing it through takes one ending.
 sketchesSongs :: [Song]
@@ -126,3 +135,12 @@ song identifier name seconds track =
 -- | A song the server gives no track number for.
 unnumbered :: Text -> Text -> Int -> Song
 unnumbered identifier name seconds = song identifier name seconds Nothing
+
+-- | The now-playing overlay's bar with this many of its columns filled, and
+-- this many more empty.
+bar :: Int -> Int -> Text
+bar filled empty = Text.replicate filled "█" <> Text.replicate empty "░"
+
+-- | How many columns of the bar on this line are filled.
+filledIn :: Text -> Int
+filledIn = Text.count "█"

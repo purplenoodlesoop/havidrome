@@ -7,8 +7,8 @@
 -- were.
 --
 -- While a song is playing the strip is the now-playing overlay — the track
--- name, how far into it the audio has come, and how long it runs. With
--- nothing playing there is no line at all.
+-- name, a bar of how far into it the audio has come, and the elapsed and
+-- total time. With nothing playing there is no line at all.
 --
 -- What goes wrong takes the strip over from the overlay for as long as it
 -- has to be read, and the overlay is underneath it the whole time. How long
@@ -38,7 +38,9 @@ module Havidrome.Browse.Strip
   , moment
   ) where
 
+import Brick (textWidth)
 import Data.Char (toUpper)
+import Data.Ord (clamp)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Clock (getMonotonicTime)
@@ -95,22 +97,46 @@ quiet = Strip {stripPlaying = Nothing, stripSaid = Nothing}
 data Showing
   = -- | What went wrong, in place of the overlay's usual contents.
     Wrong Text
-  | -- | The now-playing overlay.
-    Overlay Text
+  | -- | The now-playing overlay for this song, which reads as 'overlaid' at
+    -- whatever width the screen gives it.
+    Overlay Playing
   deriving stock (Eq, Show)
 
 showing :: Strip -> Maybe Showing
 showing strip = case stripSaid strip of
   Just (Said said _) -> Just (Wrong said)
-  Nothing -> Overlay . overlaid <$> stripPlaying strip
+  Nothing -> Overlay <$> stripPlaying strip
 
--- | The overlay's line: the track name, then how far into it the audio has
--- come and how long it runs.
-overlaid :: Playing -> Text
-overlaid playing =
-  songTitle song <> "  " <> clock (playingElapsed playing) <> " / " <> clock (songDuration song)
+-- | The overlay's line, laid out across this many columns: the track name, a
+-- bar of how far into it the audio has come, and the elapsed and total time.
+--
+-- The name and the times are always there whole, and the bar takes the width
+-- they leave between them. Once they leave none, there is no bar, and the line
+-- runs on past the edge rather than onto a second one.
+overlaid :: Int -> Playing -> Text
+overlaid width playing =
+  Text.intercalate gap [name, progress (width - taken) elapsed total, times]
   where
     song = playingSong playing
+    name = songTitle song
+    elapsed = playingElapsed playing
+    total = songDuration song
+    times = clock elapsed <> " / " <> clock total
+    gap = "  "
+    taken = textWidth name + textWidth times + 2 * textWidth gap
+
+-- | A bar this many columns wide, filled for the part of the total that has
+-- elapsed. Only whole columns fill, so the bar is empty until a column's worth
+-- has played, and full only once all of it has. A total of nothing has no part
+-- to be filled for, and its bar stays empty however long it runs.
+progress :: Int -> Seconds -> Seconds -> Text
+progress width (Seconds elapsed) (Seconds total) =
+  Text.replicate filled "█" <> Text.replicate (columns - filled) "░"
+  where
+    columns = max 0 width
+    filled
+      | total <= 0 = 0
+      | otherwise = clamp (0, columns) (columns * elapsed `div` total)
 
 -- | A length of time as a clock reads it: minutes and seconds, and hours as
 -- well once there are any.
