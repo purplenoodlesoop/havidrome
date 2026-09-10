@@ -19,6 +19,7 @@ library
         Havidrome.Audio.State
         Havidrome.Browse
         Havidrome.Browse.Screen
+        Havidrome.Browse.Strip
         Havidrome.Credentials
         Havidrome.Library
         Havidrome.Playback
@@ -72,6 +73,7 @@ test-suite havidrome-test
         Havidrome.Audio.StateSpec
         Havidrome.Browse.Fixtures
         Havidrome.Browse.ScreenSpec
+        Havidrome.Browse.StripSpec
         Havidrome.BrowseSpec
         Havidrome.Playback.QueueSpec
         Havidrome.Playback.Standin
