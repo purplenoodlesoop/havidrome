@@ -17,7 +17,10 @@ library
         Havidrome.Audio
         Havidrome.Audio.Ipc
         Havidrome.Audio.State
+        Havidrome.Browse
+        Havidrome.Browse.Screen
         Havidrome.Credentials
+        Havidrome.Library
         Havidrome.Playback
         Havidrome.Playback.Queue
         Havidrome.Subsonic
@@ -28,6 +31,7 @@ library
     build-depends:
         aeson,
         base,
+        brick,
         bytestring,
         crypton,
         directory,
@@ -35,17 +39,24 @@ library
         http-client,
         http-client-tls,
         http-types,
+        mtl,
         network,
         process,
         random,
         stm,
         text,
-        unix
+        transformers,
+        unix,
+        vector,
+        vty
 
 executable havidrome
     import:         language
     hs-source-dirs: app
     main-is:        Main.hs
+
+    -- vty runs its input on threads of its own.
+    ghc-options:    -threaded
     build-depends:  base, havidrome
 
 test-suite havidrome-test
@@ -55,21 +66,28 @@ test-suite havidrome-test
     main-is:        Main.hs
     other-modules:
         CredentialsSpec
+        HavidromeSpec
         Havidrome.AudioSpec
         Havidrome.Audio.IpcSpec
         Havidrome.Audio.StateSpec
+        Havidrome.Browse.Fixtures
+        Havidrome.Browse.ScreenSpec
+        Havidrome.BrowseSpec
         Havidrome.Playback.QueueSpec
         Havidrome.Playback.Standin
         Havidrome.PlaybackSpec
         Havidrome.Subsonic.ClientSpec
         Havidrome.Subsonic.Fixtures
         Havidrome.Subsonic.ProtocolSpec
+        Terminal
 
     build-depends:
         QuickCheck,
         aeson,
         base,
+        brick,
         bytestring,
+        containers,
         directory,
         filepath,
         havidrome,
@@ -79,4 +97,7 @@ test-suite havidrome-test
         stm,
         temporary,
         text,
-        unix
+        transformers,
+        unix,
+        vector,
+        vty
