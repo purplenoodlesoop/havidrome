@@ -5,6 +5,7 @@ import Havidrome.Audio.IpcSpec qualified as IpcSpec
 import Havidrome.Audio.StateSpec qualified as StateSpec
 import Havidrome.AudioSpec qualified as AudioSpec
 import Havidrome.Browse.ScreenSpec qualified as ScreenSpec
+import Havidrome.Browse.StripSpec qualified as StripSpec
 import Havidrome.BrowseSpec qualified as BrowseSpec
 import Havidrome.LoginSpec qualified as LoginSpec
 import Havidrome.Playback.QueueSpec qualified as QueueSpec
@@ -27,4 +28,5 @@ main = hspec $ do
   describe "Havidrome.Playback" PlaybackSpec.spec
   describe "Havidrome.Browse" BrowseSpec.spec
   describe "Havidrome.Browse.Screen" ScreenSpec.spec
+  describe "Havidrome.Browse.Strip" StripSpec.spec
   describe "Havidrome.Login" LoginSpec.spec

@@ -1,12 +1,13 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | The browsing screen: the level's list under its title, the keys that move
--- through it, and the brick application that puts the two together.
+-- | The browsing screen: the level's list under its title, the strip along the
+-- bottom, the keys that move through it, and the brick application that puts
+-- them together.
 --
 -- The screen is also where a song is picked: Enter on one hands its album to
 -- the playback session, and the audio runs on underneath while the lists go on
--- being browsed.
+-- being browsed. What that audio is doing is what the bottom strip says.
 module Havidrome.Browse.Screen
   ( -- * The screen
     Screen (..)
@@ -61,7 +62,6 @@ import Data.Foldable (traverse_)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Graphics.Vty qualified as Vty
-import Havidrome.Audio (Failure)
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
   , Name
@@ -70,6 +70,8 @@ import Havidrome.Browse
   , selected
   )
 import Havidrome.Browse qualified as Browse
+import Havidrome.Browse.Strip (Moment, Showing (Overlay, Wrong), Strip)
+import Havidrome.Browse.Strip qualified as Strip
 import Havidrome.Library (Library)
 import Havidrome.Playback (Session, startingAt)
 import Havidrome.Playback qualified as Playback
@@ -81,17 +83,18 @@ import Havidrome.Subsonic
   , explain
   )
 
--- | Everything on screen: the level being browsed, and whatever went wrong
--- last, which sits in the strip along the bottom until the next key press.
+-- | Everything on screen: the level being browsed, and the strip along the
+-- bottom that says what the audio is doing and what last went wrong.
 data Screen = Screen
   { browse :: Browse
-  , trouble :: Maybe Text
+  , strip :: Strip
   }
   deriving stock (Show)
 
--- | The screen a run opens on: the artist list, nothing wrong yet.
+-- | The screen a run opens on: the artist list, nothing playing, nothing
+-- wrong yet.
 opening :: [Artist] -> Screen
-opening artists = Screen {browse = atArtists artists, trouble = Nothing}
+opening artists = Screen {browse = atArtists artists, strip = Strip.quiet}
 
 -- | What a key press means. Nothing else on the browsing screen does anything.
 data Command
@@ -179,31 +182,36 @@ step library session instruction screen = case instruction of
   Descend -> case picked (browse screen) of
     Just (album, song) -> do
       traverse_ (Playback.start session) (startingAt album (songId song))
-      pure (Just quiet)
+      pure (Just taken)
     Nothing -> do
       descended <- runExceptT (Browse.descend library (browse screen))
       pure . Just $ case descended of
-        Left failure -> quiet {trouble = Just (explain failure)}
-        Right level -> quiet {browse = level}
+        Left failure -> taken {strip = Strip.wrong (explain failure) (strip taken)}
+        Right level -> taken {browse = level}
   where
-    -- Whatever a key press does, it first clears what went wrong before it.
-    quiet = screen {trouble = Nothing}
-    here move = pure (Just quiet {browse = move (browse screen)})
-    toAudio act = act >> pure (Just quiet)
+    -- Whatever a key press does, the strip hears about it first.
+    taken = screen {strip = Strip.pressed (strip screen)}
+    here move = pure (Just taken {browse = move (browse screen)})
+    toAudio act = act >> pure (Just taken)
 
--- | The beat the player hears between key presses. There is nothing to it: it
--- is the moment on which what the audio has done is taken in.
-data Beat = Beat
+-- | The beat the player hears between key presses: the moment it happened at,
+-- which is both when what the audio has done is taken in and the clock a line
+-- with a few seconds to live is measured against.
+newtype Beat = Beat Moment
   deriving stock (Eq, Show)
 
 -- | What the player takes in on a beat: everything the audio has done since
--- the last one. This is where an album carries itself — a song running out
--- starts the next song of that album, with no key pressed.
+-- the last one, and how far it has come into the song it is on.
 --
--- It hands back the failures the bottom strip is to show; putting them there
--- is the now-playing overlay's, which is not built yet.
-onBeat :: Session -> IO [Failure]
-onBeat = Playback.attend
+-- This is where an album carries itself — a song running out starts the next
+-- song of that album, with no key pressed — and where the bottom strip is kept
+-- true: the overlay's elapsed time moves on with the audio, and a failure the
+-- audio reports lands on the strip in place of the overlay's contents.
+onBeat :: Session -> Moment -> Screen -> IO Screen
+onBeat session at screen = do
+  failures <- Playback.attend session
+  playing <- Playback.nowPlaying session
+  pure screen {strip = Strip.beat at playing failures (strip screen)}
 
 -- | Hands the terminal to the browsing screen, and takes it back when the
 -- player is left. The beat runs for exactly as long as the screen is up.
@@ -215,7 +223,10 @@ browsing library session screen = do
 
 -- | A beat, then the next, for as long as it is left running.
 beating :: BChan Beat -> IO ()
-beating beats = forever (writeBChan beats Beat >> threadDelay interval)
+beating beats = forever $ do
+  at <- Strip.moment
+  writeBChan beats (Beat at)
+  threadDelay interval
 
 -- | How long a beat lasts, in microseconds: short enough that one song follows
 -- another without a silence to hear, long enough that the player is idle
@@ -248,20 +259,24 @@ handle library session = \case
         screen <- get
         stepped <- liftIO (step library session instruction screen)
         maybe halt put stepped
-  AppEvent Beat -> void (liftIO (onBeat session))
+  AppEvent (Beat at) -> get >>= liftIO . onBeat session at >>= put
   _ -> pure ()
 
 -- | The whole screen: the title of the level, its list under it filling
--- everything left, and the bottom strip when there is something to say.
+-- everything left, and the one-line strip along the bottom whenever it has
+-- anything on it.
 draw :: Screen -> [Widget Name]
 draw screen =
   [ vBox
       [ withAttr titleAttribute (line (title (browse screen)))
       , level (browse screen)
-      , maybe emptyWidget (withAttr troubleAttribute . line) (trouble screen)
+      , maybe emptyWidget bottom (Strip.showing (strip screen))
       ]
   ]
   where
+    bottom = \case
+      Wrong said -> withAttr troubleAttribute (line said)
+      Overlay said -> withAttr overlayAttribute (line said)
     level = \case
       AtArtists artists -> renderList (const (line . row)) True artists
       AtAlbums _ albums -> renderList (const (line . row)) True albums
@@ -301,17 +316,20 @@ column :: Int -> Maybe Int -> Text
 column width =
   maybe (Text.replicate width " ") (Text.justifyRight width ' ' . Text.pack . show)
 
--- | The selected row is the one in reverse video; the title is bold and the
--- bottom strip red. Everything else is the terminal's own colours.
+-- | The selected row is the one in reverse video; the title line and the
+-- now-playing overlay are bold, and a reason in the bottom strip is red.
+-- Everything else is the terminal's own colours.
 theme :: AttrMap
 theme =
   attrMap
     Vty.defAttr
     [ (listSelectedFocusedAttr, Vty.defAttr `Vty.withStyle` Vty.reverseVideo)
     , (titleAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
+    , (overlayAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
     , (troubleAttribute, Vty.defAttr `Vty.withForeColor` Vty.red)
     ]
 
-titleAttribute, troubleAttribute :: AttrName
+titleAttribute, overlayAttribute, troubleAttribute :: AttrName
 titleAttribute = attrName "title"
+overlayAttribute = attrName "overlay"
 troubleAttribute = attrName "trouble"
