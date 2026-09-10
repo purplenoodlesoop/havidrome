@@ -1,9 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | The browsing screen: the level's list under its title, the strip along the
--- bottom, the keys that move through it, and the brick application that puts
--- them together.
+-- | The browsing screen: every level browsed into as a column of its own, side
+-- by side, the strip along the bottom, the keys that move through the
+-- rightmost column, and the brick application that puts them together.
 --
 -- The screen is also where a song is picked: Enter on one hands its album to
 -- the playback session, and the audio runs on underneath while the lists go on
@@ -34,8 +34,8 @@ module Havidrome.Browse.Screen
     -- * What it looks like
   , draw
   , theme
-  , title
   , row
+  , shorten
   , marking
   , mark
   ) where
@@ -51,10 +51,12 @@ import Brick
   , Widget (Widget)
   , attrMap
   , attrName
-  , availWidth
+  , availWidthL
   , customMainWithDefaultVty
   , emptyWidget
   , getContext
+  , hBox
+  , hLimit
   , halt
   , neverShowCursor
   , padRight
@@ -62,8 +64,10 @@ import Brick
   , txt
   , vBox
   , withAttr
+  , (<+>)
   )
 import Brick.BChan (BChan, newBChan, writeBChan)
+import Brick.Widgets.Border (vBorder)
 import Brick.Widgets.List (listSelectedFocusedAttr, renderList)
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (bracket)
@@ -71,6 +75,7 @@ import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get, put)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Data.Char (isControl)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
@@ -79,9 +84,9 @@ import Graphics.Vty qualified as Vty
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
   , Name
+  , Rows
   , atArtists
   , picked
-  , selected
   )
 import Havidrome.Browse qualified as Browse
 import Havidrome.Browse.Strip (Moment, Showing (Overlay, Wrong), Strip)
@@ -97,6 +102,7 @@ import Havidrome.Subsonic
   , SubsonicError
   , explain
   )
+import Lens.Micro ((^.))
 
 -- | Everything on screen: the level being browsed, the strip along the bottom
 -- that says what the audio is doing and what last went wrong, the song the
@@ -335,14 +341,13 @@ handle library session = \case
   AppEvent (Beat at) -> get >>= liftIO . onBeat session at >>= put
   _ -> pure ()
 
--- | The whole screen: the title of the level, its list under it filling
--- everything left, and the one-line strip along the bottom whenever it has
--- anything on it.
+-- | The whole screen: every level browsed into, side by side, filling
+-- everything above the one-line strip along the bottom, which is there
+-- whenever it has anything on it.
 draw :: Screen -> [Widget Name]
 draw screen =
   [ vBox
-      [ withAttr titleAttribute (line (title (browse screen)))
-      , level (browse screen)
+      [ levels (marked screen) (browse screen)
       , maybe emptyWidget bottom (Strip.showing (strip screen))
       ]
   ]
@@ -350,32 +355,105 @@ draw screen =
     bottom = \case
       Wrong said -> withAttr troubleAttribute (line said)
       Overlay playing -> withAttr overlayAttribute (across (`Strip.overlaid` playing))
-    level = \case
-      AtArtists artists -> renderList (const (line . row)) True artists
-      AtAlbums _ albums -> renderList (const (line . row)) True albums
-      AtSongs _ _ songs -> renderList (const (line . marking (marked screen))) True songs
-
--- | A row of text across the full width, so that highlighting one covers the
--- line and not just its letters.
-line :: Text -> Widget Name
-line = padRight Max . txt
 
 -- | A row laid out for the width the screen has for it when it is drawn, and
--- across the whole of that width.
+-- across the whole of that width. What it lays out is left whole, so a row
+-- that runs past the edge is cut there by the terminal.
 across :: (Int -> Text) -> Widget Name
 across laidOut = Widget Greedy Fixed $ do
-  context <- getContext
-  render (line (laidOut (availWidth context)))
+  width <- (^. availWidthL) <$> getContext
+  render (padRight Max (txt (laidOut width)))
 
--- | Where in the library the level on screen is: the artist list says so, and
--- the lists under it are named by what was descended into.
-title :: Browse -> Text
-title = \case
-  AtArtists _ -> "Artists"
-  AtAlbums artists _ -> named artistName artists
-  AtSongs artists albums _ -> named artistName artists <> " — " <> named albumName albums
+-- | Every level as a column of its own, the artists at the left and each level
+-- to the right of the one it was descended from. The rightmost is the level
+-- being browsed; the columns left of it show what was picked in them. The
+-- song playback is on carries its mark in the song column, if that column is
+-- on screen and the song is in it.
+levels :: Maybe SongId -> Browse -> Widget Name
+levels on = \case
+  AtArtists artists ->
+    columns [browsed "Artists" row artists]
+  AtAlbums artists albums ->
+    columns [picking "Artists" row artists, browsed "Albums" row albums]
+  AtSongs artists albums songs ->
+    columns
+      [ picking "Artists" row artists
+      , picking "Albums" row albums
+      , browsed "Songs" (marking on) songs
+      ]
   where
-    named name = maybe "" name . selected
+    browsed, picking :: Text -> (a -> Text) -> Rows a -> Widget Name
+    browsed = column True
+    picking = column False
+
+-- | One level's column: its heading, and its list under it, each item reading
+-- as the text given for it. Whether the level is the one being browsed decides
+-- how its selected row is drawn — as the row the keys are on, or as the row
+-- picked in it.
+column :: Bool -> Text -> (a -> Text) -> Rows a -> Widget Name
+column beingBrowsed heading reading items =
+  vBox
+    [ withAttr headingAttribute (line heading)
+    , renderList (\isSelected -> drawn isSelected . line . reading) beingBrowsed items
+    ]
+  where
+    -- The picked row has a look of its own rather than one brick's selection
+    -- looks are layered onto, so that nothing of it carries over onto the row
+    -- the keys are on.
+    drawn isSelected
+      | isSelected && not beingBrowsed = withAttr pickedAttribute
+      | otherwise = id
+
+-- | Columns side by side, left to right. The width is shared out between as
+-- many columns as there are levels, however many are on screen, so a column
+-- keeps its place and its width while the ones to its right come and go. Each
+-- column but the first is ruled off from the one to its left.
+columns :: [Widget Name] -> Widget Name
+columns shown = Widget Greedy Greedy $ do
+  width <- (^. availWidthL) <$> getContext
+  render (hBox (zipWith3 place [0 :: Int ..] (shares depth width) shown))
+  where
+    place at width widget
+      | at == 0 = hLimit width widget
+      | otherwise = hLimit width (vBorder <+> widget)
+
+-- | How many levels there are: artists, albums, songs.
+depth :: Int
+depth = 3
+
+-- | A width shared out between so many columns as evenly as it goes, the
+-- columns at the right taking what does not divide.
+shares :: Int -> Int -> [Int]
+shares count width =
+  [base + fromEnum (at >= count - over) | at <- [0 .. count - 1]]
+  where
+    (base, over) = max 0 width `divMod` count
+
+-- | A row of text across the full width it is given, so that highlighting one
+-- covers the line and not just its letters, and shortened to that width when
+-- it runs longer.
+line :: Text -> Widget Name
+line said = Widget Greedy Fixed $ do
+  width <- (^. availWidthL) <$> getContext
+  render (padRight Max (txt (shorten width said)))
+
+-- | Text on one line of at most this many terminal columns. What does not fit
+-- is cut off, and an ellipsis at the end says so. A character that would move
+-- the terminal onto another line, or anywhere else, is a space instead.
+shorten :: Int -> Text -> Text
+shorten room said
+  | Vty.safeWctwidth flat <= room = flat
+  | room < Vty.safeWctwidth ellipsis = Text.empty
+  | otherwise = fitting (room - Vty.safeWctwidth ellipsis) flat <> ellipsis
+  where
+    flat = Text.map (\character -> if isControl character then ' ' else character) said
+    ellipsis = "…"
+
+-- | The longest start of the text that takes at most this many columns.
+fitting :: Int -> Text -> Text
+fitting room said = Text.take (length (takeWhile (<= room) reaches)) said
+  where
+    reaches = scanl1 (+) (map Vty.safeWcwidth (Text.unpack said))
 
 -- | What one item of a level reads as. An artist is its name; an album carries
 -- the year it is ordered by, a song the track number it is ordered by, each in
@@ -387,10 +465,10 @@ instance Row Artist where
   row = artistName
 
 instance Row Album where
-  row album = column 4 (albumYear album) <> "  " <> albumName album
+  row album = figure 4 (albumYear album) <> "  " <> albumName album
 
 instance Row Song where
-  row song = column 3 (songTrack song) <> "  " <> songTitle song
+  row song = figure 3 (songTrack song) <> "  " <> songTitle song
 
 -- | What a song reads as in the song list: its row, and when it is the song
 -- playback is on, the mark immediately before its name. The mark takes the
@@ -401,31 +479,34 @@ instance Row Song where
 -- playing out of it.
 marking :: Maybe SongId -> Song -> Text
 marking on song
-  | on == Just (songId song) = column 3 (songTrack song) <> " " <> mark <> songTitle song
+  | on == Just (songId song) = figure 3 (songTrack song) <> " " <> mark <> songTitle song
   | otherwise = row song
 
 -- | The mark on the song playback is on.
 mark :: Text
 mark = "▶"
 
-column :: Int -> Maybe Int -> Text
-column width =
+figure :: Int -> Maybe Int -> Text
+figure width =
   maybe (Text.replicate width " ") (Text.justifyRight width ' ' . Text.pack . show)
 
--- | The selected row is the one in reverse video; the title line and the
--- now-playing overlay are bold, and a reason in the bottom strip is red.
--- Everything else is the terminal's own colours.
+-- | The row the keys are on is in reverse video, and the row picked in a
+-- column left of it is bold, as are the columns' headings and the now-playing
+-- overlay; a reason in the bottom strip is red. Everything else is the
+-- terminal's own colours.
 theme :: AttrMap
 theme =
   attrMap
     Vty.defAttr
     [ (listSelectedFocusedAttr, Vty.defAttr `Vty.withStyle` Vty.reverseVideo)
-    , (titleAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
+    , (pickedAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
+    , (headingAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
     , (overlayAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
     , (troubleAttribute, Vty.defAttr `Vty.withForeColor` Vty.red)
     ]
 
-titleAttribute, overlayAttribute, troubleAttribute :: AttrName
-titleAttribute = attrName "title"
+pickedAttribute, headingAttribute, overlayAttribute, troubleAttribute :: AttrName
+pickedAttribute = attrName "picked"
+headingAttribute = attrName "heading"
 overlayAttribute = attrName "overlay"
 troubleAttribute = attrName "trouble"

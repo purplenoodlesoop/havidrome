@@ -1,12 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
 
--- | Where browsing stands: one list on screen at a time, artists above an
--- artist's albums above an album's songs.
+-- | Where browsing stands: artists, then an artist's albums, then an album's
+-- songs, the deepest of them the level being browsed.
 --
--- A t'Browse' carries every level above the one on screen, each with the
--- selection it was left at, so that going back up finds a list exactly as it
--- was. Levels are only ever built from a 'Library', so a list on screen is
--- always one the server gave, in the order the server gave it.
+-- A t'Browse' carries the level being browsed and every level it was
+-- descended from, each with the selection it was left at — the item picked in
+-- it — so that the levels above can be shown beside it and going back up finds
+-- a list exactly as it was. Levels are only ever built from a 'Library', so a
+-- list on screen is always one the server gave, in the order the server gave
+-- it.
 module Havidrome.Browse
   ( -- * The three levels
     Browse (..)
@@ -43,7 +45,7 @@ data Name
 -- | One level's items, remembering which of them is selected.
 type Rows a = List Name a
 
--- | The level on screen, and every level above it.
+-- | The level being browsed, and every level above it.
 data Browse
   = -- | The artist list, which nothing sits above.
     AtArtists (Rows Artist)
