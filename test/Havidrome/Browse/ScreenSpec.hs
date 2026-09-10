@@ -18,6 +18,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Graphics.Vty qualified as Vty
 import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
+import Havidrome.Browse (Browse (AtSongs), selected)
 import Havidrome.Browse.Fixtures
   ( album
   , artist
@@ -44,9 +45,11 @@ import Havidrome.Browse.Screen
       , Seek
       )
   , Ending (LoggedOut, Quit)
-  , Screen (strip)
+  , Screen (browse, strip)
   , command
   , draw
+  , mark
+  , marking
   , onBeat
   , opening
   , row
@@ -72,6 +75,7 @@ import Havidrome.Playback.Standin
 import Havidrome.Subsonic
   ( Seconds (Seconds)
   , Song (songId)
+  , SongId (SongId)
   , SubsonicError (NetworkFailure)
   )
 import Terminal (inBold, inReverse, screenshot)
@@ -167,10 +171,12 @@ spec = do
       loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
       playing session `shouldReturn` Just (drukqsSongs !! 0)
 
-    it "leaves the lists exactly where they were" $ withStandin $ \_ session -> do
-      browsing <- after session toDrukqs
-      picking <- taking library session browsing Descend
-      shown (60, 6) picking `shouldBe` shown (60, 6) browsing
+    it "leaves the lists exactly where they were, but for the mark on it" $
+      withStandin $ \_ session -> do
+        browsing <- after session toDrukqs
+        picking <- taking library session browsing Descend
+        unmarked (shown (60, 6) picking) `shouldBe` shown (60, 6) browsing
+        onKeys picking `shouldBe` ["    ▶Btoum Roumada"]
 
     it "then plays the rest of its album, with nothing more pressed" $
       withStandin $ \standin session -> do
@@ -390,7 +396,7 @@ spec = do
       withStandin $ \_ session -> do
         browsing <- after session toDrukqs
         started <- taking library session browsing Descend >>= beaten session 0
-        shown (60, 5) started
+        unmarked (shown (60, 5) started)
           `shouldBe` take 4 (shown (60, 5) browsing) <> ["Btoum Roumada  " <> bar 0 32 <> "  0:00 / 1:36"]
 
     it "is gone when the album's last song finishes, the list left where it was" $
@@ -479,7 +485,7 @@ spec = do
       withStandin $ \_ session -> do
         browsing <- after session toDrukqs
         started <- taking library session browsing Descend >>= beaten session 0
-        shown (20, 5) started
+        unmarked (shown (20, 5) started)
           `shouldBe` take 4 (shown (20, 5) browsing) <> ["Btoum Roumada    0:0"]
 
   describe "a playback failure in the strip" $ do
@@ -509,6 +515,102 @@ spec = do
         onStrip moved `shouldBe` Nothing
         onKeys moved `shouldBe` ["  1  Jynweythek"]
 
+  describe "the mark on the playing song" $ do
+    it "is immediately before its name, with the selection on it" $
+      withStandin $ \_ session -> do
+        screen <- onDrukqs session
+        wide 5 screen
+          `shouldBe` [ across ["Artists", "Albums", "Songs"]
+                     , across ["anohni", "      Sketches", "    ▶Btoum Roumada"]
+                     , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1  Jynweythek"]
+                     , across ["zebra", "2001  Drukqs", "  2  Vordhosbn"]
+                     , "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
+                     ]
+        onKeys screen `shouldBe` ["    ▶Btoum Roumada"]
+
+    it "stays on it with the selection moved off it, and on no other row" $
+      withStandin $ \_ session -> do
+        screen <- onDrukqs session >>= flip (pressing session) [MoveDown, MoveDown]
+        carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+        onKeys screen `shouldBe` ["  2  Vordhosbn"]
+
+    it "is on a picked song from Enter, while it is still loading" $
+      withStandin $ \_ session -> do
+        screen <- after session playingDrukqs
+        carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+
+    it "stays where it is when the song is paused" $ withStandin $ \standin session -> do
+      screen <- onDrukqs session >>= flip (pressing session) [PauseOrResume] >>= beaten session 1
+      motionOf standin `shouldReturn` Just Paused
+      carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+
+    it "is still there after Esc out of its album and Enter back into it" $
+      withStandin $ \_ session -> do
+        screen <- onDrukqs session >>= flip (pressing session) [Ascend, Descend]
+        songsOf screen `shouldBe` Just ("Aphex Twin", "2001  Drukqs")
+        carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+
+    it "is on no song of another album of the same artist" $
+      withStandin $ \_ session -> do
+        screen <- onDrukqs session >>= flip (pressing session) toSketches
+        songsOf screen `shouldBe` Just ("Aphex Twin", "      Sketches")
+        carrying screen `shouldBe` []
+
+    it "is on no song of another artist's album" $ withStandin $ \_ session -> do
+      screen <-
+        onDrukqs session
+          >>= flip (pressing session) [Ascend, Ascend, MoveUp, Descend, MoveDown, Descend]
+      songsOf screen `shouldBe` Just ("anohni", "2017  Paradise")
+      carrying screen `shouldBe` []
+
+    it "moves on with the album when a song finishes by itself" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs session >>= \started -> ranOut standin session started 1
+        carrying screen `shouldBe` ["  1 ▶Jynweythek"]
+
+    it "moves to the next song on n" $ withStandin $ \_ session -> do
+      screen <- onDrukqs session >>= flip (pressing session) [NextSong]
+      carrying screen `shouldBe` ["  1 ▶Jynweythek"]
+
+    it "moves to the previous song on p" $ withStandin $ \_ session -> do
+      screen <- after session (toDrukqs <> [MoveDown, Descend, PreviousSong])
+      carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+
+    it "moves past a skipped track onto the song that plays instead" $
+      withStandin $ \standin session -> do
+        screen <- breaking session standin (Unplayable "the file will not play: it is corrupt")
+        carrying screen `shouldBe` ["  1 ▶Jynweythek"]
+
+    it "moves to another song picked with Enter" $ withStandin $ \_ session -> do
+      screen <- onDrukqs session >>= flip (pressing session) [MoveDown, MoveDown, Descend]
+      carrying screen `shouldBe` ["  2 ▶Vordhosbn"]
+
+    it "is on no song once the album's last song has finished" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs session >>= \started -> ranOut standin session started 3
+        songsOf screen `shouldBe` Just ("Aphex Twin", "2001  Drukqs")
+        carrying screen `shouldBe` []
+
+    it "is on no song once n on the last song has ended the playing" $
+      withStandin $ \_ session -> do
+        screen <- after session (toDrukqs <> [MoveDown, MoveDown, Descend, NextSong])
+        carrying screen `shouldBe` []
+
+    it "is on no song once a network failure has stopped the playing" $
+      withStandin $ \standin session -> do
+        screen <- breaking session standin (Unreachable "the server could not be reached: it is down")
+        carrying screen `shouldBe` []
+
+    it "is never on an album or an artist" $ withStandin $ \_ session -> do
+      albums <- onDrukqs session >>= flip (pressing session) [Ascend]
+      names <- pressing session albums [Ascend]
+      map carrying [albums, names] `shouldBe` [[], []]
+
+    it "is on no song after logging out and in again" $ withStandin $ \_ session -> do
+      ends session LogOut playingDrukqs `shouldReturn` Just LoggedOut
+      loggedIn <- after session toDrukqs
+      carrying loggedIn `shouldBe` []
+
   describe "row" $ do
     it "shows an artist by name" $
       row (artist "a" "Aphex Twin") `shouldBe` "Aphex Twin"
@@ -524,6 +626,19 @@ spec = do
 
     it "leaves the column blank for a song the server gave no track number" $
       row (song "s" "Btoum Roumada" 96 Nothing) `shouldBe` "     Btoum Roumada"
+
+  describe "marking" $ do
+    it "puts the mark immediately before the name of the song playback is on" $
+      marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2))
+        `shouldBe` "  2 " <> mark <> "Vordhosbn"
+
+    it "keeps the name in line with the unmarked rows around it" $
+      Text.length (marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2)))
+        `shouldBe` Text.length (row (song "s" "Vordhosbn" 293 (Just 2)))
+
+    it "leaves every other song as its row" $ do
+      marking (Just (SongId "t")) (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2  Vordhosbn"
+      marking Nothing (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2  Vordhosbn"
 
   describe "the columns" $ do
     it "open on the artist list alone, one column at the left" $ do
@@ -859,3 +974,20 @@ ambientColumns =
   , across ["zebra", "2001  Drukqs", "  3  Silence"]
   , across ["", "", ""]
   ]
+
+-- | The rows that carry the playing mark, as the column each is in reads them,
+-- on a terminal wide enough to leave every row whole.
+carrying :: Screen -> [Text]
+carrying = filter (Text.isInfixOf mark) . concatMap (map Text.stripEnd . Text.splitOn "│") . wide 8
+
+-- | The same rows with the mark given back the space it stands in, which is
+-- what they read as with nothing playing.
+unmarked :: [Text] -> [Text]
+unmarked = map (Text.replace mark " ")
+
+-- | The artist and the album whose songs are the column being browsed, as
+-- their rows read, when songs are what is being browsed.
+songsOf :: Screen -> Maybe (Text, Text)
+songsOf screen = case browse screen of
+  AtSongs names records _ -> (,) <$> (row <$> selected names) <*> (row <$> selected records)
+  _ -> Nothing
