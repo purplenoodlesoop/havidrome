@@ -107,8 +107,9 @@ data Command
     Quit
   deriving stock (Eq, Show)
 
--- | The key map: arrows and @j@\/@k@ move, Enter descends, Esc goes back, @q@
--- quits. Every other key does nothing.
+-- | The key map: arrows and @j@\/@k@ move, Enter descends, Esc goes back, and
+-- Ctrl+C leaves the player. Every other key does nothing: no letter quits,
+-- @q@ included, so it is as inert here as any other unbound key.
 command :: Vty.Key -> [Vty.Modifier] -> Maybe Command
 command key modifiers = case (key, modifiers) of
   (Vty.KUp, []) -> Just MoveUp
@@ -117,7 +118,7 @@ command key modifiers = case (key, modifiers) of
   (Vty.KChar 'j', []) -> Just MoveDown
   (Vty.KEnter, []) -> Just Descend
   (Vty.KEsc, []) -> Just Ascend
-  (Vty.KChar 'q', []) -> Just Quit
+  (Vty.KChar 'c', [Vty.MCtrl]) -> Just Quit
   _ -> Nothing
 
 
@@ -191,8 +192,8 @@ beating beats = forever (writeBChan beats Beat >> threadDelay interval)
 interval :: Int
 interval = 100_000
 
--- | The player, browsing the library it is given until @q@, over the session
--- that plays what is picked in it.
+-- | The player, browsing the library it is given until Ctrl+C, over the
+-- session that plays what is picked in it.
 application :: Library (ExceptT SubsonicError IO) -> Session -> App Screen Beat Name
 application library session =
   App

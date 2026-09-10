@@ -69,16 +69,20 @@ spec = do
       command Vty.KEnter [] `shouldBe` Just Descend
       command Vty.KEsc [] `shouldBe` Just Ascend
 
-    it "quits on q" $
-      command (Vty.KChar 'q') [] `shouldBe` Just Quit
+    it "quits on Ctrl+C" $
+      command (Vty.KChar 'c') [Vty.MCtrl] `shouldBe` Just Quit
 
     it "ignores every other key" $ do
       command (Vty.KChar 'x') [] `shouldBe` Nothing
       command Vty.KLeft [] `shouldBe` Nothing
+      command (Vty.KChar 'c') [] `shouldBe` Nothing
+
+    it "is left by no letter key, q least of all" $ do
+      command (Vty.KChar 'q') [] `shouldBe` Nothing
       command (Vty.KChar 'q') [Vty.MCtrl] `shouldBe` Nothing
 
   describe "step" $ do
-    it "leaves the player on q, at any level" $ withStandin $ \_ session -> do
+    it "leaves the player on Ctrl+C, at any level" $ withStandin $ \_ session -> do
       quitting session [] >>= (`shouldSatisfy` isNothing)
       quitting session [Descend] >>= (`shouldSatisfy` isNothing)
       quitting session [Descend, Descend] >>= (`shouldSatisfy` isNothing)
@@ -171,7 +175,7 @@ spec = do
         ranOut standin session 2
         loaded standin `shouldReturn` map from drukqsSongs
 
-  describe "q with a song playing" $
+  describe "Ctrl+C with a song playing" $
     it "stops the audio on the way out of the player" $ withStandin $ \standin session -> do
       left <- quitting session (toDrukqs <> [Descend])
       left `shouldSatisfy` isNothing
