@@ -23,9 +23,10 @@ module Havidrome.Browse
     -- * Reading one
   , rows
   , selected
+  , picked
   ) where
 
-import Brick.Widgets.List (List, list, listMoveBy, listSelectedElement)
+import Brick.Widgets.List (List, list, listElements, listMoveBy, listSelectedElement)
 import Data.Vector qualified as Vector
 import Havidrome.Library (Library)
 import Havidrome.Library qualified as Library
@@ -63,6 +64,18 @@ rows name items = list name (Vector.fromList items) 1
 -- | The item the selection is on, or nothing at all when the level is empty.
 selected :: Rows a -> Maybe a
 selected = fmap snd . listSelectedElement
+
+-- | What Enter on a song picks: the album whose songs are on screen, in album
+-- order, and the song of it the selection is on. Playing them is playback's
+-- business, so browsing only says which they are.
+--
+-- The two levels above a song have no song to pick, and an album with no songs
+-- has nothing selected in it; neither picks anything.
+picked :: Browse -> Maybe ([Song], Song)
+picked = \case
+  AtArtists _ -> Nothing
+  AtAlbums _ _ -> Nothing
+  AtSongs _ _ songs -> (,) (Vector.toList (listElements songs)) <$> selected songs
 
 -- | The selection one row up, or where it already is at the top of the list.
 moveUp :: Browse -> Browse

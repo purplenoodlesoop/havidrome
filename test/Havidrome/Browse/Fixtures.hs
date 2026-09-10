@@ -12,6 +12,7 @@ module Havidrome.Browse.Fixtures
   , artists
   , aphexAlbums
   , drukqsSongs
+  , sketchesSongs
   , artist
   , album
   , song
@@ -44,8 +45,10 @@ type Answer = ExceptT SubsonicError Identity
 answered :: Answer a -> Either SubsonicError a
 answered = runIdentity . runExceptT
 
--- | The whole stand-in library, which never fails.
-library :: Library Answer
+-- | The whole stand-in library, which never fails. It answers wherever it is
+-- asked: the browsing specs ask it outside 'IO', the screen's specs ask it
+-- alongside a playback session, which is in 'IO'.
+library :: (Applicative f) => Library f
 library =
   Library
     { Library.artists = pure artists
@@ -54,7 +57,7 @@ library =
     }
 
 -- | A library the server never answers for.
-failing :: SubsonicError -> Library Answer
+failing :: (Monad f) => SubsonicError -> Library (ExceptT SubsonicError f)
 failing failure =
   Library
     { Library.artists = throwE failure
@@ -85,10 +88,14 @@ aphexAlbums =
 songsByAlbum :: Map AlbumId [Song]
 songsByAlbum =
   Map.fromList
-    [ (AlbumId "b1", [song "s0" "Untitled" 61 (Just 1)])
+    [ (AlbumId "b1", sketchesSongs)
     , (AlbumId "b2", [song "s1" "Xtal" 293 (Just 1), song "s2" "Tha" 549 (Just 2)])
     , (AlbumId "b3", drukqsSongs)
     ]
+
+-- | An album of a single song, so that playing it through takes one ending.
+sketchesSongs :: [Song]
+sketchesSongs = [song "s0" "Untitled" 61 (Just 1)]
 
 -- | An album carrying a song the server gives no track number for, which the
 -- client puts first.

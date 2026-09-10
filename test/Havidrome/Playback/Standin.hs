@@ -12,6 +12,10 @@ module Havidrome.Playback.Standin
   , newStandin
   , standinAudio
 
+    -- * A session over one
+  , withStandin
+  , address
+
     -- * What it was told
   , loaded
   , motionOf
@@ -38,7 +42,8 @@ import Havidrome.Audio.State
   , initial
   , step
   )
-import Havidrome.Subsonic.Types (Seconds)
+import Havidrome.Playback (Session, newSession)
+import Havidrome.Subsonic.Types (Seconds, SongId (SongId))
 
 data Standin = Standin
   { standinState :: IORef State
@@ -65,6 +70,18 @@ standinAudio standin =
     , nextEvent = atomically (tryReadTChan (standinEvents standin))
     , awaitEvent = atomically (readTChan (standinEvents standin))
     }
+
+-- | A session over a stand-in backend, and the stand-in behind it: the specs
+-- ask the session for something and see what the backend was told.
+withStandin :: (Standin -> Session -> IO a) -> IO a
+withStandin use = do
+  standin <- newStandin
+  session <- newSession (standinAudio standin) address
+  use standin session
+
+-- | Where a song's audio lives, as the Subsonic client would say.
+address :: SongId -> Text
+address (SongId identifier) = "https://music.example.org/rest/stream?id=" <> identifier
 
 -- | Every track it has been told to play, in the order it was told, each with
 -- the position it was told to start at.
