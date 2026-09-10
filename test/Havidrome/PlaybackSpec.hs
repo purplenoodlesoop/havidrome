@@ -181,6 +181,22 @@ spec = do
       motionOf standin `shouldReturn` Just Running
       nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60))
 
+    it "holds a running song and lets a held one run on, on the one control" $
+      withStandin $ \standin session -> do
+        start session (tracks `at` 1)
+        reach standin (Seconds 60)
+        togglePause session
+        motionOf standin `shouldReturn` Just Paused
+        togglePause session
+        motionOf standin `shouldReturn` Just Running
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60))
+
+    it "holds nothing when there is nothing playing to hold" $
+      withStandin $ \standin session -> do
+        togglePause session
+        motionOf standin `shouldReturn` Nothing
+        nowPlaying session `shouldReturn` Nothing
+
     it "moves through the song without changing which song it is" $
       withStandin $ \standin session -> do
         start session (tracks `at` 1)

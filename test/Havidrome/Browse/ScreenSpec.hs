@@ -15,7 +15,7 @@ import Control.Monad.Trans.Except (ExceptT)
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Text (Text)
 import Graphics.Vty qualified as Vty
-import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Running))
+import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Browse.Fixtures
   ( album
   , artist
@@ -27,7 +27,17 @@ import Havidrome.Browse.Fixtures
   , song
   )
 import Havidrome.Browse.Screen
-  ( Command (Ascend, Descend, MoveDown, MoveUp, Quit)
+  ( Command
+      ( Ascend
+      , Descend
+      , MoveDown
+      , MoveUp
+      , NextSong
+      , PauseOrResume
+      , PreviousSong
+      , Quit
+      , Seek
+      )
   , Screen (browse, strip)
   , command
   , draw
@@ -40,7 +50,7 @@ import Havidrome.Browse.Screen
   )
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Overlay, Wrong), showing)
 import Havidrome.Library (Library)
-import Havidrome.Playback (Playing (playingSong), Session, nowPlaying)
+import Havidrome.Playback (Playing (playingElapsed, playingSong), Session, nowPlaying)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Playback.Standin
   ( Standin
@@ -78,9 +88,20 @@ spec = do
     it "quits on Ctrl+C" $
       command (Vty.KChar 'c') [Vty.MCtrl] `shouldBe` Just Quit
 
+    it "reaches the playing song with space, n and p" $ do
+      command (Vty.KChar ' ') [] `shouldBe` Just PauseOrResume
+      command (Vty.KChar 'n') [] `shouldBe` Just NextSong
+      command (Vty.KChar 'p') [] `shouldBe` Just PreviousSong
+
+    it "seeks it 5s on the arrows and 30s with shift held" $ do
+      command Vty.KRight [] `shouldBe` Just (Seek 5)
+      command Vty.KLeft [] `shouldBe` Just (Seek (-5))
+      command Vty.KRight [Vty.MShift] `shouldBe` Just (Seek 30)
+      command Vty.KLeft [Vty.MShift] `shouldBe` Just (Seek (-30))
+
     it "ignores every other key" $ do
       command (Vty.KChar 'x') [] `shouldBe` Nothing
-      command Vty.KLeft [] `shouldBe` Nothing
+      command Vty.KBS [] `shouldBe` Nothing
       command (Vty.KChar 'c') [] `shouldBe` Nothing
 
     it "is left by no letter key, q least of all" $ do
@@ -118,7 +139,7 @@ spec = do
 
   describe "picking a song" $ do
     it "plays the song the selection is on" $ withStandin $ \standin session -> do
-      _ <- after session (toDrukqs <> [Descend])
+      _ <- after session playingDrukqs
       loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
       playing session `shouldReturn` Just (drukqsSongs !! 0)
 
@@ -129,20 +150,20 @@ spec = do
 
     it "then plays the rest of its album, with nothing more pressed" $
       withStandin $ \standin session -> do
-        screen <- after session (toDrukqs <> [Descend])
+        screen <- after session playingDrukqs
         _ <- ranOut standin session screen 2
         loaded standin `shouldReturn` map from drukqsSongs
 
     it "replaces what is playing when the song is of another album" $
       withStandin $ \standin session -> do
-        _ <- after session (toDrukqs <> [Descend] <> toSketches <> [Descend])
+        _ <- after session (playingDrukqs <> toSketches <> [Descend])
         loaded standin
           `shouldReturn` [from (drukqsSongs !! 0), from (sketchesSongs !! 0)]
         playing session `shouldReturn` Just (sketchesSongs !! 0)
 
     it "then follows that album to its end, and no further" $
       withStandin $ \standin session -> do
-        screen <- after session (toDrukqs <> [Descend] <> toSketches <> [Descend])
+        screen <- after session (playingDrukqs <> toSketches <> [Descend])
         _ <- ranOut standin session screen 3
         loaded standin
           `shouldReturn` [from (drukqsSongs !! 0), from (sketchesSongs !! 0)]
@@ -164,7 +185,7 @@ spec = do
         screen <-
           resuming
             session
-            (toDrukqs <> [Descend])
+            playingDrukqs
             [MoveDown, MoveUp, Ascend, Ascend, MoveDown, Descend]
         title (browse screen) `shouldBe` "zebra"
         loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
@@ -176,17 +197,120 @@ spec = do
         screen <-
           resuming
             session
-            (toDrukqs <> [Descend])
+            playingDrukqs
             [Ascend, Ascend, MoveUp, Descend, Descend]
         _ <- ranOut standin session screen 2
         loaded standin `shouldReturn` map from drukqsSongs
 
   describe "Ctrl+C with a song playing" $
     it "stops the audio on the way out of the player" $ withStandin $ \standin session -> do
-      left <- quitting session (toDrukqs <> [Descend])
+      left <- quitting session playingDrukqs
       left `shouldSatisfy` isNothing
       nowPlaying session `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
+
+  describe "controlling the song that is playing" $ do
+    it "holds the audio on space, and freezes the elapsed time with it" $
+      withStandin $ \standin session -> do
+        screen <- after session playingDrukqs
+        reach standin (Seconds 40)
+        _ <- pressing session screen [PauseOrResume]
+        motionOf standin `shouldReturn` Just Paused
+        elapsed session `shouldReturn` Just (Seconds 40)
+
+    it "lets it run on from the same point when space is pressed again" $
+      withStandin $ \standin session -> do
+        screen <- after session playingDrukqs
+        reach standin (Seconds 40)
+        _ <- pressing session screen [PauseOrResume, PauseOrResume]
+        motionOf standin `shouldReturn` Just Running
+        elapsed session `shouldReturn` Just (Seconds 40)
+
+    it "plays the next song of the album on n" $ withStandin $ \standin session -> do
+      screen <- after session playingDrukqs
+      _ <- pressing session screen [NextSong]
+      playing session `shouldReturn` Just (drukqsSongs !! 1)
+      loaded standin `shouldReturn` map from (take 2 drukqsSongs)
+
+    it "ends the playing on n on the album's last song" $
+      withStandin $ \standin session -> do
+        screen <- after session (toDrukqs <> [MoveDown, MoveDown, Descend])
+        _ <- pressing session screen [NextSong]
+        nowPlaying session `shouldReturn` Nothing
+        motionOf standin `shouldReturn` Nothing
+
+    it "goes back a song on p, part-way through the one playing" $
+      withStandin $ \standin session -> do
+        screen <- after session (toDrukqs <> [MoveDown, Descend])
+        reach standin (Seconds 60)
+        _ <- pressing session screen [PreviousSong]
+        playing session `shouldReturn` Just (drukqsSongs !! 0)
+        loaded standin
+          `shouldReturn` [from (drukqsSongs !! 1), from (drukqsSongs !! 0)]
+
+    it "plays the first song again on p on the first song" $
+      withStandin $ \standin session -> do
+        screen <- after session playingDrukqs
+        reach standin (Seconds 60)
+        _ <- pressing session screen [PreviousSong]
+        playing session `shouldReturn` Just (drukqsSongs !! 0)
+        loaded standin
+          `shouldReturn` [from (drukqsSongs !! 0), from (drukqsSongs !! 0)]
+
+    it "moves the song 5s on the arrows, and the elapsed time with it" $
+      withStandin $ \standin session -> do
+        screen <- after session playingDrukqs
+        reach standin (Seconds 40)
+        _ <- pressing session screen [Seek 5]
+        elapsed session `shouldReturn` Just (Seconds 45)
+        _ <- pressing session screen [Seek (-5)]
+        elapsed session `shouldReturn` Just (Seconds 40)
+
+    it "moves it 30s with shift held" $ withStandin $ \standin session -> do
+      screen <- after session playingDrukqs
+      reach standin (Seconds 40)
+      _ <- pressing session screen [Seek 30]
+      elapsed session `shouldReturn` Just (Seconds 70)
+      _ <- pressing session screen [Seek (-30)]
+      elapsed session `shouldReturn` Just (Seconds 40)
+
+    it "stops at the end of the track, which then finishes into the next song" $
+      withStandin $ \standin session -> do
+        screen <- after session playingDrukqs
+        reach standin (Seconds 90)
+        stepped <- pressing session screen [Seek 30]
+        elapsed session `shouldReturn` Just (Seconds 96)
+        loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
+        _ <- ranOut standin session stepped 1
+        playing session `shouldReturn` Just (drukqsSongs !! 1)
+
+    it "stops at the start of the track, and reaches no earlier song" $
+      withStandin $ \standin session -> do
+        screen <- after session playingDrukqs
+        reach standin (Seconds 10)
+        _ <- pressing session screen [Seek (-30)]
+        elapsed session `shouldReturn` Just (Seconds 0)
+        playing session `shouldReturn` Just (drukqsSongs !! 0)
+        loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
+
+    it "leaves the selection and the level as they were, at every level" $
+      withStandin $ \_ session -> do
+        let unmoved path = do
+              browsing <- after session (playingDrukqs <> path)
+              controlled <- pressing session browsing controls
+              shown (60, 6) controlled `shouldBe` shown (60, 6) browsing
+        unmoved []
+        unmoved [Ascend]
+        unmoved [Ascend, Ascend]
+
+    it "does nothing at all with nothing playing" $
+      withStandin $ \standin session -> do
+        browsing <- after session toDrukqs
+        controlled <- pressing session browsing controls
+        loaded standin `shouldReturn` []
+        nowPlaying session `shouldReturn` Nothing
+        motionOf standin `shouldReturn` Nothing
+        shown (60, 6) controlled `shouldBe` shown (60, 6) browsing
 
   describe "the now-playing overlay" $ do
     it "shows the playing song's name and its elapsed and total time" $
@@ -328,6 +452,17 @@ start = opening artists
 toDrukqs :: [Command]
 toDrukqs = [MoveDown, Descend, MoveDown, MoveDown, Descend]
 
+-- | The keys that walk to the songs of Drukqs and start the first of them, so
+-- that the controls have a song to reach.
+playingDrukqs :: [Command]
+playingDrukqs = toDrukqs <> [Descend]
+
+-- | Every control the playing song has over it, pressed one after another: a
+-- hold and a release, a song forward and a song back, a nudge and a stride.
+controls :: [Command]
+controls =
+  [PauseOrResume, PauseOrResume, NextSong, PreviousSong, Seek 5, Seek (-30)]
+
 -- | The keys that walk from the songs of Drukqs to the songs of Sketches, the
 -- other album of the same artist.
 toSketches :: [Command]
@@ -341,12 +476,16 @@ after = walking library
 stumbling :: Session -> [Command] -> IO Screen
 stumbling = walking (failing (NetworkFailure "down"))
 
--- | The same again, from a screen these key presses have already been walked
--- to: what a run does next, with whatever they started still playing.
+-- | The screen these key presses leave behind, pressed on one already walked
+-- to: what a run does next, with whatever it started still playing.
+pressing :: Session -> Screen -> [Command] -> IO Screen
+pressing session = foldM (taking library session)
+
+-- | The same, from the screen the first lot of key presses walk to.
 resuming :: Session -> [Command] -> [Command] -> IO Screen
 resuming session already next = do
   screen <- after session already
-  foldM (taking library session) screen next
+  pressing session screen next
 
 walking :: Library (ExceptT SubsonicError IO) -> Session -> [Command] -> IO Screen
 walking held session = foldM (taking held session) start
@@ -367,6 +506,10 @@ quitting session path = do
 playing :: Session -> IO (Maybe Song)
 playing = fmap (fmap playingSong) . nowPlaying
 
+-- | How far into that song the audio has come.
+elapsed :: Session -> IO (Maybe Seconds)
+elapsed = fmap (fmap playingElapsed) . nowPlaying
+
 -- | The audio runs out, so many times, with nothing pressed: only the beat the
 -- screen takes it in on. This is the whole of \"playback continues through the
 -- album\".
@@ -382,7 +525,7 @@ beaten session at = onBeat session (Moment at)
 -- | The screen with the first song of Drukqs playing and the strip caught up
 -- with it, which is where every spec about the overlay starts.
 onDrukqs :: Session -> IO Screen
-onDrukqs session = after session (toDrukqs <> [Descend]) >>= beaten session 0
+onDrukqs session = after session playingDrukqs >>= beaten session 0
 
 -- | The screen the first song of Drukqs failing this way leaves behind: the
 -- backend says so, and the next beat takes it in.

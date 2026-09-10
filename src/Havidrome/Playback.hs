@@ -26,6 +26,7 @@ module Havidrome.Playback
     -- * The controls that do not change which song is playing
   , pause
   , resume
+  , togglePause
   , seekBy
 
     -- * What it is doing, and what it has to say
@@ -39,7 +40,15 @@ module Havidrome.Playback
 
 import Control.Concurrent.MVar (MVar, modifyMVar, modifyMVar_, newMVar, readMVar)
 import Data.Text (Text)
-import Havidrome.Audio (Audio, Event (..), Failure (..), Playback (..), State (..), Track (..))
+import Havidrome.Audio
+  ( Audio
+  , Event (..)
+  , Failure (..)
+  , Motion (..)
+  , Playback (..)
+  , State (..)
+  , Track (..)
+  )
 import Havidrome.Audio qualified as Audio
 import Havidrome.Playback.Queue
 import Havidrome.Subsonic.Types (Seconds (..), Song (..), SongId)
@@ -103,6 +112,19 @@ pause = Audio.pause . sessionAudio
 -- | Let the audio run again from where it was held.
 resume :: Session -> IO ()
 resume = Audio.resume . sessionAudio
+
+-- | Halt the audio if it is running, and let it run again if it is held.
+-- One key does both, so which of the two it is is asked of the backend rather
+-- than kept here as well. With nothing playing there is nothing to hold, and
+-- nothing happens.
+togglePause :: Session -> IO ()
+togglePause session = do
+  state <- Audio.nowPlaying (sessionAudio session)
+  case state of
+    Stopped -> pure ()
+    Loaded playback -> case playbackMotion playback of
+      Running -> pause session
+      Paused -> resume session
 
 -- | Move this many seconds through the song being played, forwards or back.
 -- The backend clamps it to that song, so a seek never reaches another one.
