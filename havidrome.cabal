@@ -1,0 +1,28 @@
+cabal-version:   3.0
+name:            havidrome
+version:         0.1.0.0
+synopsis:        A CLI player for a Navidrome server.
+build-type:      Simple
+
+common language
+    default-language: GHC2021
+    ghc-options:      -Wall -Wcompat -Wredundant-constraints
+
+library
+    import:          language
+    hs-source-dirs:  src
+    exposed-modules: Havidrome
+    build-depends:   base
+
+executable havidrome
+    import:         language
+    hs-source-dirs: app
+    main-is:        Main.hs
+    build-depends:  base, havidrome
+
+test-suite havidrome-test
+    import:         language
+    type:           exitcode-stdio-1.0
+    hs-source-dirs: test
+    main-is:        Main.hs
+    build-depends:  base, havidrome, hspec
