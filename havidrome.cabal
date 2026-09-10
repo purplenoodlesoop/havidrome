@@ -11,8 +11,17 @@ common language
 library
     import:          language
     hs-source-dirs:  src
-    exposed-modules: Havidrome
-    build-depends:   base
+    exposed-modules:
+        Havidrome
+        Havidrome.Credentials
+
+    build-depends:
+        base,
+        bytestring,
+        directory,
+        filepath,
+        text,
+        unix
 
 executable havidrome
     import:         language
@@ -25,4 +34,15 @@ test-suite havidrome-test
     type:           exitcode-stdio-1.0
     hs-source-dirs: test
     main-is:        Main.hs
-    build-depends:  base, havidrome, hspec
+    other-modules:  CredentialsSpec
+    build-depends:
+        QuickCheck,
+        base,
+        bytestring,
+        directory,
+        filepath,
+        havidrome,
+        hspec,
+        temporary,
+        text,
+        unix

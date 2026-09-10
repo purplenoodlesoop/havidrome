@@ -28,6 +28,14 @@ result/bin/havidrome:       ... stripped
 result-debug/bin/havidrome: ... with debug_info, not stripped
 ```
 
+## Configuration
+
+The server URL, username and password are kept in
+`$XDG_CONFIG_HOME/havidrome/config` (`~/.config/havidrome/config` when that
+variable is unset), one `field=value` line each and the password in the clear —
+no keyring, no encryption. The file is the user's own, readable by nobody else;
+deleting it discards the credentials.
+
 ## Tests
 
 ```sh
