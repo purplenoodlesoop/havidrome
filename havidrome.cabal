@@ -18,6 +18,8 @@ library
         Havidrome.Audio.Ipc
         Havidrome.Audio.State
         Havidrome.Credentials
+        Havidrome.Playback
+        Havidrome.Playback.Queue
         Havidrome.Subsonic
         Havidrome.Subsonic.Protocol
         Havidrome.Subsonic.Transport
@@ -56,6 +58,9 @@ test-suite havidrome-test
         Havidrome.AudioSpec
         Havidrome.Audio.IpcSpec
         Havidrome.Audio.StateSpec
+        Havidrome.Playback.QueueSpec
+        Havidrome.Playback.Standin
+        Havidrome.PlaybackSpec
         Havidrome.Subsonic.ClientSpec
         Havidrome.Subsonic.Fixtures
         Havidrome.Subsonic.ProtocolSpec
@@ -71,6 +76,7 @@ test-suite havidrome-test
         hspec,
         http-client,
         http-types,
+        stm,
         temporary,
         text,
         unix
