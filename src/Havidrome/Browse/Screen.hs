@@ -325,7 +325,15 @@ draw screen =
   where
     bottom = \case
       Wrong said -> withAttr troubleAttribute (line said)
-      Overlay said -> withAttr overlayAttribute (line said)
+      Overlay playing -> withAttr overlayAttribute (across (`Strip.overlaid` playing))
+
+-- | A row laid out for the width the screen has for it when it is drawn, and
+-- across the whole of that width. What it lays out is left whole, so a row
+-- that runs past the edge is cut there by the terminal.
+across :: (Int -> Text) -> Widget Name
+across laidOut = Widget Greedy Fixed $ do
+  width <- (^. availWidthL) <$> getContext
+  render (padRight Max (txt (laidOut width)))
 
 -- | Every level as a column of its own, the artists at the left and each level
 -- to the right of the one it was descended from. The rightmost is the level
