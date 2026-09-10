@@ -1,11 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | The player as a whole, at the point where it has nowhere to browse.
+-- | The player as a whole, at the points where it has nowhere to browse.
 module HavidromeSpec (spec) where
 
 import Control.Exception (bracket, finally)
+import Data.Text (Text)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Havidrome (run)
+import Havidrome.Credentials (Credentials (Credentials), save)
 import System.Environment (setEnv, unsetEnv)
 import System.Exit (ExitCode (ExitFailure))
 import System.IO (IOMode (WriteMode), hClose, stderr, withFile)
@@ -13,10 +15,20 @@ import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldThrow)
 
 spec :: Spec
-spec = describe "run" $
+spec = describe "run" $ do
   it "stops instead of browsing when no credentials are stored" $
     withConfigHome $
       quietly run `shouldThrow` (== ExitFailure 1)
+
+  it "stops instead of browsing when the artist list cannot be fetched" $
+    withConfigHome $ do
+      save (Credentials nowhere "someone" "secret")
+      quietly run `shouldThrow` (== ExitFailure 1)
+
+-- | An address nothing answers on, so that the artist list fails to arrive
+-- the way it fails against a server that cannot be reached.
+nowhere :: Text
+nowhere = "http://127.0.0.1:1"
 
 -- | An empty config directory of its own, so that the specs never read the
 -- credentials of whoever is running them.
