@@ -32,6 +32,7 @@ module Havidrome.Playback
     -- * What it is doing, and what it has to say
   , Playing (..)
   , Arrival (..)
+  , Sound (..)
   , nowPlaying
   , attend
 
@@ -88,15 +89,23 @@ newSession audio address = do
   pure Session {sessionAudio = audio, sessionAddress = address, sessionPlace = place}
 
 -- | The song playing, how far into it the audio has come, how it came to be
--- playing, and whether its audio has started yet or it is still loading.
--- Everything else the now-playing overlay shows — the track name, the total
--- time — is the song's own.
+-- playing, and whether it is still loading or its audio has started, running
+-- or held. Everything else the now-playing overlay shows — the track name, the
+-- total time — is the song's own.
 data Playing = Playing
   { playingSong :: Song
   , playingElapsed :: Seconds
   , playingArrival :: Arrival
-  , playingBegun :: Bool
+  , playingSound :: Sound
   }
+  deriving stock (Eq, Show)
+
+-- | Where a song's audio is: not started yet, or started and either running
+-- or held. A song held while it loads is still loading until its audio starts,
+-- and then it is held.
+data Sound
+  = Loading
+  | Sounding Motion
   deriving stock (Eq, Show)
 
 -- | Play this album from the song it is on, in place of whatever was playing.
@@ -166,7 +175,7 @@ playingAt state place =
     { playingSong = playing (placeQueue place)
     , playingElapsed = elapsedIn state
     , playingArrival = placeArrival place
-    , playingBegun = begunIn state
+    , playingSound = soundIn state
     }
 
 elapsedIn :: State -> Seconds
@@ -174,11 +183,14 @@ elapsedIn state = case state of
   Stopped -> Seconds 0
   Loaded playback -> playbackElapsed playback
 
--- | Whether the audio has started. With nothing loaded, no audio has.
-begunIn :: State -> Bool
-begunIn state = case state of
-  Stopped -> False
-  Loaded playback -> playbackPhase playback == Begun
+-- | Whether the audio has started, and how it moves once it has. With nothing
+-- loaded, no audio has.
+soundIn :: State -> Sound
+soundIn state = case state of
+  Stopped -> Loading
+  Loaded playback
+    | playbackPhase playback == Begun -> Sounding (playbackMotion playback)
+    | otherwise -> Loading
 
 -- | Takes in everything the backend has said since it was last asked, and
 -- answers with the failures the player has to show.

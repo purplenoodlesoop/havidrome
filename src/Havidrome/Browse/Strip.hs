@@ -6,11 +6,11 @@
 -- and nothing else, so the lists above it go on being walked exactly as they
 -- were.
 --
--- While a song is playing the strip is the now-playing overlay — the track
--- name, a bar of how far into it the audio has come, and the elapsed and
--- total time. A song picked with Enter has a loading indicator where the
--- elapsed time goes until its audio starts. With nothing playing there is no
--- line at all.
+-- While a song is playing the strip is the now-playing overlay — whether its
+-- audio runs or is held, the track name, a bar of how far into it the audio
+-- has come, and the elapsed and total time. A song picked with Enter has a
+-- loading indicator where the elapsed time goes until its audio starts. With
+-- nothing playing there is no line at all.
 --
 -- What goes wrong takes the strip over from the overlay for as long as it
 -- has to be read, and the overlay is underneath it the whole time. How long
@@ -46,10 +46,11 @@ import Data.Ord (clamp)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Clock (getMonotonicTime)
-import Havidrome.Audio (Failure (Unplayable, Unreachable))
+import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Playback
   ( Arrival (Picked)
-  , Playing (playingArrival, playingBegun, playingElapsed, playingSong)
+  , Playing (playingArrival, playingElapsed, playingSong, playingSound)
+  , Sound (Loading, Sounding)
   )
 import Havidrome.Subsonic (Seconds (Seconds), Song (songDuration, songTitle))
 
@@ -114,13 +115,17 @@ showing strip = case stripSaid strip of
   Just (Said said _) -> Just (Wrong said)
   Nothing -> Overlay (stripAt strip) <$> stripPlaying strip
 
--- | The overlay's line at a moment, laid out across this many columns: the
--- track name, a bar of how far into it the audio has come, and the elapsed and
--- total time.
+-- | The overlay's line at a moment, laid out across this many columns: a
+-- symbol for whether the audio runs or is held, the track name one space after
+-- it, a bar of how far into it the audio has come, and the elapsed and total
+-- time.
 --
--- The name and the times are always there whole, and the bar takes the width
--- they leave between them. Once they leave none, there is no bar, and the line
--- runs on past the edge rather than onto a second one.
+-- The symbol, the name and the times are always there whole, and the bar
+-- takes the width they leave between them. Once they leave none, there is no
+-- bar, and the line runs on past the edge rather than onto a second one.
+--
+-- A song whose audio has not started neither runs nor is held, so its symbol's
+-- column is blank, and nothing after it moves when the audio starts.
 --
 -- A song picked with Enter whose audio has not started has come nowhere yet,
 -- so the loading indicator stands where the elapsed time goes, in as many
@@ -129,19 +134,28 @@ showing strip = case stripSaid strip of
 -- throughout, loading or not.
 overlaid :: Moment -> Int -> Playing -> Text
 overlaid at width playing =
-  Text.intercalate gap [name, progress (width - taken) elapsed total, times]
+  Text.intercalate gap [titled, progress (width - taken) elapsed total, times]
   where
     song = playingSong playing
-    name = songTitle song
+    titled = symbol (playingSound playing) <> " " <> songTitle song
     elapsed = playingElapsed playing
     total = songDuration song
     times = sofar <> " / " <> clock total
     sofar
-      | playingArrival playing == Picked && not (playingBegun playing) =
+      | playingArrival playing == Picked && playingSound playing == Loading =
           Text.justifyRight (textWidth (clock elapsed)) ' ' (spinner at)
       | otherwise = clock elapsed
     gap = "  "
-    taken = textWidth name + textWidth times + 2 * textWidth gap
+    taken = textWidth titled + textWidth times + 2 * textWidth gap
+
+-- | What the overlay shows for where the audio is: one symbol while it runs, a
+-- different one while it is held, and a blank of the same width while it has
+-- not started.
+symbol :: Sound -> Text
+symbol = \case
+  Loading -> " "
+  Sounding Running -> "⏵"
+  Sounding Paused -> "⏸"
 
 -- | The loading indicator at a moment: a dot running round a braille cell, a
 -- step every tenth of a second, which is as often as a beat comes.

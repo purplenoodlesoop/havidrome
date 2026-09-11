@@ -10,7 +10,7 @@ module Havidrome.Browse.StripSpec (spec) where
 
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Havidrome.Audio (Failure (Unplayable, Unreachable))
+import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Browse.Fixtures (bar, drukqsSongs, filledIn, unnumbered)
 import Havidrome.Browse.Strip
   ( Moment (Moment)
@@ -24,7 +24,7 @@ import Havidrome.Browse.Strip
   , showing
   , wrong
   )
-import Havidrome.Playback (Arrival (Followed, Picked), Playing (Playing))
+import Havidrome.Playback (Arrival (Followed, Picked), Playing (Playing), Sound (Loading, Sounding))
 import Havidrome.Subsonic (Seconds (Seconds))
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Hspec.QuickCheck (prop)
@@ -52,62 +52,83 @@ spec = do
 
   describe "overlaid" $ do
     it "lays the track name, the bar and the elapsed and total time across the width" $
-      overlaid (Moment 0) 44(btoum 0) `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+      overlaid (Moment 0) 46 (btoum 0) `shouldBe` "⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     it "moves the elapsed time on as the audio does" $
-      overlaid (Moment 0) 44(btoum 83) `shouldBe` "Btoum Roumada  " <> bar 13 3 <> "  1:23 / 1:36"
+      overlaid (Moment 0) 46 (btoum 83) `shouldBe` "⏵ Btoum Roumada  " <> bar 13 3 <> "  1:23 / 1:36"
 
     it "fills the same part of the bar as has played of the track" $ do
-      overlaid (Moment 0) 44(btoum 24) `shouldBe` "Btoum Roumada  " <> bar 4 12 <> "  0:24 / 1:36"
-      overlaid (Moment 0) 44(btoum 48) `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
-      overlaid (Moment 0) 44(btoum 96) `shouldBe` "Btoum Roumada  " <> bar 16 0 <> "  1:36 / 1:36"
+      overlaid (Moment 0) 46 (btoum 24) `shouldBe` "⏵ Btoum Roumada  " <> bar 4 12 <> "  0:24 / 1:36"
+      overlaid (Moment 0) 46 (btoum 48) `shouldBe` "⏵ Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+      overlaid (Moment 0) 46 (btoum 96) `shouldBe` "⏵ Btoum Roumada  " <> bar 16 0 <> "  1:36 / 1:36"
 
     it "fills a column only once a whole column's worth has played" $
-      map (filledIn . overlaid (Moment 0) 44. btoum) [5, 6, 95, 96] `shouldBe` [0, 1, 15, 16]
+      map (filledIn . overlaid (Moment 0) 46 . btoum) [5, 6, 95, 96] `shouldBe` [0, 1, 15, 16]
 
     it "gives the bar the width the name and the times leave" $ do
-      overlaid (Moment 0) 30(btoum 48) `shouldBe` "Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
-      overlaid (Moment 0) 80 (btoum 48) `shouldBe` "Btoum Roumada  " <> bar 26 26 <> "  0:48 / 1:36"
+      overlaid (Moment 0) 32 (btoum 48) `shouldBe` "⏵ Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
+      overlaid (Moment 0) 82 (btoum 48) `shouldBe` "⏵ Btoum Roumada  " <> bar 26 26 <> "  0:48 / 1:36"
 
     it "has no bar once the name and the times leave no width for one" $ do
-      overlaid (Moment 0) 28 (btoum 48) `shouldBe` "Btoum Roumada    0:48 / 1:36"
-      overlaid (Moment 0) 10 (btoum 48) `shouldBe` "Btoum Roumada    0:48 / 1:36"
+      overlaid (Moment 0) 30 (btoum 48) `shouldBe` "⏵ Btoum Roumada    0:48 / 1:36"
+      overlaid (Moment 0) 10 (btoum 48) `shouldBe` "⏵ Btoum Roumada    0:48 / 1:36"
 
     it "leaves the bar of a track with no length empty, however long it runs" $ do
-      overlaid (Moment 0) 30(silence 0) `shouldBe` "Silence  " <> bar 0 8 <> "  0:00 / 0:00"
-      overlaid (Moment 0) 30(silence 7) `shouldBe` "Silence  " <> bar 0 8 <> "  0:07 / 0:00"
+      overlaid (Moment 0) 32 (silence 0) `shouldBe` "⏵ Silence  " <> bar 0 8 <> "  0:00 / 0:00"
+      overlaid (Moment 0) 32 (silence 7) `shouldBe` "⏵ Silence  " <> bar 0 8 <> "  0:07 / 0:00"
 
     prop "fills exactly the width it is given, wherever in the track the audio is" $
       \(NonNegative spare) (NonNegative seconds) ->
-        Text.length (overlaid (Moment 0) (28 + spare) (btoum (seconds `mod` 97))) === 28 + spare
+        Text.length (overlaid (Moment 0) (30 + spare) (btoum (seconds `mod` 97))) === 30 + spare
 
     prop "fills as many whole columns as the part of the track played is worth" $
       \(NonNegative spare) (NonNegative seconds) ->
         let at = seconds `mod` 97
-         in filledIn (overlaid (Moment 0) (28 + spare) (btoum at)) === spare * at `div` 96
+         in filledIn (overlaid (Moment 0) (30 + spare) (btoum at)) === spare * at `div` 96
 
     prop "never fills less of the bar for more of the track" $
       \width (NonNegative sooner) (NonNegative later) ->
-        filledIn (overlaid (Moment 0) width(btoum (min sooner later)))
-          <= filledIn (overlaid (Moment 0) width(btoum (max sooner later)))
+        filledIn (overlaid (Moment 0) width (btoum (min sooner later)))
+          <= filledIn (overlaid (Moment 0) width (btoum (max sooner later)))
+
+  describe "whether the song's audio runs or is held" $ do
+    it "shows a symbol before the track name while the audio runs" $
+      overlaid (Moment 0) 46 (btoum 42) `shouldBe` "⏵ Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
+
+    it "shows a different one in its place while the audio is held" $
+      overlaid (Moment 0) 46 (heldBtoum 42) `shouldBe` "⏸ Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
+
+    it "shows neither while the song loads, however it came to be playing" $ do
+      overlaid (Moment 0) 46 pickingBtoum `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
+      overlaid (Moment 0) 46 followingBtoum `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+
+    it "moves nothing else on the line as the symbol comes and goes" $
+      map (Text.drop 1 . overlaid (Moment 0) 46) [followingBtoum, btoum 0, heldBtoum 0]
+        `shouldBe` replicate 3 (" Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
+
+    prop "fills exactly the width it is given, running or held" $
+      \(NonNegative spare) (NonNegative seconds) ->
+        let at = seconds `mod` 97
+         in map (Text.length . overlaid (Moment 0) (30 + spare)) [btoum at, heldBtoum at]
+              === replicate 2 (30 + spare)
 
   describe "a song picked, while it loads" $ do
     it "has a loading indicator where the elapsed time goes, the name, bar and total as usual" $
-      overlaid (Moment 0) 44 pickingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
+      overlaid (Moment 0) 46 pickingBtoum `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
 
     it "turns the indicator as the beats go by" $ do
-      overlaid (Moment 0.35) 44 pickingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠸ / 1:36"
-      overlaid (Moment 1.95) 44 pickingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠏ / 1:36"
+      overlaid (Moment 0.35) 46 pickingBtoum `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "     ⠸ / 1:36"
+      overlaid (Moment 1.95) 46 pickingBtoum `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "     ⠏ / 1:36"
 
     it "gives the elapsed time its place back, the bar unmoved, once the audio has begun" $
-      overlaid (Moment 0) 44 (btoum 0) `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+      overlaid (Moment 0) 46 (btoum 0) `shouldBe` "⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     it "has no indicator for a song the album moved on to, loading or not" $
-      overlaid (Moment 0) 44 followingBtoum `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+      overlaid (Moment 0) 46 followingBtoum `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     prop "fills exactly the width it is given, whatever the moment" $
       \(NonNegative spare) (NonNegative at) ->
-        Text.length (overlaid (Moment at) (28 + spare) pickingBtoum) === 28 + spare
+        Text.length (overlaid (Moment at) (30 + spare) pickingBtoum) === 30 + spare
 
     it "gives the whole strip to a failure, the indicator included" $
       showing (beat (Moment 0) (Just pickingBtoum) [broken] quiet) `shouldBe` Just (Wrong brokenly)
@@ -194,30 +215,34 @@ brokenly, offlinely :: Text
 brokenly = "The file will not play: it is broken"
 offlinely = "The server could not be reached: it is down"
 
--- | The first song of Drukqs, 1:36 long, picked and its audio started, this
--- far into it. Its name and times take 28 columns with the gaps between them,
--- so each column past those is one of the bar's.
+-- | The first song of Drukqs, 1:36 long, picked and its audio running, this
+-- far into it. Its symbol, name and times take 30 columns with the gaps
+-- between them, so each column past those is one of the bar's.
 btoum :: Int -> Playing
-btoum at = Playing (drukqsSongs !! 0) (Seconds at) Picked True
+btoum at = Playing (drukqsSongs !! 0) (Seconds at) Picked (Sounding Running)
+
+-- | The same song, its audio started and held this far into it.
+heldBtoum :: Int -> Playing
+heldBtoum at = Playing (drukqsSongs !! 0) (Seconds at) Picked (Sounding Paused)
 
 -- | The same song just picked, its audio not yet started.
 pickingBtoum :: Playing
-pickingBtoum = Playing (drukqsSongs !! 0) (Seconds 0) Picked False
+pickingBtoum = Playing (drukqsSongs !! 0) (Seconds 0) Picked Loading
 
 -- | The same song moved on to by the album, its audio not yet started.
 followingBtoum :: Playing
-followingBtoum = Playing (drukqsSongs !! 0) (Seconds 0) Followed False
+followingBtoum = Playing (drukqsSongs !! 0) (Seconds 0) Followed Loading
 
--- | The third song of Drukqs, 4:53 long, picked and its audio started, this
+-- | The third song of Drukqs, 4:53 long, picked and its audio running, this
 -- far into it.
 vordhosbn :: Int -> Playing
-vordhosbn at = Playing (drukqsSongs !! 2) (Seconds at) Picked True
+vordhosbn at = Playing (drukqsSongs !! 2) (Seconds at) Picked (Sounding Running)
 
--- | The second, 2:09 long, picked and its audio started, this far into it.
+-- | The second, 2:09 long, picked and its audio running, this far into it.
 jynweythek :: Int -> Playing
-jynweythek at = Playing (drukqsSongs !! 1) (Seconds at) Picked True
+jynweythek at = Playing (drukqsSongs !! 1) (Seconds at) Picked (Sounding Running)
 
--- | A song the server gives no length for, picked and its audio started, this
+-- | A song the server gives no length for, picked and its audio running, this
 -- far into it.
 silence :: Int -> Playing
-silence at = Playing (unnumbered "s9" "Silence" 0) (Seconds at) Picked True
+silence at = Playing (unnumbered "s9" "Silence" 0) (Seconds at) Picked (Sounding Running)

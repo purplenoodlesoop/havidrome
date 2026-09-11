@@ -361,13 +361,13 @@ spec = do
     it "shows the playing song's name and its elapsed and total time" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
-        stripRow screen `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+        stripRow screen `shouldBe` "⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     it "moves the elapsed time on as the audio does" $ withStandin $ \standin session -> do
       screen <- onDrukqs standin session
       reach standin (Seconds 42)
       moved <- beaten session 1 screen
-      stripRow moved `shouldBe` "Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
+      stripRow moved `shouldBe` "⏵ Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
 
     it "leaves the elapsed time where a held song left it" $
       withStandin $ \standin session -> do
@@ -376,13 +376,13 @@ spec = do
         running <- beaten session 1 screen
         Playback.pause session
         held <- beaten session 2 running >>= beaten session 3
-        stripRow held `shouldBe` "Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
+        stripRow held `shouldBe` "⏸ Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
 
     it "shows the next song of the album once playback moves on" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
         moved <- ranOut standin session screen 1
-        stripRow moved `shouldBe` "Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
+        stripRow moved `shouldBe` "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
 
     it "is not on screen while nothing is playing" $ withStandin $ \_ session -> do
       screen <- after session toDrukqs >>= beaten session 0
@@ -393,7 +393,7 @@ spec = do
       albums <- taking library session songs Ascend >>= beaten session 1
       names <- taking library session albums Ascend >>= beaten session 2
       map stripRow [songs, albums, names]
-        `shouldBe` replicate 3 ("Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
+        `shouldBe` replicate 3 ("⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
 
     it "takes the bottom row inside the margin and the row above it, and no more of the screen" $
       withStandin $ \standin session -> do
@@ -402,7 +402,7 @@ spec = do
         begin standin
         started <- beaten session 0 picking
         unmarked (shown (60, 6) started)
-          `shouldBe` shown (60, 4) browsing <> ["", "Btoum Roumada  " <> bar 0 32 <> "  0:00 / 1:36"]
+          `shouldBe` shown (60, 4) browsing <> ["", "⏵ Btoum Roumada  " <> bar 0 30 <> "  0:00 / 1:36"]
 
     it "is gone when the album's last song finishes, the list left where it was" $
       withStandin $ \standin session -> do
@@ -417,49 +417,49 @@ spec = do
     it "shows the track name and a loading indicator, and no elapsed time" $
       withStandin $ \_ session -> do
         screen <- loadingDrukqs session
-        stripRow screen `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
+        stripRow screen `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
 
     it "shows the elapsed time in its place once the audio starts, moving on as it plays" $
       withStandin $ \standin session -> do
         screen <- loadingDrukqs session
         begin standin
         started <- beaten session 1 screen
-        stripRow started `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+        stripRow started `shouldBe` "⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
         reach standin (Seconds 42)
         moved <- beaten session 2 started
-        stripRow moved `shouldBe` "Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
+        stripRow moved `shouldBe` "⏵ Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
 
     it "shows it for a song picked while another still loads, until that one's audio starts" $
       withStandin $ \standin session -> do
         screen <- loadingDrukqs session
         repicked <- pressing session screen [MoveDown, Descend] >>= beaten session 1
-        stripRow repicked `shouldBe` "Jynweythek  " <> bar 0 19 <> "     ⠋ / 2:09"
+        stripRow repicked `shouldBe` "  Jynweythek  " <> bar 0 19 <> "     ⠋ / 2:09"
         begin standin
         started <- beaten session 2 repicked
-        stripRow started `shouldBe` "Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
+        stripRow started `shouldBe` "⏵ Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
 
     it "is never shown for the song the album moves on to by itself" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
         moved <- ranOut standin session screen 1
-        stripRow moved `shouldBe` "Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
+        stripRow moved `shouldBe` "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
 
     it "nor for the songs n and p move to, even away from a song still loading" $
       withStandin $ \_ session -> do
         screen <- loadingDrukqs session
         forward <- pressing session screen [NextSong] >>= beaten session 1
-        stripRow forward `shouldBe` "Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
+        stripRow forward `shouldBe` "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
         back <- pressing session forward [PreviousSong] >>= beaten session 2
-        stripRow back `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+        stripRow back `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     it "finishes loading held on space, at 0:00, until space again plays it from its start" $
       withStandin $ \standin session -> do
         screen <- loadingDrukqs session
         holding <- pressing session screen [PauseOrResume] >>= beaten session 1
-        stripRow holding `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
+        stripRow holding `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
         begin standin
         ready <- beaten session 2 holding >>= beaten session 60
-        stripRow ready `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+        stripRow ready `shouldBe` "⏸ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
         motionOf standin `shouldReturn` Just Paused
         _ <- pressing session ready [PauseOrResume]
         motionOf standin `shouldReturn` Just Running
@@ -484,14 +484,14 @@ spec = do
     it "sits on the strip's one line, between the track name and the times" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
-        stripRow screen `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+        stripRow screen `shouldBe` "⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     it "fills as the track plays, by the part of it that has played" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
         let at seconds = reach standin (Seconds seconds) >> beaten session 1 screen
         partWay <- at 48
-        stripRow partWay `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+        stripRow partWay `shouldBe` "⏵ Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
         filled <- traverse (fmap (filledIn . stripRow) . at) [6, 24, 72, 90]
         filled `shouldBe` [1, 4, 12, 15]
 
@@ -501,12 +501,12 @@ spec = do
         reach standin (Seconds 48)
         held <- pressing session screen [PauseOrResume] >>= beaten session 1 >>= beaten session 2
         motionOf standin `shouldReturn` Just Paused
-        stripRow held `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+        stripRow held `shouldBe` "⏸ Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
         resumed <- pressing session held [PauseOrResume]
         motionOf standin `shouldReturn` Just Running
         reach standin (Seconds 72)
         moved <- beaten session 3 resumed
-        stripRow moved `shouldBe` "Btoum Roumada  " <> bar 12 4 <> "  1:12 / 1:36"
+        stripRow moved `shouldBe` "⏵ Btoum Roumada  " <> bar 12 4 <> "  1:12 / 1:36"
 
     it "moves forward and back with a seek, as far as the elapsed time moves" $
       withStandin $ \standin session -> do
@@ -514,23 +514,23 @@ spec = do
         reach standin (Seconds 48)
         let seeking sought by = pressing session sought [Seek by] >>= beaten session 1
         forward <- seeking screen 30
-        stripRow forward `shouldBe` "Btoum Roumada  " <> bar 13 3 <> "  1:18 / 1:36"
+        stripRow forward `shouldBe` "⏵ Btoum Roumada  " <> bar 13 3 <> "  1:18 / 1:36"
         back <- seeking forward (-30)
-        stripRow back `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+        stripRow back `shouldBe` "⏵ Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
         nudgedBack <- seeking back (-5)
-        stripRow nudgedBack `shouldBe` "Btoum Roumada  " <> bar 7 9 <> "  0:43 / 1:36"
+        stripRow nudgedBack `shouldBe` "⏵ Btoum Roumada  " <> bar 7 9 <> "  0:43 / 1:36"
         nudged <- seeking nudgedBack 5
-        stripRow nudged `shouldBe` "Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
+        stripRow nudged `shouldBe` "⏵ Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
 
     it "stays at whichever end of the track a seek past it stops at" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
         reach standin (Seconds 90)
         ended <- pressing session screen [Seek 30] >>= beaten session 1
-        stripRow ended `shouldBe` "Btoum Roumada  " <> bar 16 0 <> "  1:36 / 1:36"
+        stripRow ended `shouldBe` "⏵ Btoum Roumada  " <> bar 16 0 <> "  1:36 / 1:36"
         reach standin (Seconds 10)
         started <- pressing session ended [Seek (-30)] >>= beaten session 2
-        stripRow started `shouldBe` "Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+        stripRow started `shouldBe` "⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     it "gives way, with the track name and the times, to a playback error" $
       withStandin $ \standin session -> do
@@ -544,7 +544,7 @@ spec = do
         screen <- beaten session 0 picking
         later <- beaten session 10 screen
         map stripRow [screen, later]
-          `shouldBe` replicate 2 ("Silence  " <> bar 0 22 <> "  0:00 / 0:00")
+          `shouldBe` replicate 2 ("⏵ Silence  " <> bar 0 22 <> "  0:00 / 0:00")
 
     it "shrinks and grows with the width of the screen" $
       withStandin $ \standin session -> do
@@ -552,8 +552,8 @@ spec = do
         reach standin (Seconds 48)
         partWay <- beaten session 1 screen
         let stripAt width = last (shown (width, 5) partWay)
-        stripAt 30 `shouldBe` "Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
-        stripAt 80 `shouldBe` "Btoum Roumada  " <> bar 26 26 <> "  0:48 / 1:36"
+        stripAt 32 `shouldBe` "⏵ Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
+        stripAt 82 `shouldBe` "⏵ Btoum Roumada  " <> bar 26 26 <> "  0:48 / 1:36"
 
     it "never wraps the strip onto a second row, however narrow the screen" $
       withStandin $ \standin session -> do
@@ -562,7 +562,7 @@ spec = do
         begin standin
         started <- beaten session 0 picking
         unmarked (shown (20, 6) started)
-          `shouldBe` shown (20, 4) browsing <> ["", "Btoum Roumada    0:0"]
+          `shouldBe` shown (20, 4) browsing <> ["", "⏵ Btoum Roumada    0"]
 
   describe "a playback failure in the strip" $ do
     it "puts a skipped track's reason in place of the overlay's contents" $
@@ -574,7 +574,7 @@ spec = do
       withStandin $ \standin session -> do
         screen <- breaking session standin (Unplayable "the file will not play: it is corrupt")
         later <- beaten session 10 screen
-        stripRow later `shouldBe` "Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
+        stripRow later `shouldBe` "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
         loaded standin `shouldReturn` map from (take 2 drukqsSongs)
 
     it "keeps a network failure's reason there however long it is left" $
@@ -591,6 +591,90 @@ spec = do
         onStrip moved `shouldBe` Nothing
         onKeys moved `shouldBe` ["  1   Jynweythek"]
 
+  describe "the playing or paused symbol in the strip" $ do
+    it "is one symbol while the audio runs and another while it is held, switched by each space" $
+      withStandin $ \standin session -> do
+        running <- onDrukqs standin session
+        held <- pressing session running [PauseOrResume] >>= beaten session 1
+        again <- pressing session held [PauseOrResume] >>= beaten session 2
+        map standing [running, held, again] `shouldBe` [["⏵"], ["⏸"], ["⏵"]]
+
+    it "is neither while a song picked with Enter loads, space pressed or not" $
+      withStandin $ \_ session -> do
+        loading <- loadingDrukqs session
+        holding <- pressing session loading [PauseOrResume] >>= beaten session 1
+        map stripRow [loading, holding]
+          `shouldBe` replicate 2 ("  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36")
+        map standing [loading, holding] `shouldBe` [[], []]
+
+    it "is neither while a song reached by n or p, or moved on to by the album, loads" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs standin session
+        forward <- pressing session screen [NextSong] >>= beaten session 1
+        back <- pressing session forward [PreviousSong] >>= beaten session 2
+        movedOn <- ranOut standin session back 1
+        map stripRow [forward, back, movedOn]
+          `shouldBe` [ "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
+                     , "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
+                     , "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
+                     ]
+        map standing [forward, back, movedOn] `shouldBe` [[], [], []]
+
+    it "is the playing one once a song loads with no space pressed, however it started" $
+      withStandin $ \standin session -> do
+        picked <- loadingDrukqs session
+        begin standin
+        pickedBegun <- beaten session 1 picked
+        forward <- pressing session pickedBegun [NextSong]
+        begin standin
+        forwardBegun <- beaten session 2 forward
+        movedOn <- ranOut standin session forwardBegun 1
+        begin standin
+        movedOnBegun <- beaten session 3 movedOn
+        map standing [pickedBegun, forwardBegun, movedOnBegun] `shouldBe` replicate 3 ["⏵"]
+
+    it "is the paused one once a song loads with space pressed while it loaded, however it started" $
+      withStandin $ \standin session -> do
+        picked <- loadingDrukqs session >>= flip (pressing session) [PauseOrResume]
+        begin standin
+        pickedBegun <- beaten session 1 picked
+        forward <- pressing session pickedBegun [NextSong, PauseOrResume]
+        begin standin
+        forwardBegun <- beaten session 2 forward
+        movedOn <- ranOut standin session forwardBegun 1 >>= flip (pressing session) [PauseOrResume]
+        begin standin
+        movedOnBegun <- beaten session 3 movedOn
+        map standing [pickedBegun, forwardBegun, movedOnBegun] `shouldBe` replicate 3 ["⏸"]
+        motionOf standin `shouldReturn` Just Paused
+
+    it "is neither while a skipped track's reason is in the strip, the next song running behind it" $
+      withStandin $ \standin session -> do
+        failed <- breaking session standin (Unplayable "the file will not play: it is corrupt")
+        begin standin
+        behind <- beaten session 1 failed
+        onStrip behind `shouldBe` Just (Wrong "The file will not play: it is corrupt")
+        standing behind `shouldBe` []
+
+    it "is neither while a network failure's reason is in the strip" $
+      withStandin $ \standin session -> do
+        failed <- breaking session standin (Unreachable "the server could not be reached: it is down")
+        onStrip failed `shouldBe` Just (Wrong "The server could not be reached: it is down")
+        standing failed `shouldBe` []
+
+    it "is not on screen with nothing playing, and neither is the strip" $ do
+      withStandin $ \_ session -> do
+        opened <- after session toDrukqs >>= beaten session 0
+        (onStrip opened, standing opened) `shouldBe` (Nothing, [])
+      withStandin $ \standin session -> do
+        finished <- onDrukqs standin session >>= \started -> ranOut standin session started 3
+        (onStrip finished, standing finished) `shouldBe` (Nothing, [])
+      withStandin $ \standin session -> do
+        ended <-
+          onDrukqs standin session
+            >>= flip (pressing session) [NextSong, NextSong, NextSong]
+            >>= beaten session 1
+        (onStrip ended, standing ended) `shouldBe` (Nothing, [])
+
   describe "the mark on the playing song" $ do
     it "is one space before its name, with the selection on it" $
       withStandin $ \standin session -> do
@@ -602,7 +686,7 @@ spec = do
                      , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1   Jynweythek"]
                      , across ["zebra", "2001  Drukqs", "  2   Vordhosbn"]
                      , ""
-                     , "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
+                     , "⏵ Btoum Roumada  " <> bar 0 90 <> "  0:00 / 1:36"
                      ]
         onKeys screen `shouldBe` ["    ▶ Btoum Roumada"]
 
@@ -842,7 +926,7 @@ spec = do
         screen <- resuming session playingDrukqs [MoveDown, Ascend, MoveUp, Descend]
         begin standin
         caught <- beaten session 1 screen
-        let overlay = "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
+        let overlay = "⏵ Btoum Roumada  " <> bar 0 90 <> "  0:00 / 1:36"
         wide 8 caught `shouldBe` ambientColumns <> ["", overlay]
         emboldened caught `shouldBe` ["Artists", "Albums", "Songs", overlay]
         trail caught
@@ -907,7 +991,7 @@ spec = do
         screen <- onDrukqs standin session
         let rows = whole (46, 8) screen
         border rows `shouldSatisfy` all vacant
-        drop 5 (screenshot rows) `shouldBe` ["", " Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36", ""]
+        drop 5 (screenshot rows) `shouldBe` ["", " ⏵ Btoum Roumada  " <> bar 0 14 <> "  0:00 / 1:36", ""]
         take 1 (drop 5 rows) `shouldSatisfy` all (all vacant)
 
     it "has an error in the strip in just the same place, with the same blank rows" $
@@ -1064,11 +1148,17 @@ breaking session standin failure = do
 onStrip :: Screen -> Maybe Showing
 onStrip = showing . strip
 
--- | The strip's row as a terminal 44 columns wide shows it: wide enough to
+-- | The strip's row as a terminal 46 columns wide shows it: wide enough to
 -- give the first song of Drukqs a bar of 16 columns, one for every 6s of its
 -- 1:36.
 stripRow :: Screen -> Text
-stripRow = last . shown (44, 5)
+stripRow = last . shown (46, 5)
+
+-- | Which of the strip's two symbols, the playing one and the paused one, are
+-- anywhere on a terminal wide and tall enough to show every column and the
+-- strip.
+standing :: Screen -> [Text]
+standing screen = filter (\symbol -> any (Text.isInfixOf symbol) (wide 8 screen)) ["⏵", "⏸"]
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
