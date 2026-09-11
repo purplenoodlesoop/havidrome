@@ -1,3 +1,49 @@
+**havidrome** is a terminal music player for your
+[Navidrome](https://www.navidrome.org) server. Browse the library artist by
+artist, pick a song, and the rest of its album plays after it, in the quality
+the server stores it in.
+
+![Artists, albums and songs as three columns, with a song playing in the strip below](docs/screenshots/songs.png)
+
+## Features
+
+- Artists, their albums and an album's songs side by side as columns, with the
+  picked path highlighted.
+- Artists in alphabetical order, albums oldest first, songs in album order.
+- Pick any song and its album plays on from there, one song after another.
+- Every song streams as the original file on the server — FLAC, Opus, whatever
+  it is — never transcoded.
+- A strip at the bottom with the song's name, whether it plays or is paused, a
+  progress bar, and the elapsed and total time.
+- `space` pauses and resumes, `n` and `p` go to the next and previous song, and
+  the left and right arrows seek by 5 seconds, or by 30 with shift.
+- Browsing stays live while a song plays, and the playing song is marked in its
+  album's list.
+- Log in once; `l` logs out, to another server or account, and Ctrl+C quits.
+
+## Requirements
+
+- [Nix](https://nixos.org), with flakes enabled.
+- A [Navidrome](https://www.navidrome.org) server and an account on it.
+
+## Install
+
+```sh
+nix profile add github:purplenoodlesoop/havidrome
+```
+
+## Platforms
+
+Linux and macOS, each on x86_64 and aarch64.
+
+## Screenshots
+
+![The login screen, asking for a server URL, a username and a password](docs/screenshots/login.png)
+
+![Artists and albums as two columns, with the song paused in the strip below](docs/screenshots/albums.png)
+
+---
+
 # havidrome
 
 A CLI player for a [Navidrome](https://www.navidrome.org) server, written in
