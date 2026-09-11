@@ -68,6 +68,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Graphics.Vty qualified as Vty
 import Havidrome.Credentials qualified as Credentials
+import Havidrome.Margin (margined)
 import Havidrome.Subsonic
   ( Credentials (Credentials)
   , Server (Server)
@@ -291,12 +292,12 @@ handle entry = \case
           Right typed -> put screen {form = typed}
   _ -> pure ()
 
--- | The whole screen: the player's name, the three fields under it with the
--- focused one standing out, and the bottom strip when a server has said
--- something.
+-- | The whole screen, inside the margin every screen has: the player's name,
+-- the three fields under it with the focused one standing out, and the bottom
+-- strip when a server has said something.
 draw :: Form -> [Widget Name]
 draw form =
-  [ vBox $
+  [ margined . vBox $
       [ withAttr titleAttribute (line "havidrome")
       , line " "
       ]

@@ -23,6 +23,7 @@ library
         Havidrome.Credentials
         Havidrome.Library
         Havidrome.Login
+        Havidrome.Margin
         Havidrome.Playback
         Havidrome.Playback.Queue
         Havidrome.Subsonic
