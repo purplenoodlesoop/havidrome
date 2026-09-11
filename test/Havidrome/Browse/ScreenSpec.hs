@@ -179,7 +179,7 @@ spec = do
         browsing <- after session toDrukqs
         picking <- taking library session browsing Descend
         unmarked (shown (60, 6) picking) `shouldBe` shown (60, 6) browsing
-        onKeys picking `shouldBe` ["    ▶Btoum Roumada"]
+        onKeys picking `shouldBe` ["    ▶ Btoum Roumada"]
 
     it "then plays the rest of its album, with nothing more pressed" $
       withStandin $ \standin session -> do
@@ -589,43 +589,43 @@ spec = do
         screen <- breaking session standin (Unreachable "the server could not be reached: it is down")
         moved <- taking library session screen MoveDown
         onStrip moved `shouldBe` Nothing
-        onKeys moved `shouldBe` ["  1  Jynweythek"]
+        onKeys moved `shouldBe` ["  1   Jynweythek"]
 
   describe "the mark on the playing song" $ do
-    it "is immediately before its name, with the selection on it" $
+    it "is one space before its name, with the selection on it" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
         wide 6 screen
           `shouldBe` [ across ["Artists", "Albums", "Songs"]
                      , rules 3
-                     , across ["anohni", "      Sketches", "    ▶Btoum Roumada"]
-                     , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1  Jynweythek"]
-                     , across ["zebra", "2001  Drukqs", "  2  Vordhosbn"]
+                     , across ["anohni", "      Sketches", "    ▶ Btoum Roumada"]
+                     , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1   Jynweythek"]
+                     , across ["zebra", "2001  Drukqs", "  2   Vordhosbn"]
                      , "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
                      ]
-        onKeys screen `shouldBe` ["    ▶Btoum Roumada"]
+        onKeys screen `shouldBe` ["    ▶ Btoum Roumada"]
 
     it "stays on it with the selection moved off it, and on no other row" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session >>= flip (pressing session) [MoveDown, MoveDown]
-        carrying screen `shouldBe` ["    ▶Btoum Roumada"]
-        onKeys screen `shouldBe` ["  2  Vordhosbn"]
+        carrying screen `shouldBe` ["    ▶ Btoum Roumada"]
+        onKeys screen `shouldBe` ["  2   Vordhosbn"]
 
     it "is on a picked song from Enter, while it is still loading" $
       withStandin $ \_ session -> do
         screen <- after session playingDrukqs
-        carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+        carrying screen `shouldBe` ["    ▶ Btoum Roumada"]
 
     it "stays where it is when the song is paused" $ withStandin $ \standin session -> do
       screen <- onDrukqs standin session >>= flip (pressing session) [PauseOrResume] >>= beaten session 1
       motionOf standin `shouldReturn` Just Paused
-      carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+      carrying screen `shouldBe` ["    ▶ Btoum Roumada"]
 
     it "is still there after Esc out of its album and Enter back into it" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session >>= flip (pressing session) [Ascend, Descend]
         songsOf screen `shouldBe` Just ("Aphex Twin", "2001  Drukqs")
-        carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+        carrying screen `shouldBe` ["    ▶ Btoum Roumada"]
 
     it "is on no song of another album of the same artist" $
       withStandin $ \standin session -> do
@@ -643,24 +643,24 @@ spec = do
     it "moves on with the album when a song finishes by itself" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session >>= \started -> ranOut standin session started 1
-        carrying screen `shouldBe` ["  1 ▶Jynweythek"]
+        carrying screen `shouldBe` ["  1 ▶ Jynweythek"]
 
     it "moves to the next song on n" $ withStandin $ \standin session -> do
       screen <- onDrukqs standin session >>= flip (pressing session) [NextSong]
-      carrying screen `shouldBe` ["  1 ▶Jynweythek"]
+      carrying screen `shouldBe` ["  1 ▶ Jynweythek"]
 
     it "moves to the previous song on p" $ withStandin $ \_ session -> do
       screen <- after session (toDrukqs <> [MoveDown, Descend, PreviousSong])
-      carrying screen `shouldBe` ["    ▶Btoum Roumada"]
+      carrying screen `shouldBe` ["    ▶ Btoum Roumada"]
 
     it "moves past a skipped track onto the song that plays instead" $
       withStandin $ \standin session -> do
         screen <- breaking session standin (Unplayable "the file will not play: it is corrupt")
-        carrying screen `shouldBe` ["  1 ▶Jynweythek"]
+        carrying screen `shouldBe` ["  1 ▶ Jynweythek"]
 
     it "moves to another song picked with Enter" $ withStandin $ \standin session -> do
       screen <- onDrukqs standin session >>= flip (pressing session) [MoveDown, MoveDown, Descend]
-      carrying screen `shouldBe` ["  2 ▶Vordhosbn"]
+      carrying screen `shouldBe` ["  2 ▶ Vordhosbn"]
 
     it "is on no song once the album's last song has finished" $
       withStandin $ \standin session -> do
@@ -698,24 +698,24 @@ spec = do
     it "leaves the column blank for an album the server gave no year" $
       row (album "b" "Sketches" Nothing) `shouldBe` "      Sketches"
 
-    it "shows a song's track number before its title" $
-      row (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2  Vordhosbn"
+    it "shows a song's track number before its title, the mark's column blank between them" $
+      row (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2   Vordhosbn"
 
     it "leaves the column blank for a song the server gave no track number" $
-      row (song "s" "Btoum Roumada" 96 Nothing) `shouldBe` "     Btoum Roumada"
+      row (song "s" "Btoum Roumada" 96 Nothing) `shouldBe` "      Btoum Roumada"
 
   describe "marking" $ do
-    it "puts the mark immediately before the name of the song playback is on" $
+    it "puts the mark and one space before the name of the song playback is on" $
       marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2))
-        `shouldBe` "  2 " <> mark <> "Vordhosbn"
+        `shouldBe` "  2 " <> mark <> " Vordhosbn"
 
     it "keeps the name in line with the unmarked rows around it" $
       Text.length (marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2)))
         `shouldBe` Text.length (row (song "s" "Vordhosbn" 293 (Just 2)))
 
     it "leaves every other song as its row" $ do
-      marking (Just (SongId "t")) (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2  Vordhosbn"
-      marking Nothing (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2  Vordhosbn"
+      marking (Just (SongId "t")) (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2   Vordhosbn"
+      marking Nothing (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2   Vordhosbn"
 
   describe "the columns" $ do
     it "open on the artist list alone, one column at the left" $ do
@@ -744,13 +744,13 @@ spec = do
       withStandin $ \_ session -> do
         screen <- after session toDrukqs
         wide 6 screen `shouldBe` drukqsColumns
-        trail screen `shouldBe` [["Aphex Twin"], ["2001  Drukqs"], ["     Btoum Roumada"]]
+        trail screen `shouldBe` [["Aphex Twin"], ["2001  Drukqs"], ["      Btoum Roumada"]]
 
     it "move the keys in the rightmost column, and no highlighted row left of it" $
       withStandin $ \_ session -> do
         songs <- after session toDrukqs
         movedSongs <- pressing session songs [MoveDown, MoveDown, MoveUp]
-        trail movedSongs `shouldBe` [["Aphex Twin"], ["2001  Drukqs"], ["  1  Jynweythek"]]
+        trail movedSongs `shouldBe` [["Aphex Twin"], ["2001  Drukqs"], ["  1   Jynweythek"]]
         albums <- after session [MoveDown, Descend]
         movedAlbums <- pressing session albums [MoveDown, MoveDown]
         trail movedAlbums `shouldBe` [["Aphex Twin"], ["2001  Drukqs"]]
@@ -762,9 +762,9 @@ spec = do
         drawnAs "Aphex Twin" albums `shouldBe` drawnAs "      Sketches" albums
         emboldened albums `shouldBe` ["Artists", "Albums"]
         songs <- after session toDrukqs
-        map reversed (drawnAs "     Btoum Roumada" songs) `shouldBe` [True]
-        drawnAs "Aphex Twin" songs `shouldBe` drawnAs "     Btoum Roumada" songs
-        drawnAs "2001  Drukqs" songs `shouldBe` drawnAs "     Btoum Roumada" songs
+        map reversed (drawnAs "      Btoum Roumada" songs) `shouldBe` [True]
+        drawnAs "Aphex Twin" songs `shouldBe` drawnAs "      Btoum Roumada" songs
+        drawnAs "2001  Drukqs" songs `shouldBe` drawnAs "      Btoum Roumada" songs
         emboldened songs `shouldBe` ["Artists", "Albums", "Songs"]
 
     it "lose the rightmost on Esc, leaving the rest exactly as they were left" $
@@ -784,7 +784,7 @@ spec = do
         screen <- after session (toDrukqs <> [Ascend, MoveUp, Descend])
         wide 6 screen `shouldBe` ambientColumns
         trail screen
-          `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1  Xtal"]]
+          `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
 
     it "scroll each on its own" $ withStandin $ \_ session -> do
       let crowded =
@@ -845,7 +845,7 @@ spec = do
         wide 7 caught `shouldBe` ambientColumns <> [overlay]
         emboldened caught `shouldBe` ["Artists", "Albums", "Songs", overlay]
         trail caught
-          `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1  Xtal"]]
+          `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
         artistsAlone <- pressing session caught [Ascend, Ascend]
         take 5 (wide 6 artistsAlone) `shouldBe` take 5 (wide 6 start)
         onKeys artistsAlone `shouldBe` ["Aphex Twin"]
@@ -858,9 +858,9 @@ spec = do
         shown (24, 6) screen
           `shouldBe` [ "Artists │Albums │Songs"
                      , "────────│───────│───────"
-                     , "anohni  │      …│     B…"
-                     , "Aphex T…│1992  …│  1  J…"
-                     , "zebra   │2001  …│  2  V…"
+                     , "anohni  │      …│      …"
+                     , "Aphex T…│1992  …│  1   …"
+                     , "zebra   │2001  …│  2   …"
                      , "        │       │"
                      ]
         let broken = opening [artist "x" "one\ntwo", artist "y" "three"]
@@ -875,7 +875,7 @@ spec = do
         take 3 (wide 6 screen)
           `shouldBe` [ across ["Artists", "Albums", "Songs"]
                      , rules 3
-                     , across ["anohni", "      Sketches", "     Btoum Roumada"]
+                     , across ["anohni", "      Sketches", "      Btoum Roumada"]
                      ]
 
     it "draw the rule between two columns on the line's row as on every other row" $
@@ -1102,9 +1102,9 @@ drukqsColumns :: [Text]
 drukqsColumns =
   [ across ["Artists", "Albums", "Songs"]
   , rules 3
-  , across ["anohni", "      Sketches", "     Btoum Roumada"]
-  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1  Jynweythek"]
-  , across ["zebra", "2001  Drukqs", "  2  Vordhosbn"]
+  , across ["anohni", "      Sketches", "      Btoum Roumada"]
+  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1   Jynweythek"]
+  , across ["zebra", "2001  Drukqs", "  2   Vordhosbn"]
   , across ["", "", ""]
   ]
 
@@ -1114,9 +1114,9 @@ ambientColumns :: [Text]
 ambientColumns =
   [ across ["Artists", "Albums", "Songs"]
   , rules 3
-  , across ["anohni", "      Sketches", "  1  Xtal"]
-  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  2  Tha"]
-  , across ["zebra", "2001  Drukqs", "  3  Silence"]
+  , across ["anohni", "      Sketches", "  1   Xtal"]
+  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  2   Tha"]
+  , across ["zebra", "2001  Drukqs", "  3   Silence"]
   , across ["", "", ""]
   ]
 
