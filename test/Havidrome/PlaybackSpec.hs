@@ -85,29 +85,29 @@ spec = do
     it "is picked for a song the album was started from, loading until its audio starts" $
       withStandin $ \standin session -> do
         start session (tracks `at` 1)
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Picked False)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Picked Loading)
         begin standin
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Picked True)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Picked (Sounding Running))
 
     it "is picked, and loading, for a song picked while another still loads" $
       withStandin $ \_ session -> do
         start session (tracks `at` 1)
         start session (tracks `at` 2)
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 2) (Seconds 0) Picked False)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 2) (Seconds 0) Picked Loading)
 
     it "is followed for the song the album runs on to" $ withStandin $ \standin session -> do
       start session (tracks `at` 1)
       begin standin
       _ <- runOut standin session 1
-      nowPlaying session `shouldReturn` Just (Playing (tracks !! 2) (Seconds 0) Followed False)
+      nowPlaying session `shouldReturn` Just (Playing (tracks !! 2) (Seconds 0) Followed Loading)
 
     it "is followed for the songs next and previous move to" $
       withStandin $ \_ session -> do
         start session (tracks `at` 1)
         next session
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 2) (Seconds 0) Followed False)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 2) (Seconds 0) Followed Loading)
         previous session
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Followed False)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Followed Loading)
 
     it "is followed for the song a skipped one gives way to" $
       withStandin $ \standin session -> do
@@ -121,7 +121,7 @@ spec = do
         start session (tracks `at` 1)
         togglePause session
         begin standin
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Picked True)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 0) Picked (Sounding Paused))
         motionOf standin `shouldReturn` Just Paused
 
   describe "picking a song of another album" $
@@ -213,7 +213,7 @@ spec = do
         reach standin (Seconds 60)
         pause session
         motionOf standin `shouldReturn` Just Paused
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60) Picked False)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60) Picked Loading)
         loaded standin `shouldReturn` [from (tracks !! 1)]
 
     it "lets it run on from where it was held" $ withStandin $ \standin session -> do
@@ -222,7 +222,7 @@ spec = do
       pause session
       resume session
       motionOf standin `shouldReturn` Just Running
-      nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60) Picked False)
+      nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60) Picked Loading)
 
     it "holds a running song and lets a held one run on, on the one control" $
       withStandin $ \standin session -> do
@@ -232,7 +232,7 @@ spec = do
         motionOf standin `shouldReturn` Just Paused
         togglePause session
         motionOf standin `shouldReturn` Just Running
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60) Picked False)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 60) Picked Loading)
 
     it "holds nothing when there is nothing playing to hold" $
       withStandin $ \standin session -> do
@@ -245,7 +245,7 @@ spec = do
         start session (tracks `at` 1)
         reach standin (Seconds 60)
         seekBy session 30
-        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 90) Picked False)
+        nowPlaying session `shouldReturn` Just (Playing (tracks !! 1) (Seconds 90) Picked Loading)
         loaded standin `shouldReturn` [from (tracks !! 1)]
 
     it "leaves the rest of the album to play as it would have" $
