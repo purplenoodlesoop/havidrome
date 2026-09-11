@@ -14,7 +14,7 @@ import Control.Monad (foldM, forM_)
 import Control.Monad.Trans.Except (ExceptT)
 import Data.Char (isControl)
 import Data.Either (fromRight)
-import Data.List (transpose)
+import Data.List (nub, transpose)
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -156,7 +156,7 @@ spec = do
     it "keeps the level it is on when the library will not answer" $
       withStandin $ \_ session -> do
         screen <- stumbling session [Descend]
-        take 5 (wide 6 screen) `shouldBe` take 5 (wide 6 start)
+        take 5 (wide 7 screen) `shouldBe` take 5 (wide 7 start)
         onKeys screen `shouldBe` ["anohni"]
 
     it "says in the strip why the library did not answer" $ withStandin $ \_ session -> do
@@ -401,8 +401,8 @@ spec = do
         picking <- taking library session browsing Descend
         begin standin
         started <- beaten session 0 picking
-        unmarked (shown (60, 5) started)
-          `shouldBe` shown (60, 3) browsing <> ["", "Btoum Roumada  " <> bar 0 32 <> "  0:00 / 1:36"]
+        unmarked (shown (60, 6) started)
+          `shouldBe` shown (60, 4) browsing <> ["", "Btoum Roumada  " <> bar 0 32 <> "  0:00 / 1:36"]
 
     it "is gone when the album's last song finishes, the list left where it was" $
       withStandin $ \standin session -> do
@@ -561,8 +561,8 @@ spec = do
         picking <- taking library session browsing Descend
         begin standin
         started <- beaten session 0 picking
-        unmarked (shown (20, 5) started)
-          `shouldBe` shown (20, 3) browsing <> ["", "Btoum Roumada    0:0"]
+        unmarked (shown (20, 6) started)
+          `shouldBe` shown (20, 4) browsing <> ["", "Btoum Roumada    0:0"]
 
   describe "a playback failure in the strip" $ do
     it "puts a skipped track's reason in place of the overlay's contents" $
@@ -595,8 +595,9 @@ spec = do
     it "is one space before its name, with the selection on it" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
-        wide 6 screen
+        wide 7 screen
           `shouldBe` [ across ["Artists", "Albums", "Songs"]
+                     , rules 3
                      , across ["anohni", "      Sketches", "    ▶ Btoum Roumada"]
                      , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1   Jynweythek"]
                      , across ["zebra", "2001  Drukqs", "  2   Vordhosbn"]
@@ -719,7 +720,7 @@ spec = do
 
   describe "the columns" $ do
     it "open on the artist list alone, one column at the left" $ do
-      wide 6 start `shouldBe` ["Artists", "anohni", "Aphex Twin", "zebra", "", ""]
+      wide 6 start `shouldBe` ["Artists", rules 1, "anohni", "Aphex Twin", "zebra", ""]
       wide 6 start `shouldSatisfy` all ((<= 40) . Text.length)
 
     it "put the keys on the first artist, and on no other row" $ withStandin $ \_ session -> do
@@ -730,8 +731,9 @@ spec = do
     it "put an artist's albums in a second column, the artist highlighted in the first" $
       withStandin $ \_ session -> do
         screen <- after session [MoveDown, Descend]
-        wide 5 screen
+        wide 6 screen
           `shouldBe` [ across ["Artists", "Albums"]
+                     , rules 2
                      , across ["anohni", "      Sketches"]
                      , across ["Aphex Twin", "1992  Selected Ambient Works 85-92"]
                      , across ["zebra", "2001  Drukqs"]
@@ -742,7 +744,7 @@ spec = do
     it "put an album's songs in a third column, the artist and the album highlighted" $
       withStandin $ \_ session -> do
         screen <- after session toDrukqs
-        wide 5 screen `shouldBe` drukqsColumns
+        wide 6 screen `shouldBe` drukqsColumns
         trail screen `shouldBe` [["Aphex Twin"], ["2001  Drukqs"], ["      Btoum Roumada"]]
 
     it "move the keys in the rightmost column, and no highlighted row left of it" $
@@ -781,7 +783,7 @@ spec = do
     it "give another album's songs after Esc, the albums changed only in their mark" $
       withStandin $ \_ session -> do
         screen <- after session (toDrukqs <> [Ascend, MoveUp, Descend])
-        wide 5 screen `shouldBe` ambientColumns
+        wide 6 screen `shouldBe` ambientColumns
         trail screen
           `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
 
@@ -800,17 +802,19 @@ spec = do
           crowding = foldM (taking crowded session)
           many = opening (map (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
       artistsScrolled <- crowding many [MoveDown, MoveDown, MoveDown, MoveDown]
-      wide 4 artistsScrolled `shouldBe` ["Artists", "three", "four", "five"]
+      wide 5 artistsScrolled `shouldBe` ["Artists", rules 1, "three", "four", "five"]
       albums <- crowding artistsScrolled [Descend]
-      wide 4 albums
+      wide 5 albums
         `shouldBe` [ across ["Artists", "Albums"]
+                   , rules 2
                    , across ["three", "2001  First"]
                    , across ["four", "2002  Second"]
                    , across ["five", "2003  Third"]
                    ]
       albumsScrolled <- crowding albums [MoveDown, MoveDown, MoveDown]
-      wide 4 albumsScrolled
+      wide 5 albumsScrolled
         `shouldBe` [ across ["Artists", "Albums"]
+                   , rules 2
                    , across ["three", "2002  Second"]
                    , across ["four", "2003  Third"]
                    , across ["five", "2004  Fourth"]
@@ -819,8 +823,9 @@ spec = do
     it "give an empty second column for an artist with no albums, left again on Esc" $
       withStandin $ \_ session -> do
         screen <- after session [MoveDown, MoveDown, Descend]
-        wide 5 screen
+        wide 6 screen
           `shouldBe` [ across ["Artists", "Albums"]
+                     , rules 2
                      , across ["anohni", ""]
                      , across ["Aphex Twin", ""]
                      , across ["zebra", ""]
@@ -838,12 +843,12 @@ spec = do
         begin standin
         caught <- beaten session 1 screen
         let overlay = "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
-        wide 7 caught `shouldBe` ambientColumns <> ["", overlay]
+        wide 8 caught `shouldBe` ambientColumns <> ["", overlay]
         emboldened caught `shouldBe` ["Artists", "Albums", "Songs", overlay]
         trail caught
           `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
         artistsAlone <- pressing session caught [Ascend, Ascend]
-        take 5 (wide 6 artistsAlone) `shouldBe` take 5 (wide 6 start)
+        take 5 (wide 7 artistsAlone) `shouldBe` take 5 (wide 7 start)
         onKeys artistsAlone `shouldBe` ["Aphex Twin"]
         playing session `shouldReturn` Just (drukqsSongs !! 0)
         motionOf standin `shouldReturn` Just Running
@@ -851,15 +856,38 @@ spec = do
     it "shorten a row too long for its column, and wrap none onto another line" $
       withStandin $ \_ session -> do
         screen <- after session toDrukqs
-        shown (24, 5) screen
+        shown (24, 6) screen
           `shouldBe` [ "Artists │Albums │Songs"
+                     , "────────│───────│───────"
                      , "anohni  │      …│      …"
                      , "Aphex T…│1992  …│  1   …"
                      , "zebra   │2001  …│  2   …"
                      , "        │       │"
                      ]
         let broken = opening [artist "x" "one\ntwo", artist "y" "three"]
-        wide 3 broken `shouldBe` ["Artists", "one two", "three"]
+        wide 4 broken `shouldBe` ["Artists", rules 1, "one two", "three"]
+
+    it "have a line under the Artists heading, the first artist on the row below it" $
+      take 3 (wide 6 start) `shouldBe` ["Artists", rules 1, "anohni"]
+
+    it "have a line under each of the three headings, all on the one row" $
+      withStandin $ \_ session -> do
+        screen <- after session toDrukqs
+        take 3 (wide 6 screen)
+          `shouldBe` [ across ["Artists", "Albums", "Songs"]
+                     , rules 3
+                     , across ["anohni", "      Sketches", "      Btoum Roumada"]
+                     ]
+
+    it "draw the rule between two columns on the line's row as on every other row" $
+      withStandin $ \_ session -> do
+        screen <- after session toDrukqs
+        let rule at = do
+              let drawn = downColumn 6 at screen
+              map snd drawn `shouldBe` replicate 6 '│'
+              length (nub drawn) `shouldBe` 1
+        rule 40
+        rule 80
 
     it "keep what went wrong in the strip along the bottom" $ withStandin $ \_ session -> do
       screen <- stumbling session [Descend]
@@ -871,8 +899,8 @@ spec = do
         albums <- after session [MoveDown, Descend]
         songs <- after session toDrukqs
         forM_ [start, albums, songs] $ \screen ->
-          border (whole (122, 7) screen) `shouldSatisfy` all vacant
-        screenshot (whole (122, 7) songs) `shouldBe` [""] <> map (" " <>) drukqsColumns <> [""]
+          border (whole (122, 8) screen) `shouldSatisfy` all vacant
+        screenshot (whole (122, 8) songs) `shouldBe` [""] <> map (" " <>) drukqsColumns <> [""]
 
     it "has a song's strip on the row above its blank bottom row, and a blank row above the strip" $
       withStandin $ \standin session -> do
@@ -1077,6 +1105,17 @@ wide height = shown (120, height)
 across :: [Text] -> Text
 across = Text.stripEnd . Text.intercalate "│" . zipWith (`Text.justifyLeft` ' ') (40 : repeat 39)
 
+-- | The row of that terminal under the headings of this many columns: a line
+-- across each column, and the rule between one column and the next as it is on
+-- every other row.
+rules :: Int -> Text
+rules count = Text.intercalate "│" (map (`Text.replicate` "─") (take count (40 : repeat 39)))
+
+-- | What that terminal has in this one of its columns, top row to bottom, and
+-- how each is drawn: the look of the rule between two columns, taken whole.
+downColumn :: Int -> Int -> Screen -> [Cell]
+downColumn height at = map (!! at) . within (120, height)
+
 -- | Where the keys are on that terminal: the row highlighted in its rightmost
 -- column.
 onKeys :: Screen -> [Text]
@@ -1110,21 +1149,23 @@ emboldened = inBold . within (120, 6)
 looks :: Screen -> ([Text], [[Text]], [Text])
 looks screen = (wide 6 screen, trail screen, emboldened screen)
 
--- | The three columns down to the songs of Drukqs, five rows high.
+-- | The three columns down to the songs of Drukqs, six rows high.
 drukqsColumns :: [Text]
 drukqsColumns =
   [ across ["Artists", "Albums", "Songs"]
+  , rules 3
   , across ["anohni", "      Sketches", "      Btoum Roumada"]
   , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1   Jynweythek"]
   , across ["zebra", "2001  Drukqs", "  2   Vordhosbn"]
   , across ["", "", ""]
   ]
 
--- | The three columns down to the songs of Selected Ambient Works 85-92, five
+-- | The three columns down to the songs of Selected Ambient Works 85-92, six
 -- rows high.
 ambientColumns :: [Text]
 ambientColumns =
   [ across ["Artists", "Albums", "Songs"]
+  , rules 3
   , across ["anohni", "      Sketches", "  1   Xtal"]
   , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  2   Tha"]
   , across ["zebra", "2001  Drukqs", "  3   Silence"]

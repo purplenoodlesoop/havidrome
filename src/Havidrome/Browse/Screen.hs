@@ -68,7 +68,7 @@ import Brick
   , (<+>)
   )
 import Brick.BChan (BChan, newBChan, writeBChan)
-import Brick.Widgets.Border (vBorder)
+import Brick.Widgets.Border (hBorder, vBorder)
 import Brick.Widgets.List (listSelectedAttr, renderList)
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (bracket)
@@ -391,14 +391,15 @@ levels on = \case
     browsed = column True
     picking = column False
 
--- | One level's column: its heading, and its list under it, each item reading
--- as the text given for it. Its selected row is the row the keys are on when
--- the level is the one being browsed, and the row picked in it otherwise; the
--- theme draws the two alike.
+-- | One level's column: its heading, a line across the column under that, and
+-- its list under the line, each item reading as the text given for it. Its
+-- selected row is the row the keys are on when the level is the one being
+-- browsed, and the row picked in it otherwise; the theme draws the two alike.
 column :: Bool -> Text -> (a -> Text) -> Rows a -> Widget Name
 column beingBrowsed heading reading items =
   vBox
     [ withAttr headingAttribute (line heading)
+    , hBorder
     , renderList (const (line . reading)) beingBrowsed items
     ]
 
@@ -406,6 +407,10 @@ column beingBrowsed heading reading items =
 -- many columns as there are levels, however many are on screen, so a column
 -- keeps its place and its width while the ones to its right come and go. Each
 -- column but the first is ruled off from the one to its left.
+--
+-- The rule is a column of its own, beside the one it rules off, so the line
+-- under a heading stops short of it and the two never meet in a junction:
+-- brick joins borders only where it is asked to, and nothing here asks.
 columns :: [Widget Name] -> Widget Name
 columns shown = Widget Greedy Greedy $ do
   width <- (^. availWidthL) <$> getContext
