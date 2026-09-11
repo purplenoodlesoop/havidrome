@@ -68,7 +68,7 @@ import Brick
   )
 import Brick.BChan (BChan, newBChan, writeBChan)
 import Brick.Widgets.Border (vBorder)
-import Brick.Widgets.List (listSelectedFocusedAttr, renderList)
+import Brick.Widgets.List (listSelectedAttr, renderList)
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (bracket)
 import Control.Monad (forever)
@@ -366,7 +366,8 @@ across laidOut = Widget Greedy Fixed $ do
 
 -- | Every level as a column of its own, the artists at the left and each level
 -- to the right of the one it was descended from. The rightmost is the level
--- being browsed; the columns left of it show what was picked in them. The
+-- being browsed; the columns left of it show what was picked in them,
+-- highlighted as the row the keys are on is. The
 -- song playback is on carries its mark in the song column, if that column is
 -- on screen and the song is in it.
 levels :: Maybe SongId -> Browse -> Widget Name
@@ -387,22 +388,15 @@ levels on = \case
     picking = column False
 
 -- | One level's column: its heading, and its list under it, each item reading
--- as the text given for it. Whether the level is the one being browsed decides
--- how its selected row is drawn — as the row the keys are on, or as the row
--- picked in it.
+-- as the text given for it. Its selected row is the row the keys are on when
+-- the level is the one being browsed, and the row picked in it otherwise; the
+-- theme draws the two alike.
 column :: Bool -> Text -> (a -> Text) -> Rows a -> Widget Name
 column beingBrowsed heading reading items =
   vBox
     [ withAttr headingAttribute (line heading)
-    , renderList (\isSelected -> drawn isSelected . line . reading) beingBrowsed items
+    , renderList (const (line . reading)) beingBrowsed items
     ]
-  where
-    -- The picked row has a look of its own rather than one brick's selection
-    -- looks are layered onto, so that nothing of it carries over onto the row
-    -- the keys are on.
-    drawn isSelected
-      | isSelected && not beingBrowsed = withAttr pickedAttribute
-      | otherwise = id
 
 -- | Columns side by side, left to right. The width is shared out between as
 -- many columns as there are levels, however many are on screen, so a column
@@ -490,23 +484,24 @@ figure :: Int -> Maybe Int -> Text
 figure width =
   maybe (Text.replicate width " ") (Text.justifyRight width ' ' . Text.pack . show)
 
--- | The row the keys are on is in reverse video, and the row picked in a
--- column left of it is bold, as are the columns' headings and the now-playing
--- overlay; a reason in the bottom strip is red. Everything else is the
--- terminal's own colours.
+-- | The selected row of every column is in reverse video, so the row picked in
+-- each column left of the one being browsed looks just like the row the keys
+-- are on, and the whole path down to it reads as highlighted. The keys' list
+-- is the focused one, and its selection takes its look from the unfocused
+-- lists' selection with nothing added. The columns' headings and the
+-- now-playing overlay are bold; a reason in the bottom strip is red.
+-- Everything else is the terminal's own colours.
 theme :: AttrMap
 theme =
   attrMap
     Vty.defAttr
-    [ (listSelectedFocusedAttr, Vty.defAttr `Vty.withStyle` Vty.reverseVideo)
-    , (pickedAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
+    [ (listSelectedAttr, Vty.defAttr `Vty.withStyle` Vty.reverseVideo)
     , (headingAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
     , (overlayAttribute, Vty.defAttr `Vty.withStyle` Vty.bold)
     , (troubleAttribute, Vty.defAttr `Vty.withForeColor` Vty.red)
     ]
 
-pickedAttribute, headingAttribute, overlayAttribute, troubleAttribute :: AttrName
-pickedAttribute = attrName "picked"
+headingAttribute, overlayAttribute, troubleAttribute :: AttrName
 headingAttribute = attrName "heading"
 overlayAttribute = attrName "overlay"
 troubleAttribute = attrName "trouble"

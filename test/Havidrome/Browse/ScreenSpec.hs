@@ -14,6 +14,8 @@ import Control.Monad (foldM)
 import Control.Monad.Trans.Except (ExceptT)
 import Data.Char (isControl)
 import Data.Either (fromRight)
+import Data.List (transpose)
+import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Graphics.Vty qualified as Vty
@@ -79,7 +81,7 @@ import Havidrome.Subsonic
   , SongId (SongId)
   , SubsonicError (NetworkFailure)
   )
-import Terminal (inBold, inReverse, screenshot)
+import Terminal (inBold, reversed, runs, screenshot)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldNotContain, shouldReturn, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (NonNegative (NonNegative))
@@ -218,7 +220,7 @@ spec = do
             session
             playingDrukqs
             [MoveDown, MoveUp, Ascend, Ascend, MoveDown, Descend]
-        emboldened screen `shouldBe` ["Artists", "Albums", "zebra"]
+        trail screen `shouldBe` [["zebra"], []]
         loaded standin `shouldReturn` [from (drukqsSongs !! 0)]
         playing session `shouldReturn` Just (drukqsSongs !! 0)
         motionOf standin `shouldReturn` Just Running
@@ -724,7 +726,7 @@ spec = do
       screen <- after session [MoveDown]
       onKeys screen `shouldBe` ["Aphex Twin"]
 
-    it "put an artist's albums in a second column, the artist marked in the first" $
+    it "put an artist's albums in a second column, the artist highlighted in the first" $
       withStandin $ \_ session -> do
         screen <- after session [MoveDown, Descend]
         wide 5 screen
@@ -734,33 +736,34 @@ spec = do
                      , across ["zebra", "2001  Drukqs"]
                      , across ["", ""]
                      ]
-        emboldened screen `shouldBe` ["Artists", "Albums", "Aphex Twin"]
-        onKeys screen `shouldBe` ["      Sketches"]
+        trail screen `shouldBe` [["Aphex Twin"], ["      Sketches"]]
 
-    it "put an album's songs in a third column, the artist and the album marked" $
+    it "put an album's songs in a third column, the artist and the album highlighted" $
       withStandin $ \_ session -> do
         screen <- after session toDrukqs
         wide 5 screen `shouldBe` drukqsColumns
-        emboldened screen `shouldBe` ["Artists", "Albums", "Songs", "Aphex Twin", "2001  Drukqs"]
-        onKeys screen `shouldBe` ["     Btoum Roumada"]
+        trail screen `shouldBe` [["Aphex Twin"], ["2001  Drukqs"], ["     Btoum Roumada"]]
 
-    it "move the keys in the rightmost column, and no picked row with them" $
+    it "move the keys in the rightmost column, and no highlighted row left of it" $
       withStandin $ \_ session -> do
         songs <- after session toDrukqs
         movedSongs <- pressing session songs [MoveDown, MoveDown, MoveUp]
-        onKeys movedSongs `shouldBe` ["  1  Jynweythek"]
-        emboldened movedSongs `shouldBe` emboldened songs
+        trail movedSongs `shouldBe` [["Aphex Twin"], ["2001  Drukqs"], ["  1  Jynweythek"]]
         albums <- after session [MoveDown, Descend]
         movedAlbums <- pressing session albums [MoveDown, MoveDown]
-        onKeys movedAlbums `shouldBe` ["2001  Drukqs"]
-        emboldened movedAlbums `shouldBe` emboldened albums
+        trail movedAlbums `shouldBe` [["Aphex Twin"], ["2001  Drukqs"]]
 
-    it "draw the keys' row and the rows picked left of it differently" $
+    it "draw the rows picked left of the keys just as the keys' row, and none of them bold" $
       withStandin $ \_ session -> do
-        screen <- after session toDrukqs
-        emboldened screen `shouldNotContain` onKeys screen
-        onKeys screen `shouldNotContain` ["Aphex Twin"]
-        onKeys screen `shouldNotContain` ["2001  Drukqs"]
+        albums <- after session [MoveDown, Descend]
+        map reversed (drawnAs "      Sketches" albums) `shouldBe` [True]
+        drawnAs "Aphex Twin" albums `shouldBe` drawnAs "      Sketches" albums
+        emboldened albums `shouldBe` ["Artists", "Albums"]
+        songs <- after session toDrukqs
+        map reversed (drawnAs "     Btoum Roumada" songs) `shouldBe` [True]
+        drawnAs "Aphex Twin" songs `shouldBe` drawnAs "     Btoum Roumada" songs
+        drawnAs "2001  Drukqs" songs `shouldBe` drawnAs "     Btoum Roumada" songs
+        emboldened songs `shouldBe` ["Artists", "Albums", "Songs"]
 
     it "lose the rightmost on Esc, leaving the rest exactly as they were left" $
       withStandin $ \_ session -> do
@@ -778,8 +781,8 @@ spec = do
       withStandin $ \_ session -> do
         screen <- after session (toDrukqs <> [Ascend, MoveUp, Descend])
         wide 5 screen `shouldBe` ambientColumns
-        emboldened screen
-          `shouldBe` ["Artists", "Albums", "Songs", "Aphex Twin", "1992  Selected Ambient Works 85-92"]
+        trail screen
+          `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1  Xtal"]]
 
     it "scroll each on its own" $ withStandin $ \_ session -> do
       let crowded =
@@ -835,9 +838,9 @@ spec = do
         caught <- beaten session 1 screen
         let overlay = "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
         wide 6 caught `shouldBe` ambientColumns <> [overlay]
-        emboldened caught
-          `shouldBe` ["Artists", "Albums", "Songs", "Aphex Twin", "1992  Selected Ambient Works 85-92", overlay]
-        onKeys caught `shouldBe` ["  1  Xtal"]
+        emboldened caught `shouldBe` ["Artists", "Albums", "Songs", overlay]
+        trail caught
+          `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1  Xtal"]]
         artistsAlone <- pressing session caught [Ascend, Ascend]
         take 5 (wide 6 artistsAlone) `shouldBe` take 5 (wide 6 start)
         onKeys artistsAlone `shouldBe` ["Aphex Twin"]
@@ -1019,19 +1022,38 @@ wide height = shown (120, height)
 across :: [Text] -> Text
 across = Text.stripEnd . Text.intercalate "│" . zipWith (`Text.justifyLeft` ' ') (40 : repeat 39)
 
--- | Where the keys are on that terminal: each stretch of it in reverse video.
+-- | Where the keys are on that terminal: the row highlighted in its rightmost
+-- column.
 onKeys :: Screen -> [Text]
-onKeys = inReverse theme (120, 6) . draw
+onKeys = foldl (\_ rightmost -> rightmost) [] . trail
 
--- | Each stretch of it in bold: the columns' headings, the row picked in each
--- column left of the one being browsed, and the now-playing overlay.
+-- | The rows highlighted on that terminal, column by column from the artists
+-- rightwards, each column's top to bottom: the row picked in each column left
+-- of the one being browsed, and the row the keys are on in that one.
+trail :: Screen -> [[Text]]
+trail = map catMaybes . transpose . map (map highlit . cells . concatMap letters) . runs theme (120, 6) . draw
+  where
+    letters (look, said) = map (reversed look,) (Text.unpack said)
+    cells characters = case break ((== '│') . snd) characters of
+      (cell, []) -> [cell]
+      (cell, _ : rest) -> cell : cells rest
+    highlit cell = case [character | (True, character) <- cell] of
+      [] -> Nothing
+      lit -> Just (Text.stripEnd (Text.pack lit))
+
+-- | How each run of that terminal that reads exactly this is drawn.
+drawnAs :: Text -> Screen -> [Maybe Vty.Attr]
+drawnAs said = map fst . filter ((== said) . Text.stripEnd . snd) . concat . runs theme (120, 6) . draw
+
+-- | Each stretch of it in bold: the columns' headings and the now-playing
+-- overlay.
 emboldened :: Screen -> [Text]
 emboldened = inBold theme (120, 6) . draw
 
--- | Everything a look at that terminal takes in: what it says, where the keys
--- are, and what stands out in bold.
-looks :: Screen -> ([Text], [Text], [Text])
-looks screen = (wide 6 screen, onKeys screen, emboldened screen)
+-- | Everything a look at that terminal takes in: what it says, the rows
+-- highlighted in each column, and what stands out in bold.
+looks :: Screen -> ([Text], [[Text]], [Text])
+looks screen = (wide 6 screen, trail screen, emboldened screen)
 
 -- | The three columns down to the songs of Drukqs, five rows high.
 drukqsColumns :: [Text]
