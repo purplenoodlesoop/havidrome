@@ -7,14 +7,16 @@
 module Terminal
   ( screenshot
   , highlighted
-  , inReverse
   , inBold
+  , runs
+  , reversed
   ) where
 
 import Brick (AttrMap, Widget)
 import Brick.Main (renderWidget)
 import Data.Function (on)
 import Data.List (groupBy)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Lazy qualified as Lazy
@@ -40,31 +42,42 @@ screenshot theme region = map (Text.stripEnd . text) . rows theme region
 -- selection is.
 highlighted :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
 highlighted theme region =
-  map (Text.stripEnd . text) . filter (any (drawnIn reverseVideo)) . rows theme region
+  map (Text.stripEnd . text) . filter (any (reversed . attributeOf)) . rows theme region
 
--- | Each stretch of the same screen drawn in reverse video, top row first and
--- left to right along a row: where a row has several things side by side,
--- only the one in reverse video.
-inReverse :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
-inReverse = stretches reverseVideo
-
--- | Each stretch of it drawn in bold, the same way.
+-- | Each stretch of the same screen drawn in bold, top row first and left to
+-- right along a row: where a row has several things side by side, only the one
+-- in bold.
 inBold :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
-inBold = stretches bold
-
-stretches :: (Ord name) => Style -> AttrMap -> DisplayRegion -> [Widget name] -> [Text]
-stretches style theme region =
+inBold theme region =
   filter (not . Text.null)
     . map (Text.stripEnd . text)
-    . concatMap (filter (all (drawnIn style)) . groupBy ((==) `on` drawnIn style))
+    . concatMap (filter (all emboldened) . groupBy ((==) `on` emboldened))
     . rows theme region
+  where
+    emboldened = drawnIn bold . attributeOf
 
-drawnIn :: Style -> SpanOp -> Bool
+-- | Every row of the same screen as the runs along it that are drawn alike,
+-- left to right: how each run is drawn — nothing where nothing was — and what
+-- it says, blanks included.
+runs :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [[(Maybe Attr, Text)]]
+runs theme region =
+  map (map run . NonEmpty.groupBy ((==) `on` attributeOf)) . rows theme region
+  where
+    run ops = (attributeOf (NonEmpty.head ops), text (NonEmpty.toList ops))
+
+-- | Whether what is drawn so is in reverse video.
+reversed :: Maybe Attr -> Bool
+reversed = drawnIn reverseVideo
+
+drawnIn :: Style -> Maybe Attr -> Bool
 drawnIn wanted = \case
-  TextSpan {textSpanAttr = attribute} -> case attrStyle attribute of
-    SetTo style -> hasStyle style wanted
-    _ -> False
+  Just attribute | SetTo style <- attrStyle attribute -> hasStyle style wanted
   _ -> False
+
+attributeOf :: SpanOp -> Maybe Attr
+attributeOf = \case
+  TextSpan {textSpanAttr = attribute} -> Just attribute
+  _ -> Nothing
 
 rows :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [[SpanOp]]
 rows theme region widgets =
