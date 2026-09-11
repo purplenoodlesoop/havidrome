@@ -8,7 +8,7 @@
 -- did — and, after a refusal, that it did nothing.
 module Havidrome.LoginSpec (spec) where
 
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_)
 import Control.Monad.Trans.State.Strict (State, modify', runState)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -32,7 +32,7 @@ import Havidrome.Login
   , value
   )
 import Havidrome.Subsonic (SubsonicError (AuthRejected, NetworkFailure))
-import Terminal (highlighted, screenshot)
+import Terminal (Cell, border, highlighted, inside, screenshot, terminal, vacant)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 
 spec :: Spec
@@ -175,6 +175,32 @@ spec = do
     it "lines the three labels up in a column of their own" $
       map (Text.length . labelled) fields `shouldBe` [12, 12, 12]
 
+  describe "the margin" $ do
+    it "leaves the terminal's outer rows and columns blank, the title, fields and error inside" $ do
+      let refused = fst (answering refusal details)
+      border (whole (60, 9) refused) `shouldSatisfy` all vacant
+      screenshot (whole (60, 9) refused)
+        `shouldBe` [ ""
+                   , " havidrome"
+                   , ""
+                   , " Server URL  https://music.example.org"
+                   , " Username    someone"
+                   , " Password    ••••••"
+                   , ""
+                   , " The server refused these credentials: wrong password"
+                   , ""
+                   ]
+
+    it "stays blank whatever the terminal's width and height" $
+      forM_ [typing [], fst (answering refusal details)] $ \screen ->
+        forM_ sizes $ \region ->
+          (region, filter (not . vacant) (border (whole region screen))) `shouldBe` (region, [])
+
+-- | Terminals from none at all, through ones too small to hold anything inside
+-- their margin, to ones that hold the whole screen.
+sizes :: [(Int, Int)]
+sizes = [(width, height) | width <- [0 .. 6] <> [40, 81], height <- [0 .. 6] <> [9, 24]]
+
 -- | The fields, in the order they are asked in.
 fields :: [Field]
 fields = [ServerUrl, Username, Password]
@@ -251,10 +277,20 @@ refusal, unreachable :: Either SubsonicError ()
 refusal = Left (AuthRejected "wrong password")
 unreachable = Left (NetworkFailure "no route to host")
 
--- | What the terminal shows, top row first, the blanks at the ends trimmed.
+-- | Every cell of a terminal of this size.
+whole :: (Int, Int) -> Either Ending Form -> [[Cell]]
+whole region = either (const []) (terminal theme region . draw)
+
+-- | Every cell inside the margin of a terminal with this many columns and rows
+-- inside it.
+within :: (Int, Int) -> Either Ending Form -> [[Cell]]
+within (width, height) = inside . whole (width + 2, height + 2)
+
+-- | What that terminal shows inside its margin, top row first, the blanks at
+-- the ends trimmed.
 shown :: (Int, Int) -> Either Ending Form -> [Text]
-shown region = either (const []) (screenshot theme region . draw)
+shown region = screenshot . within region
 
 -- | The rows of the same screen that stand out.
 marked :: (Int, Int) -> Either Ending Form -> [Text]
-marked region = either (const []) (highlighted theme region . draw)
+marked region = highlighted . within region

@@ -10,7 +10,7 @@
 -- names, so that nothing waits on a clock.
 module Havidrome.Browse.ScreenSpec (spec) where
 
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_)
 import Control.Monad.Trans.Except (ExceptT)
 import Data.Char (isControl)
 import Data.Either (fromRight)
@@ -81,7 +81,7 @@ import Havidrome.Subsonic
   , SongId (SongId)
   , SubsonicError (NetworkFailure)
   )
-import Terminal (inBold, reversed, runs, screenshot)
+import Terminal (Cell, border, inBold, inside, reversed, runs, screenshot, terminal, vacant)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldNotContain, shouldReturn, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (NonNegative (NonNegative))
@@ -395,14 +395,14 @@ spec = do
       map stripRow [songs, albums, names]
         `shouldBe` replicate 3 ("Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
 
-    it "takes the bottom row of the screen and no more of the list" $
+    it "takes the bottom row inside the margin and the row above it, and no more of the screen" $
       withStandin $ \standin session -> do
         browsing <- after session toDrukqs
         picking <- taking library session browsing Descend
         begin standin
         started <- beaten session 0 picking
         unmarked (shown (60, 5) started)
-          `shouldBe` take 4 (shown (60, 5) browsing) <> ["Btoum Roumada  " <> bar 0 32 <> "  0:00 / 1:36"]
+          `shouldBe` shown (60, 3) browsing <> ["", "Btoum Roumada  " <> bar 0 32 <> "  0:00 / 1:36"]
 
     it "is gone when the album's last song finishes, the list left where it was" $
       withStandin $ \standin session -> do
@@ -562,7 +562,7 @@ spec = do
         begin standin
         started <- beaten session 0 picking
         unmarked (shown (20, 5) started)
-          `shouldBe` take 4 (shown (20, 5) browsing) <> ["Btoum Roumada    0:0"]
+          `shouldBe` shown (20, 3) browsing <> ["", "Btoum Roumada    0:0"]
 
   describe "a playback failure in the strip" $ do
     it "puts a skipped track's reason in place of the overlay's contents" $
@@ -595,11 +595,12 @@ spec = do
     it "is immediately before its name, with the selection on it" $
       withStandin $ \standin session -> do
         screen <- onDrukqs standin session
-        wide 5 screen
+        wide 6 screen
           `shouldBe` [ across ["Artists", "Albums", "Songs"]
                      , across ["anohni", "      Sketches", "    ▶Btoum Roumada"]
                      , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1  Jynweythek"]
                      , across ["zebra", "2001  Drukqs", "  2  Vordhosbn"]
+                     , ""
                      , "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
                      ]
         onKeys screen `shouldBe` ["    ▶Btoum Roumada"]
@@ -837,7 +838,7 @@ spec = do
         begin standin
         caught <- beaten session 1 screen
         let overlay = "Btoum Roumada  " <> bar 0 92 <> "  0:00 / 1:36"
-        wide 6 caught `shouldBe` ambientColumns <> [overlay]
+        wide 7 caught `shouldBe` ambientColumns <> ["", overlay]
         emboldened caught `shouldBe` ["Artists", "Albums", "Songs", overlay]
         trail caught
           `shouldBe` [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1  Xtal"]]
@@ -863,6 +864,44 @@ spec = do
     it "keep what went wrong in the strip along the bottom" $ withStandin $ \_ session -> do
       screen <- stumbling session [Descend]
       last (wide 6 screen) `shouldBe` "The server could not be reached: down"
+
+  describe "the margin" $ do
+    it "leaves the terminal's outer rows and columns blank at every level, the columns inside" $
+      withStandin $ \_ session -> do
+        albums <- after session [MoveDown, Descend]
+        songs <- after session toDrukqs
+        forM_ [start, albums, songs] $ \screen ->
+          border (whole (122, 7) screen) `shouldSatisfy` all vacant
+        screenshot (whole (122, 7) songs) `shouldBe` [""] <> map (" " <>) drukqsColumns <> [""]
+
+    it "has a song's strip on the row above its blank bottom row, and a blank row above the strip" $
+      withStandin $ \standin session -> do
+        screen <- onDrukqs standin session
+        let rows = whole (46, 8) screen
+        border rows `shouldSatisfy` all vacant
+        drop 5 (screenshot rows) `shouldBe` ["", " Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36", ""]
+        take 1 (drop 5 rows) `shouldSatisfy` all (all vacant)
+
+    it "has an error in the strip in just the same place, with the same blank rows" $
+      withStandin $ \standin session -> do
+        failed <- breaking session standin (Unplayable "the file will not play: it is corrupt")
+        unanswered <- stumbling session [Descend]
+        forM_ [(failed, "The file will not play: it is corrupt"), (unanswered, "The server could not be reached: down")] $
+          \(screen, said) -> do
+            let rows = whole (46, 8) screen
+            border rows `shouldSatisfy` all vacant
+            drop 5 (screenshot rows) `shouldBe` ["", " " <> said, ""]
+            take 1 (drop 5 rows) `shouldSatisfy` all (all vacant)
+
+    it "stays blank whatever the terminal's width and height" $
+      withStandin $ \standin session -> do
+        albums <- after session [MoveDown, Descend]
+        loading <- loadingDrukqs session
+        playingScreen <- onDrukqs standin session
+        failed <- breaking session standin (Unplayable "the file will not play: it is corrupt")
+        forM_ [start, albums, loading, playingScreen, failed] $ \screen ->
+          forM_ sizes $ \region ->
+            (region, filter (not . vacant) (border (whole region screen))) `shouldBe` (region, [])
 
   describe "shorten" $ do
     it "leaves text that fits as it is" $
@@ -1007,12 +1046,28 @@ stripRow = last . shown (44, 5)
 from :: Song -> (Text, Seconds)
 from picked = (address (songId picked), Seconds 0)
 
--- | What the terminal shows, top row first, the blanks at the ends trimmed.
-shown :: (Int, Int) -> Screen -> [Text]
-shown region = screenshot theme region . draw
+-- | Every cell of a terminal of this size.
+whole :: (Int, Int) -> Screen -> [[Cell]]
+whole region = terminal theme region . draw
 
--- | What a terminal 120 columns wide and this many rows high shows: 40
--- columns to each level, which no row of the stand-in library outgrows.
+-- | Every cell inside the margin of a terminal with this many columns and rows
+-- inside it.
+within :: (Int, Int) -> Screen -> [[Cell]]
+within (width, height) = inside . whole (width + 2, height + 2)
+
+-- | What that terminal shows inside its margin, top row first, the blanks at
+-- the ends trimmed.
+shown :: (Int, Int) -> Screen -> [Text]
+shown region = screenshot . within region
+
+-- | Terminals from none at all, through ones too small to hold anything inside
+-- their margin, to ones that hold every column and the strip.
+sizes :: [(Int, Int)]
+sizes = [(width, height) | width <- [0 .. 6] <> [24, 46, 122], height <- [0 .. 6] <> [8, 24]]
+
+-- | What a terminal with 120 columns and this many rows inside its margin
+-- shows: 40 columns to each level, which no row of the stand-in library
+-- outgrows.
 wide :: Int -> Screen -> [Text]
 wide height = shown (120, height)
 
@@ -1031,7 +1086,7 @@ onKeys = foldl (\_ rightmost -> rightmost) [] . trail
 -- rightwards, each column's top to bottom: the row picked in each column left
 -- of the one being browsed, and the row the keys are on in that one.
 trail :: Screen -> [[Text]]
-trail = map catMaybes . transpose . map (map highlit . cells . concatMap letters) . runs theme (120, 6) . draw
+trail = map catMaybes . transpose . map (map highlit . cells . concatMap letters) . runs . within (120, 6)
   where
     letters (look, said) = map (reversed look,) (Text.unpack said)
     cells characters = case break ((== '│') . snd) characters of
@@ -1043,12 +1098,12 @@ trail = map catMaybes . transpose . map (map highlit . cells . concatMap letters
 
 -- | How each run of that terminal that reads exactly this is drawn.
 drawnAs :: Text -> Screen -> [Maybe Vty.Attr]
-drawnAs said = map fst . filter ((== said) . Text.stripEnd . snd) . concat . runs theme (120, 6) . draw
+drawnAs said = map fst . filter ((== said) . Text.stripEnd . snd) . concat . runs . within (120, 6)
 
 -- | Each stretch of it in bold: the columns' headings and the now-playing
 -- overlay.
 emboldened :: Screen -> [Text]
-emboldened = inBold theme (120, 6) . draw
+emboldened = inBold . within (120, 6)
 
 -- | Everything a look at that terminal takes in: what it says, the rows
 -- highlighted in each column, and what stands out in bold.

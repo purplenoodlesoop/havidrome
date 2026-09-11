@@ -46,7 +46,7 @@ import Brick
   , AttrName
   , BrickEvent (AppEvent, VtyEvent)
   , EventM
-  , Padding (Max)
+  , Padding (Max, Pad)
   , Size (Fixed, Greedy)
   , Widget (Widget)
   , attrMap
@@ -60,6 +60,7 @@ import Brick
   , halt
   , neverShowCursor
   , padRight
+  , padTop
   , render
   , txt
   , vBox
@@ -92,6 +93,7 @@ import Havidrome.Browse qualified as Browse
 import Havidrome.Browse.Strip (Moment, Showing (Overlay, Wrong), Strip)
 import Havidrome.Browse.Strip qualified as Strip
 import Havidrome.Library (Library)
+import Havidrome.Margin (margined)
 import Havidrome.Playback (Playing (playingSong), Session, startingAt)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Subsonic
@@ -341,15 +343,17 @@ handle library session = \case
   AppEvent (Beat at) -> get >>= liftIO . onBeat session at >>= put
   _ -> pure ()
 
--- | The whole screen: every level browsed into, side by side, filling
--- everything above the one-line strip along the bottom, which is there
--- whenever it has anything on it.
+-- | The whole screen, inside the margin every screen has: every level browsed
+-- into, side by side, filling everything above the one-line strip along the
+-- bottom. The strip is there whenever it has anything on it, with a blank row
+-- between it and the columns.
 draw :: Screen -> [Widget Name]
 draw screen =
-  [ vBox
-      [ levels (marked screen) (browse screen)
-      , maybe emptyWidget bottom (Strip.showing (strip screen))
-      ]
+  [ margined $
+      vBox
+        [ levels (marked screen) (browse screen)
+        , maybe emptyWidget (padTop (Pad 1) . bottom) (Strip.showing (strip screen))
+        ]
   ]
   where
     bottom = \case

@@ -1,11 +1,24 @@
 {-# LANGUAGE LambdaCase #-}
-
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Rendering a widget the way brick renders it to a terminal, without a
--- terminal: what the screen would say, and which of its rows stand out.
+-- terminal: what the screen would say, which of its rows stand out, and what
+-- is at its edges.
+--
+-- A screen is taken in as its cells, one to a character, which keeps them in
+-- line with the terminal's columns for as long as no character on it is a
+-- wide one.
 module Terminal
-  ( screenshot
+  ( -- * The cells of a screen
+    Cell
+  , terminal
+  , inside
+  , border
+  , vacant
+
+    -- * What they show
+  , screenshot
   , highlighted
   , inBold
   , runs
@@ -27,43 +40,72 @@ import Graphics.Vty.Attributes
   , MaybeDefault (SetTo)
   , Style
   , bold
+  , defAttr
   , hasStyle
   , reverseVideo
   )
 import Graphics.Vty.PictureToSpans (displayOpsForPic)
 import Graphics.Vty.Span (SpanOp (RowEnd, Skip, TextSpan), textSpanAttr, textSpanText)
 
--- | Every row of a screen of this size, with the blanks at the end of each row
--- dropped so that a row reads as what was written on it.
-screenshot :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
-screenshot theme region = map (Text.stripEnd . text) . rows theme region
+-- | One cell of a screen: how it is drawn — nothing where nothing was — and
+-- the character in it.
+type Cell = (Maybe Attr, Char)
 
--- | The rows of the same screen that are drawn in reverse video — where the
--- selection is.
-highlighted :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
-highlighted theme region =
-  map (Text.stripEnd . text) . filter (any (reversed . attributeOf)) . rows theme region
+-- | Every row of a screen of this size, top row first, as the cells along it,
+-- left to right.
+terminal :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [[Cell]]
+terminal theme region widgets =
+  map (concatMap cells . Vector.toList) (Vector.toList (displayOpsForPic picture region))
+  where
+    picture = renderWidget (Just theme) widgets region
+    cells = \case
+      TextSpan {textSpanAttr, textSpanText} -> map (Just textSpanAttr,) (Lazy.unpack textSpanText)
+      Skip columns -> replicate columns nothing
+      RowEnd columns -> replicate columns nothing
+    nothing = (Nothing, ' ')
 
--- | Each stretch of the same screen drawn in bold, top row first and left to
--- right along a row: where a row has several things side by side, only the one
--- in bold.
-inBold :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [Text]
-inBold theme region =
+-- | The same rows with the outermost row and column taken off every side:
+-- what is within a margin of one cell.
+inside :: [[Cell]] -> [[Cell]]
+inside = map (dropEnd 1 . drop 1) . dropEnd 1 . drop 1
+
+-- | The cells along the edges of the same rows: the top and bottom rows, and
+-- the leftmost and rightmost cell of every row.
+border :: [[Cell]] -> [Cell]
+border rows = concat (ends rows) <> concatMap ends rows
+  where
+    ends line = take 1 line <> takeEnd 1 line
+
+-- | Whether a cell shows nothing: a space, drawn as the terminal draws what it
+-- is given no look for, or not drawn at all.
+vacant :: Cell -> Bool
+vacant (look, character) = character == ' ' && maybe True (== defAttr) look
+
+-- | Every row, with the blanks at the end of each row dropped so that a row
+-- reads as what was written on it.
+screenshot :: [[Cell]] -> [Text]
+screenshot = map (Text.stripEnd . text)
+
+-- | The rows drawn in reverse video — where the selection is.
+highlighted :: [[Cell]] -> [Text]
+highlighted = screenshot . filter (any (reversed . fst))
+
+-- | Each stretch drawn in bold, top row first and left to right along a row:
+-- where a row has several things side by side, only the one in bold.
+inBold :: [[Cell]] -> [Text]
+inBold =
   filter (not . Text.null)
     . map (Text.stripEnd . text)
     . concatMap (filter (all emboldened) . groupBy ((==) `on` emboldened))
-    . rows theme region
   where
-    emboldened = drawnIn bold . attributeOf
+    emboldened = drawnIn bold . fst
 
--- | Every row of the same screen as the runs along it that are drawn alike,
--- left to right: how each run is drawn — nothing where nothing was — and what
--- it says, blanks included.
-runs :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [[(Maybe Attr, Text)]]
-runs theme region =
-  map (map run . NonEmpty.groupBy ((==) `on` attributeOf)) . rows theme region
+-- | Every row as the runs along it that are drawn alike, left to right: how
+-- each run is drawn and what it says, blanks included.
+runs :: [[Cell]] -> [[(Maybe Attr, Text)]]
+runs = map (map run . NonEmpty.groupBy ((==) `on` fst))
   where
-    run ops = (attributeOf (NonEmpty.head ops), text (NonEmpty.toList ops))
+    run alike = (fst (NonEmpty.head alike), text (NonEmpty.toList alike))
 
 -- | Whether what is drawn so is in reverse video.
 reversed :: Maybe Attr -> Bool
@@ -74,17 +116,11 @@ drawnIn wanted = \case
   Just attribute | SetTo style <- attrStyle attribute -> hasStyle style wanted
   _ -> False
 
-attributeOf :: SpanOp -> Maybe Attr
-attributeOf = \case
-  TextSpan {textSpanAttr = attribute} -> Just attribute
-  _ -> Nothing
+text :: [Cell] -> Text
+text = Text.pack . map snd
 
-rows :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [[SpanOp]]
-rows theme region widgets =
-  map Vector.toList (Vector.toList (displayOpsForPic (renderWidget (Just theme) widgets region) region))
+dropEnd :: Int -> [a] -> [a]
+dropEnd count items = zipWith const items (drop count items)
 
-text :: [SpanOp] -> Text
-text = foldMap $ \case
-  TextSpan {textSpanText = written} -> Lazy.toStrict written
-  Skip columns -> Text.replicate columns " "
-  RowEnd columns -> Text.replicate columns " "
+takeEnd :: Int -> [a] -> [a]
+takeEnd count items = drop (length items - count) items
