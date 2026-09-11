@@ -466,19 +466,21 @@ instance Row Album where
   row album = figure 4 (albumYear album) <> "  " <> albumName album
 
 instance Row Song where
-  row song = figure 3 (songTrack song) <> "  " <> songTitle song
+  row = marking Nothing
 
--- | What a song reads as in the song list: its row, and when it is the song
--- playback is on, the mark immediately before its name. The mark takes the
--- place of the second of the two spaces there, so a marked name stays in line
--- with the names above and below it.
+-- | What a song reads as in the song list: its track number, then a column of
+-- its own for the mark, then its title, a space either side of the mark's
+-- column. The column holds the mark on the song playback is on and is blank
+-- on every other, so every title in the list starts in the same column.
 --
 -- Only a song has this: an album or an artist is never marked for the song
 -- playing out of it.
 marking :: Maybe SongId -> Song -> Text
-marking on song
-  | on == Just (songId song) = figure 3 (songTrack song) <> " " <> mark <> songTitle song
-  | otherwise = row song
+marking on song = figure 3 (songTrack song) <> " " <> marker <> " " <> songTitle song
+  where
+    marker
+      | on == Just (songId song) = mark
+      | otherwise = " "
 
 -- | The mark on the song playback is on.
 mark :: Text
