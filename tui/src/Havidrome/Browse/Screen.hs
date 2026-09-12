@@ -46,7 +46,6 @@ import Brick
   , Widget (Widget)
   , attrMap
   , attrName
-  , customMainWithDefaultVty
   , emptyWidget
   , getContext
   , hBox
@@ -74,7 +73,6 @@ import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Vector qualified as Vector
-import GHC.Clock (getMonotonicTime)
 import Graphics.Vty qualified as Vty
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
@@ -84,8 +82,9 @@ import Havidrome.Browse
   )
 import Havidrome.Browse qualified as Browse
 import Havidrome.Browse.Row (Row (row), marking)
-import Havidrome.Browse.Strip (Moment (Moment), Showing (Overlay, Wrong), Strip)
+import Havidrome.Browse.Strip (Moment, Showing (Overlay, Wrong), Strip)
 import Havidrome.Browse.Strip qualified as Strip
+import Havidrome.Clock (Clock (now), HasClock (getClock))
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Key.Vty (pressed)
 import Havidrome.Library (Library)
@@ -93,6 +92,7 @@ import Havidrome.Margin (margined)
 import Havidrome.Playback (Playing (..), Session, startingAt)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Subsonic (Artist, Song (..), SongId, SubsonicError, explain)
+import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 import Havidrome.Width qualified as Width
 import Optics.Core (view, (%))
 
@@ -283,31 +283,30 @@ markOf = fmap (view (#song % #id))
 -- | Hands the terminal to the browsing screen, takes it back when browsing
 -- ends, and says how it ended. The beat runs for exactly as long as the screen
 -- is up.
-browsing :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> IO Ending
-browsing library session screen = do
+browsing ::
+  (HasClock env, HasTerminal env) =>
+  env ->
+  Library (ExceptT SubsonicError IO) ->
+  Session ->
+  Screen ->
+  IO Ending
+browsing env library session screen = do
   beats <- newBChan 1
-  bracket (forkIO (beating beats)) killThread $ \_ -> do
-    (final, vty) <- customMainWithDefaultVty (Just beats) (application library session) screen
-    -- brick hands back the terminal it was driving rather than putting it
-    -- down, so that one screen can hand it to the next. This one hands it to
-    -- nobody: the login screen a logout goes to takes a terminal of its own,
-    -- and a run that ends here leaves the terminal as it found it.
-    Vty.shutdown vty
+  bracket (forkIO (beating env beats)) killThread $ \_ -> do
+    final <-
+      onTerminal (getTerminal env) (Just beats) (application library session) screen
     -- Only the two commands that end browsing take the screen down, and each
     -- writes down which of them it was; a screen that is gone for any other
     -- reason is one the player was left at.
     pure (fromMaybe Quit final.ending)
 
--- | A beat, then the next, for as long as it is left running.
-beating :: BChan Beat -> IO ()
-beating beats = forever $ do
-  at <- moment
+-- | A beat, then the next, for as long as it is left running. Each is struck
+-- at the moment the clock says, which is the moment it carries.
+beating :: (HasClock env) => env -> BChan Beat -> IO ()
+beating env beats = forever $ do
+  at <- (getClock env).now
   writeBChan beats (Beat at)
   threadDelay interval
-
--- | The moment it is now, on the player's own clock.
-moment :: IO Moment
-moment = Moment <$> getMonotonicTime
 
 -- | How long a beat lasts, in microseconds: short enough that one song follows
 -- another without a silence to hear, long enough that the player is idle

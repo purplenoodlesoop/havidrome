@@ -4,7 +4,7 @@
 module Havidrome.Subsonic.Transport
   ( Transport (..)
   , httpTransport
-  , newHttpTransport
+  , mkHttpTransport
   , classifyException
   , classifyStatus
   ) where
@@ -51,8 +51,8 @@ httpTransport manager = Transport $ \url ->
             (Lazy.toStrict (responseBody response))
 
 -- | A transport with a TLS-capable manager of its own.
-newHttpTransport :: IO Transport
-newHttpTransport = httpTransport <$> newTlsManager
+mkHttpTransport :: IO Transport
+mkHttpTransport = httpTransport <$> newTlsManager
 
 -- | Anything @http-client@ throws means the server was never reached: an
 -- unknown host, a refused connection, a TLS failure, a timeout.
