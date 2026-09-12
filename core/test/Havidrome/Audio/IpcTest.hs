@@ -1,5 +1,6 @@
--- | The lines in these tests are mpv's own, taken from a session with the
--- player this backend drives.
+{- | The lines in these tests are mpv's own, taken from a session with the
+player this backend drives.
+-}
 module Havidrome.Audio.IpcTest (tests) where
 
 import Data.Aeson (Value (Number))
@@ -219,8 +220,9 @@ whatever =
     )
   ]
 
--- | A rendered command, read back as JSON so the test does not depend on how
--- the fields happen to be laid out.
+{- | A rendered command, read back as JSON so the test does not depend on how
+the fields happen to be laid out.
+-}
 sent :: Effect -> Maybe Value
 sent effect = render effect >>= Aeson.decodeStrict
 
@@ -232,18 +234,20 @@ heard = readNotice
 ending :: ByteString -> Maybe Word8
 ending = fmap snd . ByteString.unsnoc
 
--- | Whether a line the player is sent is one line: it ends the line it is,
--- and it is all of it.
+{- | Whether a line the player is sent is one line: it ends the line it is,
+and it is all of it.
+-}
 oneLine :: ByteString -> PropertyT IO ()
 oneLine line = do
   ByteString.count newline line === 1
   ending line === Just newline
-  where
-    newline = 10
+ where
+  newline = 10
 
--- | One word of a command, as the JSON string the player is sent it as. The
--- backend builds them the same way, so the test does not name the
--- constructor either.
+{- | One word of a command, as the JSON string the player is sent it as. The
+backend builds them the same way, so the test does not name the
+constructor either.
+-}
 word :: Text -> Value
 word = Aeson.toJSON
 
@@ -251,8 +255,9 @@ word = Aeson.toJSON
 command :: [Value] -> Maybe Value
 command arguments = Just (Aeson.object ["command" Aeson..= arguments])
 
--- | Anything the state machine can order the player to do. What it announces
--- to the caller instead is 'anyEvent'.
+{- | Anything the state machine can order the player to do. What it announces
+to the caller instead is 'anyEvent'.
+-}
 anyOrder :: Gen Effect
 anyOrder =
   Gen.choice
@@ -268,8 +273,8 @@ anyEvent =
     [ pure Finished
     , Failed <$> Gen.choice [Unreachable <$> reason, Unplayable <$> reason]
     ]
-  where
-    reason = Gen.text (Range.linear 0 12) Gen.unicode
+ where
+  reason = Gen.text (Range.linear 0 12) Gen.unicode
 
 -- | An address to play from, the characters a line has to escape among them.
 anyUrl :: Gen Text
@@ -280,8 +285,9 @@ anyUrl = do
 anySecond :: Gen Int
 anySecond = Gen.int (Range.linear 0 6000)
 
--- | The events this player acts on, which are the ones the line below is not
--- made of.
+{- | The events this player acts on, which are the ones the line below is not
+made of.
+-}
 actedOn :: [Text]
 actedOn = ["property-change", "start-file", "playback-restart", "end-file"]
 

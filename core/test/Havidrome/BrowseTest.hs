@@ -129,8 +129,8 @@ ends =
           === Just (length artists - 1)
     )
   ]
-  where
-    pressing = Gen.int (Range.linear 1 20)
+ where
+  pressing = Gen.int (Range.linear 1 20)
 
 -- | The artist list, as a run opens on it.
 opening :: Browse
@@ -147,16 +147,17 @@ items = \case
   AtAlbums _ albums -> fmap (.name) albums.items
   AtSongs _ _ songs -> fmap (.title) songs.items
 
--- | Which row of the level on screen is selected, and nothing at all when the
--- level is empty and has no row to select.
+{- | Which row of the level on screen is selected, and nothing at all when the
+level is empty and has no row to select.
+-}
 cursor :: Browse -> Maybe Int
 cursor = \case
   AtArtists artists' -> at artists'
   AtAlbums _ albums -> at albums
   AtSongs _ _ songs -> at songs
-  where
-    at :: Rows a -> Maybe Int
-    at level = if null level.items then Nothing else Just level.place
+ where
+  at :: Rows a -> Maybe Int
+  at level = if null level.items then Nothing else Just level.place
 
 times :: Int -> (a -> a) -> a -> a
 times count move = foldr (.) id (replicate count move)

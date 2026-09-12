@@ -1,15 +1,16 @@
--- | The player itself: the credentials a run starts with, the server they
--- reach, the browsing screen over its library, and the audio a song picked in
--- it plays through.
---
--- This is also where every capability the player has is built, and the only
--- place that names the record holding them: everything under it says what it
--- touches with a @Has@ class, and so can touch nothing else.
---
--- A run is one account after another. Browsing an account ends either in the
--- player being left, which ends the run, or in a logout, which forgets that
--- account and asks the login screen for the next one — so a run browses as
--- many libraries as it is logged into, one at a time.
+{- | The player itself: the credentials a run starts with, the server they
+reach, the browsing screen over its library, and the audio a song picked in
+it plays through.
+
+This is also where every capability the player has is built, and the only
+place that names the record holding them: everything under it says what it
+touches with a @Has@ class, and so can touch nothing else.
+
+A run is one account after another. Browsing an account ends either in the
+player being left, which ends the run, or in a logout, which forgets that
+account and asks the login screen for the next one — so a run browses as
+many libraries as it is logged into, one at a time.
+-}
 module Havidrome
   ( run
 
@@ -47,9 +48,10 @@ import Havidrome.Subsonic
 import Havidrome.Terminal (HasTerminal (getTerminal), Terminal (says), mkTerminal)
 import System.Exit (exitFailure)
 
--- | Every capability the player has, built by 'run' and named nowhere else.
--- A function that took this would claim the whole world, so none does: each
--- one asks for the capabilities it uses by constraint instead.
+{- | Every capability the player has, built by 'run' and named nowhere else.
+A function that took this would claim the whole world, so none does: each
+one asks for the capabilities it uses by constraint instead.
+-}
 data Env = Env
   { store :: Store
   , subsonic :: Subsonic
@@ -94,19 +96,20 @@ start = \case
   Present credentials -> Browse credentials
   Unreadable fault -> Stop (Credentials.explain fault)
 
--- | Runs the player to completion: the library the credentials reach, browsed
--- until the user quits, and every library logged into after it.
---
--- Credentials that are already stored are used as they are; when there are
--- none, the login screen asks for them, and a run left at that screen browses
--- nothing at all.
---
--- Every capability is built here, once, and lasts exactly as long as the run:
--- the player mpv makes the sound with is started before the first screen and
--- gone after the last, and one account after another is played through it.
--- The journal is built before anything else, because the capabilities that
--- recover from an exception write to it and so are built on top of it: a
--- journal is the smallest environment that has one.
+{- | Runs the player to completion: the library the credentials reach, browsed
+until the user quits, and every library logged into after it.
+
+Credentials that are already stored are used as they are; when there are
+none, the login screen asks for them, and a run left at that screen browses
+nothing at all.
+
+Every capability is built here, once, and lasts exactly as long as the run:
+the player mpv makes the sound with is started before the first screen and
+gone after the last, and one account after another is played through it.
+The journal is built before anything else, because the capabilities that
+recover from an exception write to it and so are built on top of it: a
+journal is the smallest environment that has one.
+-}
 run :: IO ()
 run = do
   journal <- mkJournal
@@ -127,12 +130,13 @@ run = do
       Browse credentials -> player (accounts env) (Just credentials)
       Stop reason -> stop env reason
 
--- | What a run does with an account: where it gets one, what browsing it comes
--- to, and how it is forgotten again.
---
--- The player's are the login screen, the browsing screen and the config file
--- ('accounts'); a spec's stand-in is as good an account as far as 'player' is
--- concerned, which is what the @f@ keeps open.
+{- | What a run does with an account: where it gets one, what browsing it comes
+to, and how it is forgotten again.
+
+The player's are the login screen, the browsing screen and the config file
+('accounts'); a spec's stand-in is as good an account as far as 'player' is
+concerned, which is what the @f@ keeps open.
+-}
 data Account f = Account
   { asks :: f (Maybe Credentials.Credentials)
   -- ^ Credentials a server took, or nothing when the player was left instead.
@@ -142,12 +146,13 @@ data Account f = Account
   -- ^ Throw away the stored credentials, so that a later run asks again.
   }
 
--- | The player's own: the login screen asks, the browsing screen browses, and
--- the config file is what forgetting empties.
-accounts ::
-  (HasAudio env, HasClock env, HasStore env, HasSubsonic env, HasTerminal env) =>
-  env ->
-  Account IO
+{- | The player's own: the login screen asks, the browsing screen browses, and
+the config file is what forgetting empties.
+-}
+accounts
+  :: (HasAudio env, HasClock env, HasStore env, HasSubsonic env, HasTerminal env)
+  => env
+  -> Account IO
 accounts env =
   Account
     { asks = Login.login env (Login.navidrome env)
@@ -155,31 +160,33 @@ accounts env =
     , forgets = (getStore env).discard
     }
 
--- | One account after another, from the credentials a run starts with — or
--- from none, which is the login screen asking for the first.
---
--- A logout forgets the account before the next is asked for, so that a run cut
--- short at that login screen leaves nothing stored behind it. Leaving the
--- player, at the login screen or under it, ends the run there and then.
+{- | One account after another, from the credentials a run starts with — or
+from none, which is the login screen asking for the first.
+
+A logout forgets the account before the next is asked for, so that a run cut
+short at that login screen leaves nothing stored behind it. Leaving the
+player, at the login screen or under it, ends the run there and then.
+-}
 player :: (Monad f) => Account f -> Maybe Credentials.Credentials -> f ()
 player account = maybe asked entered
-  where
-    asked = account.asks >>= traverse_ entered
-    entered credentials =
-      account.browses credentials >>= \case
-        Quit -> pure ()
-        LoggedOut -> account.forgets >> asked
+ where
+  asked = account.asks >>= traverse_ entered
+  entered credentials =
+    account.browses credentials >>= \case
+      Quit -> pure ()
+      LoggedOut -> account.forgets >> asked
 
--- | Opens the artist list of the server these credentials reach, hands the
--- terminal over to it, and says how browsing it ended.
---
--- The session that plays what is picked is this account's own, so an account
--- logged out of leaves no album behind it, and the next one starts on nothing.
-browse ::
-  (HasAudio env, HasClock env, HasSubsonic env, HasTerminal env) =>
-  env ->
-  Credentials.Credentials ->
-  IO Ending
+{- | Opens the artist list of the server these credentials reach, hands the
+terminal over to it, and says how browsing it ended.
+
+The session that plays what is picked is this account's own, so an account
+logged out of leaves no album behind it, and the next one starts on nothing.
+-}
+browse
+  :: (HasAudio env, HasClock env, HasSubsonic env, HasTerminal env)
+  => env
+  -> Credentials.Credentials
+  -> IO Ending
 browse env credentials = do
   let subsonic = getSubsonic env
       browsed = subsonic.browses credentials

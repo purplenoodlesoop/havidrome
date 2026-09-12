@@ -1,5 +1,6 @@
--- | The whole of a playback session, driven against a stand-in backend: no
--- audio device, no server, and nothing of the terminal.
+{- | The whole of a playback session, driven against a stand-in backend: no
+audio device, no server, and nothing of the terminal.
+-}
 module Havidrome.PlaybackTest (tests) where
 
 import Control.Monad (replicateM, replicateM_)
@@ -447,13 +448,15 @@ anyFailure =
     )
   ]
 
--- | The album every example here is played out of: four songs, in album
--- order.
+{- | The album every example here is played out of: four songs, in album
+order.
+-}
 tracks :: [Song]
 tracks = album "a" 4
 
--- | An album of so many songs, in album order, told apart from another
--- album's by the name its songs are lettered with.
+{- | An album of so many songs, in album order, told apart from another
+album's by the name its songs are lettered with.
+-}
 album :: Text -> Int -> [Song]
 album name count = fmap (numbered name) [1 .. count]
 
@@ -468,13 +471,15 @@ numbered name n =
     , disc = Nothing
     }
 
--- | The song in this place of 'tracks', counting from nothing. It is named
--- rather than looked up, so that there is no place the album does not hold.
+{- | The song in this place of 'tracks', counting from nothing. It is named
+rather than looked up, so that there is no place the album does not hold.
+-}
 trackAt :: Int -> Song
 trackAt place = numbered "a" (place + 1)
 
--- | The song in this place of an album, and nothing where the album is
--- shorter than that.
+{- | The song in this place of an album, and nothing where the album is
+shorter than that.
+-}
 inPlace :: [Song] -> Int -> Maybe Song
 inPlace album' place = listToMaybe (drop place album')
 
@@ -485,9 +490,10 @@ anAlbum = do
   place <- Gen.int (Range.linear 0 (count - 1))
   pure (album "a" count, place)
 
--- | Starts a session on the song in this place of an album, counting from
--- nothing. A place the album has no song in starts nothing at all, which
--- leaves the session playing nothing for whatever asked for it.
+{- | Starts a session on the song in this place of an album, counting from
+nothing. A place the album has no song in starts nothing at all, which
+leaves the session playing nothing for whatever asked for it.
+-}
 startAt :: Session -> [Song] -> Int -> IO ()
 startAt session album' place =
   traverse_ session.start (startingAt album' . (.id) =<< inPlace album' place)
@@ -496,9 +502,10 @@ startAt session album' place =
 from :: Song -> (Text, Seconds)
 from song = (address song.id, Seconds 0)
 
--- | Nothing is asked of the session: the audio simply runs out, so many
--- times, and the session is handed what the backend says about it. This is
--- the whole of \"without further input\".
+{- | Nothing is asked of the session: the audio simply runs out, so many
+times, and the session is handed what the backend says about it. This is
+the whole of \"without further input\".
+-}
 runOut :: Standin -> Session -> Int -> IO [Failure]
 runOut standin session times =
   fmap concat . replicateM (max 0 times) $ do

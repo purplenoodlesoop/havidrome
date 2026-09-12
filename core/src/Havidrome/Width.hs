@@ -1,17 +1,18 @@
--- | How many columns a character takes on a terminal, how many a line of
--- text takes, and what is left of a line cut to the columns it has. It is the
--- one measure the whole player lays out against: the now-playing overlay
--- shares the width it is given out between the parts of its line, and a row
--- too long for its column is cut to the width that is left.
---
--- The rule is Markus Kuhn's @wcwidth@ (2007-05-26, Unicode 5.0), which is the
--- same rule the terminal library draws by, written out here so that the core
--- measures a line without reaching for a terminal. Its permission notice
--- grants use, copying, modification and distribution for any purpose.
---
--- A character no terminal advances the cursor for — a control character, a
--- combining mark, a zero-width space — takes no column at all; an East Asian
--- wide or full-width character takes two; everything else takes one.
+{- | How many columns a character takes on a terminal, how many a line of
+text takes, and what is left of a line cut to the columns it has. It is the
+one measure the whole player lays out against: the now-playing overlay
+shares the width it is given out between the parts of its line, and a row
+too long for its column is cut to the width that is left.
+
+The rule is Markus Kuhn's @wcwidth@ (2007-05-26, Unicode 5.0), which is the
+same rule the terminal library draws by, written out here so that the core
+measures a line without reaching for a terminal. Its permission notice
+grants use, copying, modification and distribution for any purpose.
+
+A character no terminal advances the cursor for — a control character, a
+combining mark, a zero-width space — takes no column at all; an East Asian
+wide or full-width character takes two; everything else takes one.
+-}
 module Havidrome.Width
   ( char
   , text
@@ -31,68 +32,73 @@ char character
   | combining code = 0
   | wide code = 2
   | otherwise = 1
-  where
-    code = ord character
+ where
+  code = ord character
 
--- | The columns a line of text takes, which is what its characters take
--- between them.
+{- | The columns a line of text takes, which is what its characters take
+between them.
+-}
 text :: Text -> Int
 text = T.foldl' (\taken character -> taken + char character) 0
 
--- | Text on one line of at most this many columns. What does not fit is cut
--- off, and an ellipsis at the end says so. A character that would move the
--- terminal onto another line, or anywhere else, is a space instead.
+{- | Text on one line of at most this many columns. What does not fit is cut
+off, and an ellipsis at the end says so. A character that would move the
+terminal onto another line, or anywhere else, is a space instead.
+-}
 shorten :: Int -> Text -> Text
 shorten room said
   | text flat <= room = flat
   | room < text ellipsis = T.empty
   | otherwise = fitting (room - text ellipsis) flat <> ellipsis
-  where
-    flat = T.map (\character -> if isControl character then ' ' else character) said
-    ellipsis = "…"
+ where
+  flat = T.map (\character -> if isControl character then ' ' else character) said
+  ellipsis = "…"
 
 -- | The longest start of the text that takes at most this many columns.
 fitting :: Int -> Text -> Text
 fitting room said = T.take (length (takeWhile (<= room) reaches)) said
-  where
-    reaches = scanl1 (+) (fmap char (T.unpack said))
+ where
+  reaches = scanl1 (+) (fmap char (T.unpack said))
 
--- | Whether a character hangs off the one before it rather than taking a
--- column of its own: a non-spacing or enclosing mark, a format character, a
--- Hangul Jamo medial vowel or final consonant, or a zero-width space.
+{- | Whether a character hangs off the one before it rather than taking a
+column of its own: a non-spacing or enclosing mark, a format character, a
+Hangul Jamo medial vowel or final consonant, or a zero-width space.
+-}
 combining :: Int -> Bool
 combining code = within marks
-  where
-    within = \case
-      [] -> False
-      (lowest, highest) : rest
-        | code < lowest -> False
-        | code <= highest -> True
-        | otherwise -> within rest
+ where
+  within = \case
+    [] -> False
+    (lowest, highest) : rest
+      | code < lowest -> False
+      | code <= highest -> True
+      | otherwise -> within rest
 
--- | Whether a character takes two columns: the East Asian wide and full-width
--- classes of Unicode Technical Report #11.
+{- | Whether a character takes two columns: the East Asian wide and full-width
+classes of Unicode Technical Report #11.
+-}
 wide :: Int -> Bool
 wide code =
   code >= 0x1100
     && ( code <= 0x115F -- Hangul Jamo initial consonants.
-          || code == 0x2329
-          || code == 0x232A
-          || code >= 0x2E80 && code <= 0xA4CF && code /= 0x303F -- CJK to Yi.
-          || code >= 0xAC00 && code <= 0xD7A3 -- Hangul syllables.
-          || code >= 0xF900 && code <= 0xFAFF -- CJK compatibility ideographs.
-          || code >= 0xFE10 && code <= 0xFE19 -- Vertical forms.
-          || code >= 0xFE30 && code <= 0xFE6F -- CJK compatibility forms.
-          || code >= 0xFF00 && code <= 0xFF60 -- Full-width forms.
-          || code >= 0xFFE0 && code <= 0xFFE6
-          || code >= 0x20000 && code <= 0x2FFFD
-          || code >= 0x30000 && code <= 0x3FFFD
+           || code == 0x2329
+           || code == 0x232A
+           || code >= 0x2E80 && code <= 0xA4CF && code /= 0x303F -- CJK to Yi.
+           || code >= 0xAC00 && code <= 0xD7A3 -- Hangul syllables.
+           || code >= 0xF900 && code <= 0xFAFF -- CJK compatibility ideographs.
+           || code >= 0xFE10 && code <= 0xFE19 -- Vertical forms.
+           || code >= 0xFE30 && code <= 0xFE6F -- CJK compatibility forms.
+           || code >= 0xFF00 && code <= 0xFF60 -- Full-width forms.
+           || code >= 0xFFE0 && code <= 0xFFE6
+           || code >= 0x20000 && code <= 0x2FFFD
+           || code >= 0x30000 && code <= 0x3FFFD
        )
 
--- | The characters that take no column, as the ranges they fall in, lowest
--- first and none overlapping another. Kuhn generated them from the Unicode
--- database as the general categories @Me@ and @Mn@, and @Cf@ but for the soft
--- hyphen, together with @U+1160-U+11FF@ and @U+200B@.
+{- | The characters that take no column, as the ranges they fall in, lowest
+first and none overlapping another. Kuhn generated them from the Unicode
+database as the general categories @Me@ and @Mn@, and @Cf@ but for the soft
+hyphen, together with @U+1160-U+11FF@ and @U+200B@.
+-}
 marks :: [(Int, Int)]
 marks =
   [ (0x0300, 0x036F)

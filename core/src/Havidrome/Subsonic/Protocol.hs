@@ -1,7 +1,8 @@
--- | The Subsonic wire protocol, as pure functions: the URL of every call the
--- player makes, the reading of every answer, and the orders the lists are
--- shown in. Nothing here performs I\/O, so all of it is testable without a
--- server.
+{- | The Subsonic wire protocol, as pure functions: the URL of every call the
+player makes, the reading of every answer, and the orders the lists are
+shown in. Nothing here performs I\/O, so all of it is testable without a
+server.
+-}
 module Havidrome.Subsonic.Protocol
   ( -- * Authentication
     Salt
@@ -37,8 +38,9 @@ import Data.Text.Encoding qualified as T
 import Havidrome.Subsonic.Types
 import Network.HTTP.Types.URI (renderSimpleQuery)
 
--- | The Subsonic API version the player speaks. Navidrome answers anything up
--- to its own; 1.16.1 is the last one, and covers every call made here.
+{- | The Subsonic API version the player speaks. Navidrome answers anything up
+to its own; 1.16.1 is the last one, and covers every call made here.
+-}
 apiVersion :: ByteString
 apiVersion = "1.16.1"
 
@@ -46,9 +48,10 @@ apiVersion = "1.16.1"
 clientName :: ByteString
 clientName = "havidrome"
 
--- | The random string mixed into the password before it is hashed, so the
--- password itself never travels. One salt serves a whole session: the salt
--- exists to keep the hash unguessable, not to make each request unique.
+{- | The random string mixed into the password before it is hashed, so the
+password itself never travels. One salt serves a whole session: the salt
+exists to keep the hash unguessable, not to make each request unique.
+-}
 newtype Salt = Salt Text
   deriving stock (Eq, Show)
 
@@ -56,15 +59,17 @@ newtype Salt = Salt Text
 mkSalt :: Text -> Salt
 mkSalt = Salt
 
--- | @md5(password <> salt)@, hex-encoded, which is what the server compares
--- against.
+{- | @md5(password <> salt)@, hex-encoded, which is what the server compares
+against.
+-}
 token :: Credentials -> Salt -> ByteString
 token credentials (Salt salt) =
   T.encodeUtf8 . T.pack . show $
     (hash (encodeUtf8 (credentials.password <> salt)) :: Digest MD5)
 
--- | The parameters every call carries: who is asking, the proof, and what is
--- asking.
+{- | The parameters every call carries: who is asking, the proof, and what is
+asking.
+-}
 authQuery :: Credentials -> Salt -> [(ByteString, ByteString)]
 authQuery credentials salt@(Salt s) =
   [ ("u", encodeUtf8 credentials.user)
@@ -74,8 +79,9 @@ authQuery credentials salt@(Salt s) =
   , ("c", clientName)
   ]
 
--- | The calls the player makes. Every one of them is a list the browsing
--- screens show, except the ping that checks a set of credentials.
+{- | The calls the player makes. Every one of them is a list the browsing
+screens show, except the ping that checks a set of credentials.
+-}
 data Endpoint
   = -- | Checks credentials against a server.
     Ping
@@ -107,9 +113,10 @@ endpointUrl server credentials salt endpoint =
   restUrl server (endpointName endpoint) $
     endpointQuery endpoint <> [("f", "json")] <> authQuery credentials salt
 
--- | Where to GET a song's audio. @format=raw@ is Subsonic's "send the file you
--- have"; no other format is ever named, so the server transcodes nothing and
--- the player receives the stored original, whatever it is.
+{- | Where to GET a song's audio. @format=raw@ is Subsonic's "send the file you
+have"; no other format is ever named, so the server transcodes nothing and
+the player receives the stored original, whatever it is.
+-}
 audioUrl :: Server -> Credentials -> Salt -> SongId -> Text
 audioUrl server credentials salt (SongId song) =
   restUrl server "stream" $
@@ -122,8 +129,9 @@ restUrl server name query =
     <> name
     <> T.decodeUtf8 (renderSimpleQuery True query)
 
--- | Unwraps a @subsonic-response@ and reads the payload out of it, turning
--- every way that can go wrong into a 'SubsonicError'.
+{- | Unwraps a @subsonic-response@ and reads the payload out of it, turning
+every way that can go wrong into a 'SubsonicError'.
+-}
 decodeEnvelope :: (Object -> Parser a) -> ByteString -> Either SubsonicError a
 decodeEnvelope payload body = case Aeson.eitherDecodeStrict' body of
   Left message -> malformed message
@@ -145,9 +153,10 @@ decodeEnvelope payload body = case Aeson.eitherDecodeStrict' body of
   apiError = withObject "Subsonic error" $ \o ->
     (,) <$> o .: "code" <*> o .:? "message" .!= "the server gave no reason"
 
--- | Classifies a server's own failure. The codes that mean "these credentials
--- are no good" are kept apart from the rest, because the player answers them
--- differently.
+{- | Classifies a server's own failure. The codes that mean "these credentials
+are no good" are kept apart from the rest, because the player answers them
+differently.
+-}
 failureFrom :: Maybe (Int, Text) -> SubsonicError
 failureFrom reported = case reported of
   Nothing -> ServerFailure 0 "the server reported a failure without saying why"
@@ -164,8 +173,9 @@ failureFrom reported = case reported of
 decodePing :: ByteString -> Either SubsonicError ()
 decodePing = decodeEnvelope (const (pure ()))
 
--- | @getArtists@ groups artists under index letters; the grouping is the
--- server's, and the player shows one flat list.
+{- | @getArtists@ groups artists under index letters; the grouping is the
+server's, and the player shows one flat list.
+-}
 decodeArtists :: ByteString -> Either SubsonicError [Artist]
 decodeArtists = decodeEnvelope $ \response -> do
   artists <- response .: "artists"
@@ -184,9 +194,10 @@ decodeAlbums = decodeEnvelope $ \response -> do
   album = withObject "album" $ \o ->
     Album . AlbumId <$> o .: "id" <*> o .: "name" <*> o .:? "year"
 
--- | The songs @getAlbum@ reports for the album that was asked for. A song the
--- server gives no duration for is taken as zero rather than rejected, so one
--- odd track cannot cost the caller the whole album.
+{- | The songs @getAlbum@ reports for the album that was asked for. A song the
+server gives no duration for is taken as zero rather than rejected, so one
+odd track cannot cost the caller the whole album.
+-}
 decodeSongs :: ByteString -> Either SubsonicError [Song]
 decodeSongs = decodeEnvelope $ \response -> do
   album <- response .: "album"
@@ -201,8 +212,9 @@ decodeSongs = decodeEnvelope $ \response -> do
       <*> o .:? "track"
       <*> o .:? "discNumber"
 
--- | Alphabetically, ignoring case; exact name then id settle the ties, so the
--- list is the same on every run.
+{- | Alphabetically, ignoring case; exact name then id settle the ties, so the
+list is the same on every run.
+-}
 byArtistName :: [Artist] -> [Artist]
 byArtistName = sortOn (\a -> (T.toCaseFold a.name, a.name, a.id))
 
@@ -210,7 +222,8 @@ byArtistName = sortOn (\a -> (T.toCaseFold a.name, a.name, a.id))
 byAlbumYear :: [Album] -> [Album]
 byAlbumYear = sortOn (\a -> (a.year, T.toCaseFold a.name, a.id))
 
--- | Album order: disc, then track within the disc; title then id settle the
--- ties.
+{- | Album order: disc, then track within the disc; title then id settle the
+ties.
+-}
 byTrackOrder :: [Song] -> [Song]
 byTrackOrder = sortOn (\s -> (s.disc, s.track, T.toCaseFold s.title, s.id))

@@ -1,6 +1,7 @@
--- | How a request actually leaves the machine. The client is written against
--- 'Transport' rather than against @http-client@, so its behaviour can be
--- exercised without a server on the other end.
+{- | How a request actually leaves the machine. The client is written against
+'Transport' rather than against @http-client@, so its behaviour can be
+exercised without a server on the other end.
+-}
 module Havidrome.Subsonic.Transport
   ( Transport (..)
   , httpTransport
@@ -29,16 +30,18 @@ import Network.HTTP.Client
 import Network.HTTP.Client.TLS (newTlsManager)
 import Network.HTTP.Types.Status (Status, statusCode, statusMessage)
 
--- | Fetches the body at a URL, or says why it could not. Every failure a GET
--- can suffer is already classified by the time it comes back.
+{- | Fetches the body at a URL, or says why it could not. Every failure a GET
+can suffer is already classified by the time it comes back.
+-}
 newtype Transport = Transport
   { fetch :: Text -> IO (Either SubsonicError ByteString)
   }
   deriving stock (Generic)
 
--- | A transport that really speaks HTTP, over a manager the caller owns. A
--- request that never arrives is a line in the journal as well as a
--- 'NetworkFailure' the caller is handed.
+{- | A transport that really speaks HTTP, over a manager the caller owns. A
+request that never arrives is a line in the journal as well as a
+'NetworkFailure' the caller is handed.
+-}
 httpTransport :: (HasJournal env) => env -> Manager -> Transport
 httpTransport env manager = Transport $ \url ->
   case parseRequest (T.unpack url) of
@@ -62,15 +65,17 @@ httpTransport env manager = Transport $ \url ->
 mkHttpTransport :: (HasJournal env) => env -> IO Transport
 mkHttpTransport env = httpTransport env <$> newTlsManager
 
--- | Anything @http-client@ throws means the server was never reached: an
--- unknown host, a refused connection, a TLS failure, a timeout.
+{- | Anything @http-client@ throws means the server was never reached: an
+unknown host, a refused connection, a TLS failure, a timeout.
+-}
 classifyException :: HttpException -> SubsonicError
 classifyException exception =
   NetworkFailure ("could not reach the server: " <> T.pack (show exception))
 
--- | A reply with a status. Subsonic reports its own failures inside a 200, so
--- anything else came from the server or something in front of it — and a 401
--- or 403 there is still a refusal of these credentials.
+{- | A reply with a status. Subsonic reports its own failures inside a 200, so
+anything else came from the server or something in front of it — and a 401
+or 403 there is still a refusal of these credentials.
+-}
 classifyStatus :: Status -> ByteString -> Either SubsonicError ByteString
 classifyStatus status body
   | code >= 200 && code < 300 = Right body

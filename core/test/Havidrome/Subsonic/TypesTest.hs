@@ -1,5 +1,6 @@
--- | The sentence each way a call can fail reads as, which is what the strip
--- along the bottom of whatever screen is up shows.
+{- | The sentence each way a call can fail reads as, which is what the strip
+along the bottom of whatever screen is up shows.
+-}
 module Havidrome.Subsonic.TypesTest (tests) where
 
 import Havidrome.Check (example)

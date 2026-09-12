@@ -1,9 +1,10 @@
--- | The player as a whole: where a run starts, the accounts it goes through
--- one after another, and the points where it has nowhere to browse.
---
--- The login screen, the browsing screen and the config file here are a
--- stand-in that answers from a script and writes down what it was asked, so a
--- test sees exactly what a run did and in what order — a logout among it.
+{- | The player as a whole: where a run starts, the accounts it goes through
+one after another, and the points where it has nowhere to browse.
+
+The login screen, the browsing screen and the config file here are a
+stand-in that answers from a script and writes down what it was asked, so a
+test sees exactly what a run did and in what order — a logout among it.
+-}
 module HavidromeTest (tests) where
 
 import Control.Exception (bracket, bracket_, finally, try)
@@ -188,19 +189,21 @@ data Step
     Forgot
   deriving stock (Eq, Show)
 
--- | What a run is told, and what it has done so far: the answers the login
--- screen gives, one per ask, the endings browsing comes to, one per account,
--- and the steps taken, the last one first.
+{- | What a run is told, and what it has done so far: the answers the login
+screen gives, one per ask, the endings browsing comes to, one per account,
+and the steps taken, the last one first.
+-}
 data Script = Script
   { answers :: [Maybe Credentials]
   , endings :: [Ending]
   , taken :: [Step]
   }
 
--- | A login screen, a browsing screen and a config file made of that script.
---
--- A script that runs out ends the run rather than going round again: the login
--- screen is left, and browsing quits.
+{- | A login screen, a browsing screen and a config file made of that script.
+
+A script that runs out ends the run rather than going round again: the login
+screen is left, and browsing quits.
+-}
 scripted :: Account (State Script)
 scripted =
   Account
@@ -209,31 +212,34 @@ scripted =
     , forgets = note Forgot
     }
 
--- | What the login screen answers this time; with the answers used up, it is
--- left instead.
+{- | What the login screen answers this time; with the answers used up, it is
+left instead.
+-}
 nextAnswer :: State Script (Maybe Credentials)
 nextAnswer = state $ \given -> case given.answers of
   [] -> (Nothing, given)
-  (answer : rest) -> (answer, given {answers = rest})
+  (answer : rest) -> (answer, given{answers = rest})
 
 -- | How browsing ends this time; with the endings used up, the player is left.
 nextEnding :: State Script Ending
 nextEnding = state $ \given -> case given.endings of
   [] -> (Quit, given)
-  (ended : rest) -> (ended, given {endings = rest})
+  (ended : rest) -> (ended, given{endings = rest})
 
 note :: Step -> State Script ()
-note doing = state (\given -> ((), given {taken = doing : given.taken}))
+note doing = state (\given -> ((), given{taken = doing : given.taken}))
 
--- | Everything a run did, in the order it did it: from the credentials it
--- started with, against a login screen that answers so and browsing that ends
--- so.
+{- | Everything a run did, in the order it did it: from the credentials it
+started with, against a login screen that answers so and browsing that ends
+so.
+-}
 ran :: [Maybe Credentials] -> [Ending] -> Maybe Credentials -> [Step]
 ran answered ended from =
   reverse (execState (player scripted from) (Script answered ended [])).taken
 
--- | A run to be made: what it starts with, what the login screen will answer,
--- how browsing will end each time, and the steps it took when it was made.
+{- | A run to be made: what it starts with, what the login screen will answer,
+how browsing will end each time, and the steps it took when it was made.
+-}
 data Run = Run
   { started :: Maybe Credentials
   , answering :: [Maybe Credentials]
@@ -241,15 +247,16 @@ data Run = Run
   }
   deriving stock (Show)
 
--- | Runs of every shape: started with an account or without one, answered
--- with accounts and with a login screen left, and browsed to as many logouts
--- as the endings hold.
+{- | Runs of every shape: started with an account or without one, answered
+with accounts and with a login screen left, and browsed to as many logouts
+as the endings hold.
+-}
 script :: Gen Run
 script = do
   from <- Gen.maybe anAccount
   answers <- Gen.list (Range.linear 0 5) (Gen.maybe anAccount)
   endings <- Gen.list (Range.linear 0 5) (Gen.element [LoggedOut, Quit])
-  pure Run {started = from, answering = answers, steps = ran answers endings from}
+  pure Run{started = from, answering = answers, steps = ran answers endings from}
 
 -- | The accounts a run might be handed, told apart by their username.
 anAccount :: Gen Credentials
@@ -261,8 +268,9 @@ anAccount = do
 following :: [Step] -> [(Step, Step)]
 following steps = zip steps (drop1 steps)
 
--- | Whether a login screen that comes after something has a forgetting before
--- it.
+{- | Whether a login screen that comes after something has a forgetting before
+it.
+-}
 forgotten :: (Step, Step) -> Bool
 forgotten (before, after) = after /= Asked || before == Forgot
 
@@ -281,8 +289,9 @@ apart = \case
 browsed :: [Step] -> [Credentials]
 browsed steps = [credentials | Browsed credentials <- steps]
 
--- | The answers up to the first one that leaves the login screen, which is
--- where a run stops asking.
+{- | The answers up to the first one that leaves the login screen, which is
+where a run stops asking.
+-}
 takeWhileJust :: [Maybe a] -> [a]
 takeWhileJust = \case
   (Just one : rest) -> one : takeWhileJust rest
@@ -291,14 +300,16 @@ takeWhileJust = \case
 isPrefixOfList :: (Eq a) => [a] -> [a] -> Bool
 isPrefixOfList these those = take (length these) those == these
 
--- | An invented address nothing answers on, so that the artist list fails to
--- arrive the way it fails against a server that cannot be reached.
+{- | An invented address nothing answers on, so that the artist list fails to
+arrive the way it fails against a server that cannot be reached.
+-}
 nowhere :: Text
 nowhere = "http://nowhere.example"
 
--- | Empty config and state directories of its own, so that a run here never
--- reads the credentials of whoever is running it, nor writes a line into their
--- journal.
+{- | Empty config and state directories of its own, so that a run here never
+reads the credentials of whoever is running it, nor writes a line into their
+journal.
+-}
 withOwnDirectories :: IO a -> IO a
 withOwnDirectories action =
   withSystemTempDirectory "havidrome-config" $ \config ->
@@ -306,16 +317,18 @@ withOwnDirectories action =
       withEnvironment "XDG_CONFIG_HOME" config $
         withEnvironment "XDG_STATE_HOME" state' action
 
--- | Runs an action with one environment variable set to this path, unset again
--- afterwards.
+{- | Runs an action with one environment variable set to this path, unset again
+afterwards.
+-}
 withEnvironment :: Text -> FilePath -> IO a -> IO a
 withEnvironment name value = bracket_ (setEnv named value) (unsetEnv named)
  where
   named = T.unpack name
 
--- | Runs something with what it leaves on the terminal caught rather than
--- printed: the line comes back to be read, and none of it lands among the
--- results.
+{- | Runs something with what it leaves on the terminal caught rather than
+printed: the line comes back to be read, and none of it lands among the
+results.
+-}
 complaining :: IO a -> IO (Text, Either ExitCode a)
 complaining action =
   withSystemTempDirectory "havidrome-terminal" $ \dir -> do

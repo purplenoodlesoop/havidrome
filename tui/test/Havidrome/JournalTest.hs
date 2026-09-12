@@ -1,8 +1,9 @@
--- | The journal: the file it writes to, what a run leaves in it, and the line
--- a caught exception puts there.
---
--- Everything here runs against a throwaway state directory, so that nothing in
--- the suite touches the journal of whoever is running it.
+{- | The journal: the file it writes to, what a run leaves in it, and the line
+a caught exception puts there.
+
+Everything here runs against a throwaway state directory, so that nothing in
+the suite touches the journal of whoever is running it.
+-}
 module Havidrome.JournalTest (tests) where
 
 import Control.Exception (bracket)
@@ -53,8 +54,9 @@ underHome = example do
         (,home) <$> journal.file
   found === home </> ".local" </> "state" </> "havidrome" </> "journal"
 
--- | Opening a journal is the whole of what a run has to do to leave one: the
--- state directory need not have been there, and nothing need have gone wrong.
+{- | Opening a journal is the whole of what a run has to do to leave one: the
+state directory need not have been there, and nothing need have gone wrong.
+-}
 leavesAFile :: Property
 leavesAFile = example do
   there <- evalIO . withSystemTempDirectory "havidrome-state" $ \parent ->
@@ -63,8 +65,9 @@ leavesAFile = example do
       journal.file >>= doesFileExist
   assert there
 
--- | Each run builds a journal of its own, and each one finds the same file and
--- adds to what is already in it.
+{- | Each run builds a journal of its own, and each one finds the same file and
+adds to what is already in it.
+-}
 appends :: Property
 appends = example do
   said <- evalIO . withStateHome . const $ do
@@ -90,10 +93,11 @@ ownerOnly = example do
     journal.file >>= fmap fileMode . getFileStatus
   mode .&. 0o777 === 0o600
 
--- | The transport catches everything a request can suffer, and an address
--- nothing answers on is the plainest of them. The journal it is handed is a
--- value of the same record type as the player's, keeping its lines where a
--- test can read them back instead of putting them in a file.
+{- | The transport catches everything a request can suffer, and an address
+nothing answers on is the plainest of them. The journal it is handed is a
+value of the same record type as the player's, keeping its lines where a
+test can read them back instead of putting them in a file.
+-}
 caughtIsJournalled :: Property
 caughtIsJournalled = example do
   (failed, written) <- evalIO $ do
@@ -104,13 +108,15 @@ caughtIsJournalled = example do
   assert failed
   fmap (T.isPrefixOf ("the request to " <> nowhere <> " failed: ")) written === [True]
 
--- | A line without the moment it was stamped with, which is whatever the clock
--- said and so is not a thing to assert on.
+{- | A line without the moment it was stamped with, which is whatever the clock
+said and so is not a thing to assert on.
+-}
 unstamped :: Text -> Text
 unstamped = T.unwords . drop1 . T.words
 
--- | An invented address nothing answers on, so that the request fails the way
--- it fails against a server that cannot be reached.
+{- | An invented address nothing answers on, so that the request fails the way
+it fails against a server that cannot be reached.
+-}
 nowhere :: Text
 nowhere = "http://nowhere.example/rest/ping"
 
@@ -120,8 +126,9 @@ withStateHome use =
   withSystemTempDirectory "havidrome-state" $ \home ->
     withEnvironment "XDG_STATE_HOME" (Just home) (use home)
 
--- | Runs an action with a variable set, or unset, putting back whatever was
--- there before.
+{- | Runs an action with a variable set, or unset, putting back whatever was
+there before.
+-}
 withEnvironment :: Text -> Maybe FilePath -> IO a -> IO a
 withEnvironment name value action =
   bracket (lookupEnv named) restore (const (restore value >> action))

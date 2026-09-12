@@ -1,9 +1,10 @@
--- | Reading a key press off the terminal: what vty reports, as the key
--- vocabulary the screens are written against.
---
--- Only the keys the player binds have one; anything else vty can report — a
--- function key, a mouse, a key the player has no use for — has none, and a
--- screen given none does nothing.
+{- | Reading a key press off the terminal: what vty reports, as the key
+vocabulary the screens are written against.
+
+Only the keys the player binds have one; anything else vty can report — a
+function key, a mouse, a key the player has no use for — has none, and a
+screen given none does nothing.
+-}
 module Havidrome.Key.Vty (pressed) where
 
 import Graphics.Vty qualified as Vty

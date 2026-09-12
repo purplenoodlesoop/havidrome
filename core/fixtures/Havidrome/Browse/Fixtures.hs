@@ -1,7 +1,8 @@
--- | A library of three artists, held in the specs themselves, so that
--- browsing can be walked without a server: the lists come back in the order
--- the client would have put them in, and asking for an artist or an album the
--- library does not hold yields nothing.
+{- | A library of three artists, held in the specs themselves, so that
+browsing can be walked without a server: the lists come back in the order
+the client would have put them in, and asking for an artist or an album the
+library does not hold yields nothing.
+-}
 module Havidrome.Browse.Fixtures
   ( library
   , failing
@@ -40,9 +41,10 @@ import Havidrome.Subsonic.Types
   , SubsonicError
   )
 
--- | The whole stand-in library, which never fails. It answers wherever it is
--- asked: the browsing specs ask it outside 'IO', the screen's specs ask it
--- alongside a playback session, which is in 'IO'.
+{- | The whole stand-in library, which never fails. It answers wherever it is
+asked: the browsing specs ask it outside 'IO', the screen's specs ask it
+alongside a playback session, which is in 'IO'.
+-}
 library :: (Applicative f) => Library f
 library =
   Library
@@ -51,8 +53,9 @@ library =
     , Library.songs = \wanted -> pure (Right (Map.findWithDefault [] wanted songsByAlbum))
     }
 
--- | A library the server never answers for: every one of the three comes back
--- as the failure asked for here, and never as a list.
+{- | A library the server never answers for: every one of the three comes back
+as the failure asked for here, and never as a list.
+-}
 failing :: (Applicative f) => SubsonicError -> Library f
 failing failure =
   Library
@@ -72,8 +75,9 @@ albumsByArtist =
     , (ArtistId "a3", [])
     ]
 
--- | An artist whose albums span the ordering the client settles: the one the
--- server gives no year for first, then the rest oldest first.
+{- | An artist whose albums span the ordering the client settles: the one the
+server gives no year for first, then the rest oldest first.
+-}
 aphexAlbums :: [Album]
 aphexAlbums =
   [ album "b1" "Sketches" Nothing
@@ -102,24 +106,26 @@ sketchesSongs = [untitled]
 untitled :: Song
 untitled = song "s0" "Untitled" 61 (Just 1)
 
--- | An album carrying a song the server gives no track number for, which the
--- client puts first.
+{- | An album carrying a song the server gives no track number for, which the
+client puts first.
+-}
 drukqsSongs :: [Song]
 drukqsSongs = [btoumRoumada, jynweythek, vordhosbn]
 
--- | The songs of Drukqs by name, in the order the client lists them: the one
--- with no track number first, then the two the server numbers.
+{- | The songs of Drukqs by name, in the order the client lists them: the one
+with no track number first, then the two the server numbers.
+-}
 btoumRoumada, jynweythek, vordhosbn :: Song
 btoumRoumada = unnumbered "s3" "Btoum Roumada" 96
 jynweythek = song "s4" "Jynweythek" 129 (Just 1)
 vordhosbn = song "s5" "Vordhosbn" 293 (Just 2)
 
 artist :: Text -> Text -> Artist
-artist identifier name = Artist {id = ArtistId identifier, name}
+artist identifier name = Artist{id = ArtistId identifier, name}
 
 album :: Text -> Text -> Maybe Int -> Album
 album identifier name year =
-  Album {id = AlbumId identifier, name, year}
+  Album{id = AlbumId identifier, name, year}
 
 song :: Text -> Text -> Int -> Maybe Int -> Song
 song identifier name seconds track =
@@ -135,8 +141,9 @@ song identifier name seconds track =
 unnumbered :: Text -> Text -> Int -> Song
 unnumbered identifier name seconds = song identifier name seconds Nothing
 
--- | The now-playing overlay's bar with this many of its columns filled, and
--- this many more empty.
+{- | The now-playing overlay's bar with this many of its columns filled, and
+this many more empty.
+-}
 bar :: Int -> Int -> Text
 bar filled empty = T.replicate filled "█" <> T.replicate empty "░"
 

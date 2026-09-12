@@ -1,8 +1,9 @@
--- | The login screen: the form drawn on a terminal, the keys that fill it in,
--- and the server and config file a submit really reaches.
---
--- Everything the screen does with what was typed is 'Havidrome.Login''s; this
--- is the terminal it is typed on.
+{- | The login screen: the form drawn on a terminal, the keys that fill it in,
+and the server and config file a submit really reaches.
+
+Everything the screen does with what was typed is 'Havidrome.Login''s; this
+is the terminal it is typed on.
+-}
 module Havidrome.Login.Screen
   ( -- * The screen
     Screen (..)
@@ -61,8 +62,9 @@ import Havidrome.Margin (margined)
 import Havidrome.Subsonic (HasSubsonic (getSubsonic), Subsonic (accepts))
 import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 
--- | The real entry: the server the typed URL names, asked through the player's
--- own calls, and the config file the accepted credentials are stored in.
+{- | The real entry: the server the typed URL names, asked through the player's
+own calls, and the config file the accepted credentials are stored in.
+-}
 navidrome :: (HasStore env, HasSubsonic env) => env -> Entry IO
 navidrome env =
   Entry
@@ -70,21 +72,24 @@ navidrome env =
     , keeps = (getStore env).save
     }
 
--- | The name brick knows the screen by. There is one thing on it, so there is
--- one name.
+{- | The name brick knows the screen by. There is one thing on it, so there is
+one name.
+-}
 data Name = Prompt
   deriving stock (Eq, Ord, Show)
 
--- | Everything the screen is: the form being filled in, and the ending it
--- reached, once it has reached one.
+{- | Everything the screen is: the form being filled in, and the ending it
+reached, once it has reached one.
+-}
 data Screen = Screen
   { form :: Form
   , ending :: Maybe Ending
   }
   deriving stock (Eq, Show)
 
--- | Asks for credentials, and hands back the ones a server took — stored by
--- then — or nothing at all when the player was left.
+{- | Asks for credentials, and hands back the ones a server took — stored by
+then — or nothing at all when the player was left.
+-}
 login :: (HasTerminal env) => env -> Entry IO -> IO (Maybe Credentials.Credentials)
 login env entry = do
   final <-
@@ -114,13 +119,14 @@ handle entry = \case
         screen <- get
         stepped <- liftIO (step entry instruction screen.form)
         case stepped of
-          Left ended -> put screen {ending = Just ended} >> halt
-          Right typed -> put screen {form = typed}
+          Left ended -> put screen{ending = Just ended} >> halt
+          Right typed -> put screen{form = typed}
   _ -> pure ()
 
--- | The whole screen, inside the margin every screen has: the player's name,
--- the three fields under it with the focused one standing out, and the bottom
--- strip when a server has said something.
+{- | The whole screen, inside the margin every screen has: the player's name,
+the three fields under it with the focused one standing out, and the bottom
+strip when a server has said something.
+-}
 draw :: Form -> [Widget Name]
 draw form =
   [ margined . vBox $
@@ -132,19 +138,21 @@ draw form =
            , maybe emptyWidget (withAttr troubleAttribute . line) form.trouble
            ]
   ]
-  where
-    field :: Field -> Widget Name
-    field which =
-      standOut which (line (labelled which <> masked which (value which form)))
-    standOut which = if form.focus == which then withAttr focusedAttribute else id
+ where
+  field :: Field -> Widget Name
+  field which =
+    standOut which (line (labelled which <> masked which (value which form)))
+  standOut which = if form.focus == which then withAttr focusedAttribute else id
 
--- | A row of text across the full width, so that marking one covers the line
--- and not just its letters.
+{- | A row of text across the full width, so that marking one covers the line
+and not just its letters.
+-}
 line :: Text -> Widget Name
 line = padRight Max . txt
 
--- | The focused field is the row in reverse video, as the selected row is when
--- browsing; the title is bold and the bottom strip red.
+{- | The focused field is the row in reverse video, as the selected row is when
+browsing; the title is bold and the bottom strip red.
+-}
 theme :: AttrMap
 theme =
   attrMap

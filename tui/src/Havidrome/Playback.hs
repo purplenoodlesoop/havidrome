@@ -1,19 +1,20 @@
--- | The playing of an album: what is playing now, what plays next, and what
--- the four controls over it do. It sits between the lists the user browses
--- and the backend that makes the sound, and it is the only thing that decides
--- which song plays.
---
--- A session is created by picking a song: playback starts there and runs
--- through the rest of that song's album, in album order, without anything
--- more being asked of the user. The album it is in is a 'Queue', which is
--- what keeps the order and the album's edges; this module only moves through
--- one and tells the backend what to play.
---
--- A session is a record of operations, each closed over the place in the
--- album it works on, so the place itself belongs to the session and leaves no
--- mark on any type. Nothing here touches a terminal or a server, and the
--- backend it drives is a record of operations too, so a session runs the
--- whole album against a stand-in that makes no sound.
+{- | The playing of an album: what is playing now, what plays next, and what
+the four controls over it do. It sits between the lists the user browses
+and the backend that makes the sound, and it is the only thing that decides
+which song plays.
+
+A session is created by picking a song: playback starts there and runs
+through the rest of that song's album, in album order, without anything
+more being asked of the user. The album it is in is a 'Queue', which is
+what keeps the order and the album's edges; this module only moves through
+one and tells the backend what to play.
+
+A session is a record of operations, each closed over the place in the
+album it works on, so the place itself belongs to the session and leaves no
+mark on any type. Nothing here touches a terminal or a server, and the
+backend it drives is a record of operations too, so a session runs the
+whole album against a stand-in that makes no sound.
+-}
 module Havidrome.Playback
   ( -- * A session
     Session (..)
@@ -44,49 +45,57 @@ import Havidrome.Subsonic.Types (Seconds (..), Song (..), SongId)
 import Optics.Core (view)
 import Optics.Core qualified as Optics
 
--- | An album played through one audio backend: everything the player can ask
--- of it, and everything it has to say back. How far into a song the audio has
--- come is the backend's to say, and is asked of it rather than kept here
--- twice.
+{- | An album played through one audio backend: everything the player can ask
+of it, and everything it has to say back. How far into a song the audio has
+come is the backend's to say, and is asked of it rather than kept here
+twice.
+-}
 data Session = Session
-  { -- | Play this album from the song it is on, in place of whatever was
-    -- playing.
-    start :: Queue -> IO ()
-  , -- | Play the next song of the album; on the last song, end the playing.
-    next :: IO ()
-  , -- | Play the previous song of the album, from its beginning, however far
-    -- into the current song the audio has come; on the first song, play that
-    -- song again from its beginning.
-    previous :: IO ()
-  , -- | Play nothing, and forget the album — on the way out of the player, or
-    -- out of the account.
-    stop :: IO ()
-  , -- | Halt the audio where it is.
-    pause :: IO ()
-  , -- | Let the audio run again from where it was held.
-    resume :: IO ()
-  , -- | Halt the audio if it is running, and let it run again if it is held.
-    -- One key does both, so which of the two it is is asked of the backend
-    -- rather than kept here as well. With nothing playing there is nothing to
-    -- hold, and nothing happens.
-    togglePause :: IO ()
-  , -- | Move this many seconds through the song being played, forwards or
-    -- back. The backend clamps it to that song, so a seek never reaches
-    -- another one.
-    seekBy :: Int -> IO ()
-  , -- | The song being played, or nothing when the album has run out, a song
-    -- was picked out of an unreachable server, or nothing has been picked
-    -- yet.
-    nowPlaying :: IO (Maybe Playing)
-  , -- | Takes in everything the backend has said since it was last asked, and
-    -- answers with the failures the player has to show.
-    --
-    -- This is where an album carries itself: a song running out starts the
-    -- next one, and the album's last song running out ends the playing. A
-    -- song that will not play is skipped — its failure is answered with, and
-    -- the next song of the album starts — while a server that cannot be
-    -- reached ends the playing, so that nothing further is started.
-    attend :: IO [Failure]
+  { start :: Queue -> IO ()
+  {- ^ Play this album from the song it is on, in place of whatever was
+  playing.
+  -}
+  , next :: IO ()
+  -- ^ Play the next song of the album; on the last song, end the playing.
+  , previous :: IO ()
+  {- ^ Play the previous song of the album, from its beginning, however far
+  into the current song the audio has come; on the first song, play that
+  song again from its beginning.
+  -}
+  , stop :: IO ()
+  {- ^ Play nothing, and forget the album — on the way out of the player, or
+  out of the account.
+  -}
+  , pause :: IO ()
+  -- ^ Halt the audio where it is.
+  , resume :: IO ()
+  -- ^ Let the audio run again from where it was held.
+  , togglePause :: IO ()
+  {- ^ Halt the audio if it is running, and let it run again if it is held.
+  One key does both, so which of the two it is is asked of the backend
+  rather than kept here as well. With nothing playing there is nothing to
+  hold, and nothing happens.
+  -}
+  , seekBy :: Int -> IO ()
+  {- ^ Move this many seconds through the song being played, forwards or
+  back. The backend clamps it to that song, so a seek never reaches
+  another one.
+  -}
+  , nowPlaying :: IO (Maybe Playing)
+  {- ^ The song being played, or nothing when the album has run out, a song
+  was picked out of an unreachable server, or nothing has been picked
+  yet.
+  -}
+  , attend :: IO [Failure]
+  {- ^ Takes in everything the backend has said since it was last asked, and
+  answers with the failures the player has to show.
+
+  This is where an album carries itself: a song running out starts the
+  next one, and the album's last song running out ends the playing. A
+  song that will not play is skipped — its failure is answered with, and
+  the next song of the album starts — while a server that cannot be
+  reached ends the playing, so that nothing further is started.
+  -}
   }
   deriving stock (Generic)
 
@@ -97,8 +106,9 @@ data Place = Place
   }
   deriving stock (Generic)
 
--- | A session over a backend, told where a song's audio lives — the address
--- the Subsonic client gives for a song id. Nothing is playing yet.
+{- | A session over a backend, told where a song's audio lives — the address
+the Subsonic client gives for a song id. Nothing is playing yet.
+-}
 newSession :: Audio -> (SongId -> Text) -> IO Session
 newSession audio address = do
   -- The album position is the one thing here that no rung above a cell holds:
@@ -127,18 +137,20 @@ newSession audio address = do
       , attend = modifyMVar place (heed backing [])
       }
 
--- | What a session plays through: the audio backend, and where the audio of
--- a song lives. Every operation of a session that reaches the sound reaches
--- it through one of these.
+{- | What a session plays through: the audio backend, and where the audio of
+a song lives. Every operation of a session that reaches the sound reaches
+it through one of these.
+-}
 data Backing = Backing
   { audio :: Audio
   , address :: SongId -> Text
   }
   deriving stock (Generic)
 
--- | Puts the session on an album position and plays the song there, or, where
--- the album has run out, leaves it playing nothing. Every change of what is
--- playing goes through here.
+{- | Puts the session on an album position and plays the song there, or, where
+the album has run out, leaves it playing nothing. Every change of what is
+playing goes through here.
+-}
 settle :: Backing -> Maybe Place -> IO (Maybe Place)
 settle backing at = do
   case at of
@@ -149,9 +161,10 @@ settle backing at = do
         (Seconds 0)
   pure at
 
--- | Throws away whatever the backend has already said, because it is about
--- the song that is being replaced. What it says of the song started in its
--- place comes after.
+{- | Throws away whatever the backend has already said, because it is about
+the song that is being replaced. What it says of the song started in its
+place comes after.
+-}
 discard :: Backing -> IO ()
 discard backing = do
   heard <- backing.audio.nextEvent
@@ -159,8 +172,9 @@ discard backing = do
     Nothing -> pure ()
     Just _ -> discard backing
 
--- | Leaves the session playing that album position, and nothing of the song
--- it replaced still to be heard about.
+{- | Leaves the session playing that album position, and nothing of the song
+it replaced still to be heard about.
+-}
 moveTo :: Backing -> Maybe Place -> IO (Maybe Place)
 moveTo backing at = discard backing >> settle backing at
 
@@ -168,8 +182,9 @@ moveTo backing at = discard backing >> settle backing at
 advance :: Backing -> Maybe Place -> IO (Maybe Place)
 advance backing = withPlace (\here -> settle backing (followed <$> forward here.queue))
 
--- | Everything the backend has said since it was last asked, taken in one
--- event at a time, and the failures it said that the player has to show.
+{- | Everything the backend has said since it was last asked, taken in one
+event at a time, and the failures it said that the player has to show.
+-}
 heed :: Backing -> [Failure] -> Maybe Place -> IO (Maybe Place, [Failure])
 heed backing shown current = do
   heard <- backing.audio.nextEvent
@@ -180,10 +195,11 @@ heed backing shown current = do
       Unplayable _ -> advance backing current >>= heed backing (failure : shown)
       Unreachable _ -> settle backing Nothing >>= heed backing (failure : shown)
 
--- | Halts the audio if it is running, and lets it run again if it is held.
--- One key does both, so which of the two it is is asked of the backend rather
--- than kept here as well. With nothing playing there is nothing to hold, and
--- nothing happens.
+{- | Halts the audio if it is running, and lets it run again if it is held.
+One key does both, so which of the two it is is asked of the backend rather
+than kept here as well. With nothing playing there is nothing to hold, and
+nothing happens.
+-}
 toggled :: Audio -> IO ()
 toggled audio = do
   state <- audio.nowPlaying
@@ -213,7 +229,8 @@ trackOf address song =
     , duration = song.duration
     }
 
--- | With no album in hand there is nothing to move through, so a control that
--- would move within one does nothing at all.
+{- | With no album in hand there is nothing to move through, so a control that
+would move within one does nothing at all.
+-}
 withPlace :: (Place -> IO (Maybe Place)) -> Maybe Place -> IO (Maybe Place)
 withPlace = maybe (pure Nothing)

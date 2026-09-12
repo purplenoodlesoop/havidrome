@@ -1,6 +1,7 @@
--- | The calls the client makes and the answers it reads back: the URL each
--- one is asked at, what the payload becomes, and the orders the lists are put
--- into.
+{- | The calls the client makes and the answers it reads back: the URL each
+one is asked at, what the payload becomes, and the orders the lists are put
+into.
+-}
 module Havidrome.Subsonic.ProtocolTest (tests) where
 
 import Data.Aeson (Value, object, (.=))
@@ -189,8 +190,10 @@ audio =
         assert (not ("maxBitRate" `T.isInfixOf` request))
     )
   ]
--- | A ping, the artists and the albums, as the server answers them.
--- | What the server's answers are read back as.
+
+{- | A ping, the artists and the albums, as the server answers them.
+| What the server's answers are read back as.
+-}
 reading :: Checks
 reading =
   [
@@ -419,14 +422,16 @@ isMalformed answer = case answer of
   Left (MalformedResponse _) -> True
   _ -> False
 
--- | Whether a list is in the order it promises to come out in: nothing before
--- what should precede it.
+{- | Whether a list is in the order it promises to come out in: nothing before
+what should precede it.
+-}
 inOrder :: (Ord a) => [a] -> Bool
 inOrder xs = xs == sort xs
 
--- | Everything one of them is, so that two with the same key are the same
--- one: what tells a reordering that loses or invents nothing from one that
--- does.
+{- | Everything one of them is, so that two with the same key are the same
+one: what tells a reordering that loses or invents nothing from one that
+does.
+-}
 artistKey :: Artist -> (ArtistId, Text)
 artistKey artist = (artist.id, artist.name)
 
@@ -436,13 +441,15 @@ albumKey album = (album.id, album.name, album.year)
 songKey :: Song -> (SongId, Text, Seconds, Maybe Int, Maybe Int)
 songKey song = (song.id, song.title, song.duration, song.track, song.disc)
 
--- | An id as a server writes them: what a query string carries as it stands,
--- so a request can be searched for it without escaping it first.
+{- | An id as a server writes them: what a query string carries as it stands,
+so a request can be searched for it without escaping it first.
+-}
 anyId :: Gen Text
 anyId = Gen.text (Range.linear 1 8) Gen.alphaNum
 
--- | A name for anything the library holds, capitals and scripts mixed, so an
--- order that ignores case has something to ignore.
+{- | A name for anything the library holds, capitals and scripts mixed, so an
+order that ignores case has something to ignore.
+-}
 anyName :: Gen Text
 anyName = Gen.text (Range.linear 1 12) Gen.unicode
 
@@ -451,10 +458,11 @@ anyServer = do
   host <- Gen.text (Range.linear 1 10) Gen.alphaNum
   pure (Server ("https://" <> host <> ".example.org"))
 
--- | Someone to ask as. The password is longer than anything else a request
--- carries and begins outside the hex a hash is written in, so it cannot turn
--- up inside a URL by coincidence: finding it there means the request carried
--- it.
+{- | Someone to ask as. The password is longer than anything else a request
+carries and begins outside the hex a hash is written in, so it cannot turn
+up inside a URL by coincidence: finding it there means the request carried
+it.
+-}
 anyCredentials :: Gen Credentials
 anyCredentials = do
   user <- Gen.text (Range.linear 1 10) Gen.alphaNum
@@ -483,9 +491,10 @@ anyAlbum =
     <*> anyName
     <*> Gen.maybe (Gen.int (Range.linear 1900 2030))
 
--- | A song as a server lists it: the object it arrives in, beside the song it
--- must be read back as. Everything but the id and the title may be missing,
--- and a song the server does not time runs for no time at all.
+{- | A song as a server lists it: the object it arrives in, beside the song it
+must be read back as. Everything but the id and the title may be missing,
+and a song the server does not time runs for no time at all.
+-}
 anyListedSong :: Gen (Song, Value)
 anyListedSong = do
   ident <- anyId
@@ -512,8 +521,9 @@ anyListedSong = do
 anySong :: Gen Song
 anySong = fst <$> anyListedSong
 
--- | The text a library id is written as, which is all the server ever sees
--- of one.
+{- | The text a library id is written as, which is all the server ever sees
+of one.
+-}
 artistIdText :: ArtistId -> Text
 artistIdText (ArtistId ident) = ident
 
@@ -524,16 +534,17 @@ albumIdText (AlbumId ident) = ident
 given :: (Aeson.ToJSON a) => Key -> Maybe a -> [Pair]
 given name = foldMap (\value -> [name .= value])
 
--- | Artists as @getArtists@ sends them: grouped under index letters, which is
--- the server's grouping and none of the player's business.
+{- | Artists as @getArtists@ sends them: grouped under index letters, which is
+the server's grouping and none of the player's business.
+-}
 artistsAnswerOf :: [[Artist]] -> ByteString
 artistsAnswerOf groups = okAnswer ["artists" .= object ["index" .= fmap index groups]]
-  where
-    index group =
-      object ["name" .= ("X" :: Text), "artist" .= fmap artistJson group]
+ where
+  index group =
+    object ["name" .= ("X" :: Text), "artist" .= fmap artistJson group]
 
-    artistJson artist =
-      object ["id" .= artistIdText artist.id, "name" .= artist.name]
+  artistJson artist =
+    object ["id" .= artistIdText artist.id, "name" .= artist.name]
 
 -- | Albums as @getArtist@ sends them, under the artist they belong to.
 albumsAnswerOf :: [Album] -> ByteString
@@ -542,12 +553,12 @@ albumsAnswerOf albums =
     [ "artist"
         .= object ["id" .= ("a1" :: Text), "name" .= ("Someone" :: Text), "album" .= fmap albumJson albums]
     ]
-  where
-    albumJson album =
-      object
-        ( ["id" .= albumIdText album.id, "name" .= album.name]
-            <> given "year" album.year
-        )
+ where
+  albumJson album =
+    object
+      ( ["id" .= albumIdText album.id, "name" .= album.name]
+          <> given "year" album.year
+      )
 
 -- | Songs as @getAlbum@ sends them, under the album they belong to.
 songsAnswerOf :: [Value] -> ByteString

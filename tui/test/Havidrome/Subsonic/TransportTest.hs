@@ -1,5 +1,6 @@
--- | What a request that left the machine comes back as: a body, or the
--- failure the status or the exception says it is.
+{- | What a request that left the machine comes back as: a body, or the
+failure the status or the exception says it is.
+-}
 module Havidrome.Subsonic.TransportTest (tests) where
 
 import Data.ByteString (ByteString)
@@ -90,8 +91,9 @@ refusal = \case
   Left (AuthRejected _) -> True
   _ -> False
 
--- | The status code a failure blames the server under, if that is what it
--- blames.
+{- | The status code a failure blames the server under, if that is what it
+blames.
+-}
 blamed :: Either SubsonicError a -> Maybe Int
 blamed = \case
   Left (ServerFailure code _) -> Just code

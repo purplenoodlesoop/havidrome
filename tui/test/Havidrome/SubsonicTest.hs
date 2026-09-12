@@ -1,6 +1,7 @@
--- | The calls the player makes to a Navidrome server, over a transport that
--- answers from a fixture and writes down the address it was asked for, so a
--- test sees both what came back and what was asked for.
+{- | The calls the player makes to a Navidrome server, over a transport that
+answers from a fixture and writes down the address it was asked for, so a
+test sees both what came back and what was asked for.
+-}
 module Havidrome.SubsonicTest (tests) where
 
 import Control.Monad (void)
@@ -160,8 +161,9 @@ anyCall =
     )
   ]
 
--- | The calls over a transport that answers with the same thing every time,
--- and the address it was last asked for.
+{- | The calls over a transport that answers with the same thing every time,
+and the address it was last asked for.
+-}
 stub :: Either SubsonicError ByteString -> IO (Subsonic, IORef Text)
 stub answer = do
   asked <- newIORef ""
@@ -171,8 +173,9 @@ stub answer = do
 answering :: Either SubsonicError ByteString -> (Subsonic -> IO a) -> IO a
 answering answer use = stub answer >>= use . fst
 
--- | The account every example here is made as: the fixtures' server and
--- credentials, in the shape the config file holds them.
+{- | The account every example here is made as: the fixtures' server and
+credentials, in the shape the config file holds them.
+-}
 account :: Credentials.Credentials
 account =
   Credentials.Credentials
@@ -182,15 +185,16 @@ account =
     }
 
 -- | One of the three lists of that account's library, fetched.
-listing ::
-  (Library IO -> IO (Either SubsonicError a)) ->
-  Subsonic ->
-  IO (Either SubsonicError a)
+listing
+  :: (Library IO -> IO (Either SubsonicError a))
+  -> Subsonic
+  -> IO (Either SubsonicError a)
 listing fetch subsonic = fetch (subsonic.browses account)
 
--- | One of the calls the player makes, made as whatever account it is handed
--- and reduced to whether it worked, so that any of the four stands where any
--- other does.
+{- | One of the calls the player makes, made as whatever account it is handed
+and reduced to whether it worked, so that any of the four stands where any
+other does.
+-}
 data Call = Call
   { named :: Text
   , make :: Credentials.Credentials -> Subsonic -> IO (Either SubsonicError ())
@@ -222,8 +226,9 @@ call =
  where
   nothingBack = fmap void
 
--- | An account on some server, named and signed in however: the server's own
--- address beside it, because that is what a call must be addressed under.
+{- | An account on some server, named and signed in however: the server's own
+address beside it, because that is what a call must be addressed under.
+-}
 anAccount :: Gen (Text, Credentials.Credentials)
 anAccount = do
   host <-
@@ -231,7 +236,7 @@ anAccount = do
       ["https://music.example.org", "http://box.example:4533", "https://a.example/sub"]
   user <- Gen.text (Range.linear 1 12) Gen.alphaNum
   secret <- Gen.text (Range.linear 1 16) Gen.unicode
-  pure (host, Credentials.Credentials {server = host, username = user, password = secret})
+  pure (host, Credentials.Credentials{server = host, username = user, password = secret})
 
 -- | The id a song is known by on a server.
 songId :: Gen Text

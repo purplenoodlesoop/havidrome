@@ -1,10 +1,11 @@
--- | The backend against the player it really drives. mpv is run on a null
--- audio output, so these tests need no audio device — only the mpv the Nix
--- build supplies; without one they say so and pass rather than failing.
---
--- Each of them drives a real process through one scenario, so each is
--- genuinely one case. What takes an input at all is the wording a failure
--- carries, and that is stated over generated input.
+{- | The backend against the player it really drives. mpv is run on a null
+audio output, so these tests need no audio device — only the mpv the Nix
+build supplies; without one they say so and pass rather than failing.
+
+Each of them drives a real process through one scenario, so each is
+genuinely one case. What takes an input at all is the wording a failure
+carries, and that is stated over generated input.
+-}
 module Havidrome.AudioTest (tests) where
 
 import Control.Concurrent (threadDelay)
@@ -200,15 +201,17 @@ complaints =
     )
   ]
 
--- | Checks what a real player did, or says there was none to drive and lets
--- the check pass: outside Nix there may be no mpv, and inside it there always
--- is one.
+{- | Checks what a real player did, or says there was none to drive and lets
+the check pass: outside Nix there may be no mpv, and inside it there always
+is one.
+-}
 driving :: IO (Maybe a) -> (a -> PropertyT IO ()) -> PropertyT IO ()
 driving scenario check =
   evalIO scenario >>= maybe (annotate "no mpv on PATH; the Nix build supplies one") check
 
--- | An invented address nothing answers on, so that a track fetched from it
--- fails the way a track fails against a server that cannot be reached.
+{- | An invented address nothing answers on, so that a track fetched from it
+fails the way a track fails against a server that cannot be reached.
+-}
 nowhere :: Text
 nowhere = "http://nowhere.example/stream"
 
@@ -220,9 +223,10 @@ tone = Seconds 6
 playing :: Seconds -> (Audio -> Track -> IO a) -> IO (Maybe a)
 playing = withTrack (silence tone) tone (answering True)
 
--- | A tone held one second in and seeked by this much, and what a scenario
--- made of it. It is held first so that the position a seek leaves is the one
--- read back, and not one the audio has moved past.
+{- | A tone held one second in and seeked by this much, and what a scenario
+made of it. It is held first so that the position a seek leaves is the one
+read back, and not one the audio has moved past.
+-}
 seeking :: Int -> (Audio -> Track -> IO a) -> IO (Maybe a)
 seeking by use = playing (Seconds 1) $ \audio track -> do
   audio.pause
@@ -230,20 +234,22 @@ seeking by use = playing (Seconds 1) $ \audio track -> do
   audio.seekBy by
   use audio track
 
--- | Not audio at all, which mpv refuses to play, against a server that
--- answers or does not.
+{- | Not audio at all, which mpv refuses to play, against a server that
+answers or does not.
+-}
 garbage :: Bool -> (Audio -> Track -> IO a) -> IO (Maybe a)
 garbage answers = withTrack "this is not a song" (Seconds 3) (answering answers) (Seconds 0)
 
--- | Runs a scenario against a real mpv over a track in a file of its own,
--- told to play it from this point on.
-withTrack ::
-  Lazy.ByteString ->
-  Seconds ->
-  Reach ->
-  Seconds ->
-  (Audio -> Track -> IO a) ->
-  IO (Maybe a)
+{- | Runs a scenario against a real mpv over a track in a file of its own,
+told to play it from this point on.
+-}
+withTrack
+  :: Lazy.ByteString
+  -> Seconds
+  -> Reach
+  -> Seconds
+  -> (Audio -> Track -> IO a)
+  -> IO (Maybe a)
 withTrack content duration reach from use =
   withSystemTempDirectory "havidrome-audio" $ \dir -> do
     let file = dir </> "track"
@@ -273,21 +279,24 @@ reached audio = fmap position audio.nowPlaying
 reaches :: Audio -> Seconds -> IO Bool
 reaches audio mark = waitUntil (fmap (>= Just mark) (reached audio))
 
--- | Whether the loaded track's audio is reported as started before the
--- waiting is up.
+{- | Whether the loaded track's audio is reported as started before the
+waiting is up.
+-}
 begun :: Audio -> IO Bool
 begun audio = waitUntil (fmap (== Just Begun) (phase audio))
 
--- | How far the loaded track has got towards its audio starting, if anything
--- is loaded.
+{- | How far the loaded track has got towards its audio starting, if anything
+is loaded.
+-}
 phase :: Audio -> IO (Maybe Phase)
 phase audio = fmap phaseOf audio.nowPlaying
  where
   phaseOf Stopped = Nothing
   phaseOf (Loaded playback) = Just playback.phase
 
--- | The next thing the backend reports, or nothing if it stays silent for
--- long enough that it never will.
+{- | The next thing the backend reports, or nothing if it stays silent for
+long enough that it never will.
+-}
 waitForEvent :: Audio -> IO (Maybe Event)
 waitForEvent audio = timeout 10000000 audio.awaitEvent
 
@@ -300,13 +309,15 @@ waitUntil check = attempt (200 :: Int)
     now <- check
     if now then pure True else threadDelay 50000 >> attempt (left - 1)
 
--- | Long enough for a position the player already sent to arrive, so that a
--- test reads the position a pause left and not one from before it.
+{- | Long enough for a position the player already sent to arrive, so that a
+test reads the position a pause left and not one from before it.
+-}
 settle :: IO ()
 settle = threadDelay 300000
 
--- | A playable file of silence: unheard even where there is an audio device,
--- and understood by any player without a library to decode it.
+{- | A playable file of silence: unheard even where there is an audio device,
+and understood by any player without a library to decode it.
+-}
 silence :: Seconds -> Lazy.ByteString
 silence (Seconds seconds) =
   Builder.toLazyByteString $

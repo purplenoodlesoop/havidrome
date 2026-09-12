@@ -1,11 +1,12 @@
--- | The browsing screen: what the keys do, what the terminal shows, what
--- picking a song does to the audio under it, and what the strip along the
--- bottom says about that audio.
---
--- The audio here is a stand-in that makes no sound, driven through a real
--- playback session, so a test sees exactly which track the screen played and
--- when. The beat the screen runs on is struck by hand, at a moment the test
--- names, so that nothing waits on a clock.
+{- | The browsing screen: what the keys do, what the terminal shows, what
+picking a song does to the audio under it, and what the strip along the
+bottom says about that audio.
+
+The audio here is a stand-in that makes no sound, driven through a real
+playback session, so a test sees exactly which track the screen played and
+when. The beat the screen runs on is struck by hand, at a moment the test
+names, so that nothing waits on a clock.
+-}
 module Havidrome.Browse.ScreenTest (tests) where
 
 import Control.Monad (foldM, forM)
@@ -83,8 +84,8 @@ import Hedgehog
   , evalIO
   , forAll
   , property
-  , (===)
   , (/==)
+  , (===)
   )
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -1462,8 +1463,9 @@ driving use = evalIO (withStandin use)
 start :: Screen
 start = opening artists
 
--- | One of the situations a screen can be in, so that what holds of every
--- screen can be asked of each of them.
+{- | One of the situations a screen can be in, so that what holds of every
+screen can be asked of each of them.
+-}
 data Situation
   = -- | The artist list a run opens on, with nothing playing.
     Opened
@@ -1486,16 +1488,18 @@ screenIn situation standin session = case situation of
   Sounding -> onDrukqs standin session
   Broken -> breaking (Unplayable "the file will not play: it is corrupt") standin session
 
--- | Terminals from none at all, through ones too small to hold anything
--- inside their margin, to ones that hold every column and the strip.
+{- | Terminals from none at all, through ones too small to hold anything
+inside their margin, to ones that hold every column and the strip.
+-}
 size :: Gen (Int, Int)
 size =
   (,)
     <$> Gen.choice [Gen.int (Range.linear 0 6), Gen.element [20, 24, 46, 122]]
     <*> Gen.choice [Gen.int (Range.linear 0 6), Gen.element [8, 24]]
 
--- | Terminals with room inside the margin for a column, a blank row and the
--- strip under it.
+{- | Terminals with room inside the margin for a column, a blank row and the
+strip under it.
+-}
 roomy :: Gen (Int, Int)
 roomy = (,) <$> Gen.int (Range.linear 1 122) <*> Gen.int (Range.linear 3 24)
 
@@ -1510,29 +1514,34 @@ unbound =
         ]
       <*> Gen.subsequence [Ctrl, Shift]
 
--- | The keys that walk from the artist list to the songs of Drukqs, whose
--- first song is then the one Enter picks.
+{- | The keys that walk from the artist list to the songs of Drukqs, whose
+first song is then the one Enter picks.
+-}
 toDrukqs :: [Command]
 toDrukqs = [MoveDown, Descend, MoveDown, MoveDown, Descend]
 
--- | The keys that walk to the last song of Selected Ambient Works, which the
--- server gives no length for, and start it.
+{- | The keys that walk to the last song of Selected Ambient Works, which the
+server gives no length for, and start it.
+-}
 toSilence :: [Command]
 toSilence = [MoveDown, Descend, MoveDown, Descend, MoveDown, MoveDown, Descend]
 
--- | The keys that walk to the songs of Drukqs and start the first of them, so
--- that the controls have a song to reach.
+{- | The keys that walk to the songs of Drukqs and start the first of them, so
+that the controls have a song to reach.
+-}
 playingDrukqs :: [Command]
 playingDrukqs = toDrukqs <> [Descend]
 
--- | Every control the playing song has over it, pressed one after another: a
--- hold and a release, a song forward and a song back, a nudge and a stride.
+{- | Every control the playing song has over it, pressed one after another: a
+hold and a release, a song forward and a song back, a nudge and a stride.
+-}
 controls :: [Command]
 controls =
   [PauseOrResume, PauseOrResume, NextSong, PreviousSong, Seek 5, Seek (-30)]
 
--- | The keys that walk from the songs of Drukqs to the songs of Sketches, the
--- other album of the same artist.
+{- | The keys that walk from the songs of Drukqs to the songs of Sketches, the
+other album of the same artist.
+-}
 toSketches :: [Command]
 toSketches = [Ascend, MoveUp, MoveUp, Descend]
 
@@ -1544,8 +1553,9 @@ after = walking library
 stumbling :: Session -> [Command] -> IO Screen
 stumbling = walking (failing (NetworkFailure "down"))
 
--- | The screen these key presses leave behind, pressed on one already walked
--- to: what a run does next, with whatever it started still playing.
+{- | The screen these key presses leave behind, pressed on one already walked
+to: what a run does next, with whatever it started still playing.
+-}
 pressing :: Session -> Screen -> [Command] -> IO Screen
 pressing session = foldM (taking library session)
 
@@ -1558,14 +1568,16 @@ resuming session already next = do
 walking :: Library IO -> Session -> [Command] -> IO Screen
 walking held session = foldM (taking held session) start
 
--- | The screen one key press leaves behind. A key that ends browsing leaves
--- none, and for that the screen it was pressed on stands.
+{- | The screen one key press leaves behind. A key that ends browsing leaves
+none, and for that the screen it was pressed on stands.
+-}
 taking :: Library IO -> Session -> Screen -> Command -> IO Screen
 taking held session screen instruction =
   fromRight screen <$> step held session instruction screen
 
--- | How this key ends browsing, pressed after those ones — and nothing at all
--- when it leaves browsing going on.
+{- | How this key ends browsing, pressed after those ones — and nothing at all
+when it leaves browsing going on.
+-}
 ends :: Session -> Command -> [Command] -> IO (Maybe Ending)
 ends session instruction path = do
   screen <- after session path
@@ -1579,34 +1591,39 @@ playing session = fmap (fmap (.song)) session.nowPlaying
 elapsed :: Session -> IO (Maybe Seconds)
 elapsed session = fmap (fmap (.elapsed)) session.nowPlaying
 
--- | The audio runs out, so many times, with nothing pressed: only the beat the
--- screen takes it in on. This is the whole of \"playback continues through the
--- album\".
+{- | The audio runs out, so many times, with nothing pressed: only the beat the
+screen takes it in on. This is the whole of \"playback continues through the
+album\".
+-}
 ranOut :: Standin -> Session -> Screen -> Int -> IO Screen
 ranOut standin session screen times =
   foldM (\sofar _ -> finish standin >> beaten session 0 sofar) screen [1 .. times]
 
--- | The screen one beat leaves behind, struck at this moment on the player's
--- clock. Every test here strikes its own beats, so none of them waits.
+{- | The screen one beat leaves behind, struck at this moment on the player's
+clock. Every test here strikes its own beats, so none of them waits.
+-}
 beaten :: Session -> Double -> Screen -> IO Screen
 beaten session at = onBeat session (Moment at)
 
--- | The screen with the first song of Drukqs picked, its audio started, and
--- the strip caught up with it, which is where every test about the overlay
--- starts.
+{- | The screen with the first song of Drukqs picked, its audio started, and
+the strip caught up with it, which is where every test about the overlay
+starts.
+-}
 onDrukqs :: Standin -> Session -> IO Screen
 onDrukqs standin session = do
   picked <- after session playingDrukqs
   begin standin
   beaten session 0 picked
 
--- | The screen with the first song of Drukqs just picked, its audio not yet
--- started, and the strip caught up with it.
+{- | The screen with the first song of Drukqs just picked, its audio not yet
+started, and the strip caught up with it.
+-}
 loadingDrukqs :: Session -> IO Screen
 loadingDrukqs session = after session playingDrukqs >>= beaten session 0
 
--- | The screen the first song of Drukqs failing this way leaves behind: the
--- backend says so, and the next beat takes it in.
+{- | The screen the first song of Drukqs failing this way leaves behind: the
+backend says so, and the next beat takes it in.
+-}
 breaking :: Failure -> Standin -> Session -> IO Screen
 breaking failure standin session = do
   screen <- onDrukqs standin session
@@ -1617,15 +1634,17 @@ breaking failure standin session = do
 onStrip :: Screen -> Maybe Showing
 onStrip screen = showing screen.strip
 
--- | The strip's row as a terminal 46 columns wide shows it: wide enough to
--- give the first song of Drukqs a bar of 16 columns, one for every 6s of its
--- 1:36.
+{- | The strip's row as a terminal 46 columns wide shows it: wide enough to
+give the first song of Drukqs a bar of 16 columns, one for every 6s of its
+1:36.
+-}
 stripRow :: Screen -> Text
 stripRow = mconcat . drop 4 . shown (46, 5)
 
--- | Which of the strip's two symbols, the playing one and the paused one, are
--- anywhere on a terminal wide and tall enough to show every column and the
--- strip.
+{- | Which of the strip's two symbols, the playing one and the paused one, are
+anywhere on a terminal wide and tall enough to show every column and the
+strip.
+-}
 standing :: Screen -> [Text]
 standing screen = filter (\symbol -> any (T.isInfixOf symbol) (wide 8 screen)) ["⏵", "⏸"]
 
@@ -1637,47 +1656,55 @@ from picked = (address picked.id, Seconds 0)
 whole :: (Int, Int) -> Screen -> [[Cell]]
 whole region = terminal theme region . draw
 
--- | Every cell inside the margin of a terminal with this many columns and rows
--- inside it.
+{- | Every cell inside the margin of a terminal with this many columns and rows
+inside it.
+-}
 within :: (Int, Int) -> Screen -> [[Cell]]
 within (width, height) = inside . whole (width + 2, height + 2)
 
--- | What that terminal shows inside its margin, top row first, the blanks at
--- the ends trimmed.
+{- | What that terminal shows inside its margin, top row first, the blanks at
+the ends trimmed.
+-}
 shown :: (Int, Int) -> Screen -> [Text]
 shown region = screenshot . within region
 
--- | What a terminal with 120 columns and this many rows inside its margin
--- shows: 40 columns to each level, which no row of the stand-in library
--- outgrows.
+{- | What a terminal with 120 columns and this many rows inside its margin
+shows: 40 columns to each level, which no row of the stand-in library
+outgrows.
+-}
 wide :: Int -> Screen -> [Text]
 wide height = shown (120, height)
 
--- | A row of that terminal as the columns it crosses read, left to right.
--- Each column takes 40 of its columns, the second and third starting with the
--- rule between them and the column to the left.
+{- | A row of that terminal as the columns it crosses read, left to right.
+Each column takes 40 of its columns, the second and third starting with the
+rule between them and the column to the left.
+-}
 across :: [Text] -> Text
 across = T.stripEnd . T.intercalate "│" . zipWith (`T.justifyLeft` ' ') (40 : repeat 39)
 
--- | The row of that terminal under the headings of this many columns: a line
--- across each column, and the rule between one column and the next as it is on
--- every other row.
+{- | The row of that terminal under the headings of this many columns: a line
+across each column, and the rule between one column and the next as it is on
+every other row.
+-}
 rules :: Int -> Text
 rules count = T.intercalate "│" (fmap (`T.replicate` "─") (take count (40 : repeat 39)))
 
--- | What that terminal has in this one of its columns, top row to bottom, and
--- how each is drawn: the look of the rule between two columns, taken whole.
+{- | What that terminal has in this one of its columns, top row to bottom, and
+how each is drawn: the look of the rule between two columns, taken whole.
+-}
 downColumn :: Int -> Int -> Screen -> [Cell]
 downColumn height at = concatMap (take 1 . drop at) . within (120, height)
 
--- | Where the keys are on that terminal: the row highlighted in its rightmost
--- column.
+{- | Where the keys are on that terminal: the row highlighted in its rightmost
+column.
+-}
 onKeys :: Screen -> [Text]
 onKeys = mconcat . take 1 . reverse . trail
 
--- | The rows highlighted on that terminal, column by column from the artists
--- rightwards, each column's top to bottom: the row picked in each column left
--- of the one being browsed, and the row the keys are on in that one.
+{- | The rows highlighted on that terminal, column by column from the artists
+rightwards, each column's top to bottom: the row picked in each column left
+of the one being browsed, and the row the keys are on in that one.
+-}
 trail :: Screen -> [[Text]]
 trail = fmap catMaybes . transpose . fmap (fmap highlit . cells . concatMap letters) . runs . within (120, 6)
  where
@@ -1693,13 +1720,15 @@ trail = fmap catMaybes . transpose . fmap (fmap highlit . cells . concatMap lett
 drawnAs :: Text -> Screen -> [Maybe Vty.Attr]
 drawnAs said = fmap fst . concatMap (filter ((== said) . T.stripEnd . snd)) . runs . within (120, 6)
 
--- | Each stretch of it in bold: the columns' headings and the now-playing
--- overlay.
+{- | Each stretch of it in bold: the columns' headings and the now-playing
+overlay.
+-}
 emboldened :: Screen -> [Text]
 emboldened = inBold . within (120, 6)
 
--- | Everything a look at that terminal takes in: what it says, the rows
--- highlighted in each column, and what stands out in bold.
+{- | Everything a look at that terminal takes in: what it says, the rows
+highlighted in each column, and what stands out in bold.
+-}
 looks :: Screen -> ([Text], [[Text]], [Text])
 looks screen = (wide 6 screen, trail screen, emboldened screen)
 
@@ -1714,8 +1743,9 @@ drukqsColumns =
   , across ["", "", ""]
   ]
 
--- | The three columns down to the songs of Selected Ambient Works 85-92, six
--- rows high.
+{- | The three columns down to the songs of Selected Ambient Works 85-92, six
+rows high.
+-}
 ambientColumns :: [Text]
 ambientColumns =
   [ across ["Artists", "Albums", "Songs"]
@@ -1726,18 +1756,21 @@ ambientColumns =
   , across ["", "", ""]
   ]
 
--- | The rows that carry the playing mark, as the column each is in reads them,
--- on a terminal wide enough to leave every row whole.
+{- | The rows that carry the playing mark, as the column each is in reads them,
+on a terminal wide enough to leave every row whole.
+-}
 carrying :: Screen -> [Text]
 carrying = concatMap (filter (T.isInfixOf mark) . fmap T.stripEnd . T.splitOn "│") . wide 8
 
--- | The same rows with the mark given back the space it stands in, which is
--- what they read as with nothing playing.
+{- | The same rows with the mark given back the space it stands in, which is
+what they read as with nothing playing.
+-}
 unmarked :: [Text] -> [Text]
 unmarked = fmap (T.replace mark " ")
 
--- | The artist and the album whose songs are the column being browsed, as
--- their rows read, when songs are what is being browsed.
+{- | The artist and the album whose songs are the column being browsed, as
+their rows read, when songs are what is being browsed.
+-}
 songsOf :: Screen -> Maybe (Text, Text)
 songsOf screen = case screen.browse of
   AtSongs names records _ -> (,) . row <$> selected names <*> (row <$> selected records)

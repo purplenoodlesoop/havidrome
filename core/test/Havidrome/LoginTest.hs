@@ -1,9 +1,10 @@
--- | The login form: what the keys do, and what a submit does with what was
--- typed.
---
--- The server and the config file here are a stand-in that writes down what it
--- was asked and what it was told to keep, so a test sees exactly what a submit
--- did — and, after a refusal, that it did nothing.
+{- | The login form: what the keys do, and what a submit does with what was
+typed.
+
+The server and the config file here are a stand-in that writes down what it
+was asked and what it was told to keep, so a test sees exactly what a submit
+did — and, after a refusal, that it did nothing.
+-}
 module Havidrome.LoginTest (tests) where
 
 import Control.Monad (foldM)
@@ -227,29 +228,32 @@ data Log = Log
 asks :: Log -> Int
 asks seen = length seen.asked
 
--- | A stand-in for a server and the config file: it gives the same answer to
--- every check, and writes down everything that passes through it.
+{- | A stand-in for a server and the config file: it gives the same answer to
+every check, and writes down everything that passes through it.
+-}
 standin :: Either SubsonicError () -> Entry (State Log)
 standin answer =
   Entry
     { accepts = \credentials -> do
-        modify' (\seen -> seen {asked = seen.asked <> [credentials]})
+        modify' (\seen -> seen{asked = seen.asked <> [credentials]})
         pure answer
-    , keeps = \credentials -> modify' (\seen -> seen {kept = seen.kept <> [credentials]})
+    , keeps = \credentials -> modify' (\seen -> seen{kept = seen.kept <> [credentials]})
     }
 
--- | What these commands leave behind over a server giving that answer, and
--- what the server saw. A command that ends the screen leaves no form, and
--- nothing after it is taken.
+{- | What these commands leave behind over a server giving that answer, and
+what the server saw. A command that ends the screen leaves no form, and
+nothing after it is taken.
+-}
 answering :: Either SubsonicError () -> [Command] -> (Either Ending Form, Log)
 answering answer instructions =
   runState (foldM taking (Right blank) instructions) (Log [] [])
-  where
-    taking (Right form) instruction = step (standin answer) instruction form
-    taking ended _ = pure ended
+ where
+  taking (Right form) instruction = step (standin answer) instruction form
+  taking ended _ = pure ended
 
--- | The same over a server that takes anything, for the commands that never
--- reach one.
+{- | The same over a server that takes anything, for the commands that never
+reach one.
+-}
 typing :: [Command] -> Either Ending Form
 typing = fst . answering (Right ())
 
@@ -264,8 +268,8 @@ typed = fmap Type . T.unpack
 -- | From the field the screen opens on, moving to a field and typing into it.
 typedInto :: Field -> Text -> [Command]
 typedInto field written = replicate steps Ahead <> typed written
-  where
-    steps = length (takeWhile (/= field) fields)
+ where
+  steps = length (takeWhile (/= field) fields)
 
 -- | A whole account filled in, the typing left in the last field.
 filled :: [Command]

@@ -1,5 +1,6 @@
--- | What an item reads as on its line: the text an artist, an album or a song
--- gives its column, and the mark the song playback is on carries.
+{- | What an item reads as on its line: the text an artist, an album or a song
+gives its column, and the mark the song playback is on carries.
+-}
 module Havidrome.Browse.RowTest (tests) where
 
 import Data.Text qualified as T
@@ -51,5 +52,5 @@ tests =
           marking Nothing vordhosbn === "  2   Vordhosbn"
       )
     ]
-  where
-    vordhosbn = song "s" "Vordhosbn" 293 (Just 2)
+ where
+  vordhosbn = song "s" "Vordhosbn" 293 (Just 2)

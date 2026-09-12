@@ -1,6 +1,7 @@
--- | The core's suite: every group it holds, run one after another. The exit
--- status is hedgehog's own — non-zero the moment a group has a failing
--- property in it.
+{- | The core's suite: every group it holds, run one after another. The exit
+status is hedgehog's own — non-zero the moment a group has a failing
+property in it.
+-}
 module Main (main) where
 
 import Havidrome.Audio.IpcTest qualified as IpcTest

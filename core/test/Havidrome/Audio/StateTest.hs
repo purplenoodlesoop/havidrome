@@ -1,5 +1,6 @@
--- | The audio state machine: what each command does to what is playing, and
--- what the player is told about it.
+{- | The audio state machine: what each command does to what is playing, and
+what the player is told about it.
+-}
 module Havidrome.Audio.StateTest (tests) where
 
 import Data.Text qualified as T
@@ -201,7 +202,7 @@ seeking =
         seconds <- forAll (Gen.int (Range.linear 0 600))
         at <- forAll (Gen.int (Range.linearFrom 0 (-300) 900))
         delta <- forAll (Gen.int (Range.linearFrom 0 (-900) 900))
-        let long = track {duration = Seconds seconds}
+        let long = track{duration = Seconds seconds}
             start = clampTo long (Seconds at)
         case fst (step (SeekBy delta) (Loaded (Playback long Running start Begun))) of
           Stopped -> failure
@@ -311,8 +312,9 @@ whatever =
     )
   ]
 
--- | What no command ever does: give the player its own words back as an
--- order, or move more of a track than it was asked to.
+{- | What no command ever does: give the player its own words back as an
+order, or move more of a track than it was asked to.
+-}
 never :: Checks
 never =
   [
@@ -338,14 +340,16 @@ never =
     )
   ]
 
--- | Three minutes of audio at a made-up address; long enough that a seek has
--- room on both sides of it.
+{- | Three minutes of audio at a made-up address; long enough that a seek has
+room on both sides of it.
+-}
 track :: Track
 track =
-  Track {url = "https://music.example.org/rest/stream?id=s1", duration = Seconds 180}
+  Track{url = "https://music.example.org/rest/stream?id=s1", duration = Seconds 180}
 
--- | The track loaded, moving this way, this far along towards its audio
--- starting, and this far into it.
+{- | The track loaded, moving this way, this far along towards its audio
+starting, and this far into it.
+-}
 loaded :: Motion -> Phase -> Int -> State
 loaded motion phase at = Loaded (Playback track motion (Seconds at) phase)
 
@@ -366,8 +370,9 @@ stateAfter = foldl' (\state command -> fst (step command state)) initial
 told :: Command -> State -> [Effect]
 told command = snd . step command
 
--- | Any track at all: an address of its own, and a length anything that moves
--- inside it has to stay within.
+{- | Any track at all: an address of its own, and a length anything that moves
+inside it has to stay within.
+-}
 anyTrack :: Gen Track
 anyTrack = do
   ident <- Gen.int (Range.linear 1 999)
@@ -378,8 +383,9 @@ anyTrack = do
       , duration = Seconds seconds
       }
 
--- | A position anywhere, before a track's start and past its end included,
--- which is what the user and the player may each ask for.
+{- | A position anywhere, before a track's start and past its end included,
+which is what the user and the player may each ask for.
+-}
 anyPosition :: Gen Seconds
 anyPosition = Seconds <$> Gen.int (Range.linearFrom 0 (-300) 900)
 
@@ -387,8 +393,9 @@ anyPosition = Seconds <$> Gen.int (Range.linearFrom 0 (-300) 900)
 anyState :: Gen State
 anyState = Gen.choice [pure Stopped, Loaded <$> anyPlayback]
 
--- | A track loaded, moving or held, anywhere inside itself and any way along
--- towards its audio starting.
+{- | A track loaded, moving or held, anywhere inside itself and any way along
+towards its audio starting.
+-}
 anyPlayback :: Gen Playback
 anyPlayback = do
   playing <- anyTrack
@@ -397,8 +404,9 @@ anyPlayback = do
   phase <- Gen.element [Requested, Opening, Begun]
   pure (Playback playing motion (clampTo playing at) phase)
 
--- | Anything that can happen to it: a control the user pressed, or a word
--- from the player.
+{- | Anything that can happen to it: a control the user pressed, or a word
+from the player.
+-}
 anyCommand :: Gen Command
 anyCommand =
   Gen.choice
@@ -416,16 +424,17 @@ anyCommand =
 
 anyFailure :: Gen Failure
 anyFailure = Gen.choice [Unreachable <$> reason, Unplayable <$> reason]
-  where
-    reason = Gen.text (Range.linear 0 12) Gen.unicode
+ where
+  reason = Gen.text (Range.linear 0 12) Gen.unicode
 
 starts :: Command -> Bool
 starts command = case command of
   Start _ _ -> True
   _ -> False
 
--- | Whether a command is one of the two the machine reports on: a track that
--- ran out, and one that could not be played.
+{- | Whether a command is one of the two the machine reports on: a track that
+ran out, and one that could not be played.
+-}
 reports :: Command -> Bool
 reports command = case command of
   Ended -> True
