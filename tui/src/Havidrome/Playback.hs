@@ -15,7 +15,7 @@
 module Havidrome.Playback
   ( -- * A session
     Session
-  , newSession
+  , mkSession
 
     -- * Playing
   , start
@@ -75,8 +75,8 @@ data Place = Place
 
 -- | A session over a backend, told where a song's audio lives — the address
 -- the Subsonic client gives for a song id. Nothing is playing yet.
-newSession :: Audio -> (SongId -> Text) -> IO Session
-newSession audio address = do
+mkSession :: Audio -> (SongId -> Text) -> IO Session
+mkSession audio address = do
   place <- newMVar Nothing
   pure Session {audio, address, place}
 
