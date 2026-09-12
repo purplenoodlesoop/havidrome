@@ -4,7 +4,8 @@
 -- It is @$XDG_CONFIG_HOME/havidrome/config@, and what stands in it is the
 -- shape 'Havidrome.Credentials' settles. Nothing here fails with an exception
 -- a caller has to catch: a file that is not credentials comes back as a
--- 'Havidrome.Credentials.Fault'.
+-- 'Havidrome.Credentials.Fault', and the exception that made it unreadable
+-- goes to the journal on the way.
 module Havidrome.Credentials.Store
   ( -- * The config file
     Store (..)
@@ -21,6 +22,7 @@ import Data.ByteString qualified as ByteString
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8', encodeUtf8)
 import Havidrome.Credentials (Credentials, Fault (NotAccessible), parse, render)
+import Havidrome.Journal (HasJournal (getJournal), Journal (writes))
 import System.Directory
   ( XdgDirectory (XdgConfig)
   , createDirectoryIfMissing
@@ -64,11 +66,11 @@ data Stored
 -- | The config file under the XDG directory the run is given. It opens
 -- nothing and holds nothing open, so it is not in 'IO'; each operation finds
 -- the file for itself.
-mkStore :: Store
-mkStore =
+mkStore :: (HasJournal env) => env -> Store
+mkStore env =
   Store
     { file = configFile
-    , load = loading
+    , load = loading env
     , save = saving
     , discard = discarding
     }
@@ -76,16 +78,20 @@ mkStore =
 configFile :: IO FilePath
 configFile = (</> "config") <$> getXdgDirectory XdgConfig "havidrome"
 
-loading :: IO Stored
-loading = do
+loading :: (HasJournal env) => env -> IO Stored
+loading env = do
   path <- configFile
   exists <- doesFileExist path
   if not exists
     then pure Absent
-    else either unreachable readable <$> try (ByteString.readFile path)
+    else try (ByteString.readFile path) >>= either (unreachable path) (pure . readable)
   where
-    unreachable :: IOException -> Stored
-    unreachable = Unreadable . NotAccessible . Text.pack . displayException
+    unreachable :: FilePath -> IOException -> IO Stored
+    unreachable path fault = do
+      let said = Text.pack (displayException fault)
+      (getJournal env).writes
+        ("the config file " <> Text.pack path <> " could not be read: " <> said)
+      pure (Unreadable (NotAccessible said))
 
     readable bytes = case decodeUtf8' bytes of
       Left _ -> Unreadable (NotAccessible "the file is not valid UTF-8")

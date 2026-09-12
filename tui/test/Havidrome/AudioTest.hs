@@ -15,6 +15,7 @@ import Data.Text qualified as Text
 import Data.Word (Word32)
 import Havidrome.Audio
 import Havidrome.Check (example)
+import Havidrome.Journal.Fake (silent)
 import Hedgehog (Group (Group), PropertyT, annotate, assert, evalIO, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -154,7 +155,7 @@ tests =
       , example
           . driving
             ( do
-                reach <- mkHttpReach
+                reach <- mkHttpReach silent
                 withPlayer reach $ \audio -> do
                   audio.play (Track nowhere (Seconds 60)) (Seconds 0)
                   waitForEvent audio
@@ -219,7 +220,7 @@ withPlayer :: Reach -> (Audio -> IO a) -> IO (Maybe a)
 withPlayer reach use =
   findExecutable "mpv" >>= \case
     Nothing -> pure Nothing
-    Just mpv -> Just <$> withMpv mpv ["--ao=null"] reach use
+    Just mpv -> Just <$> withMpv silent mpv ["--ao=null"] reach use
 
 -- | A server that answers, or does not, whatever it is asked about.
 answering :: Bool -> Reach
