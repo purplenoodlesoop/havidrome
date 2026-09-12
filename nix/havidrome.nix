@@ -102,14 +102,13 @@ let
   tuiPackage =
     {
       mkDerivation,
-      QuickCheck,
       base,
       brick,
       bytestring,
       directory,
       filepath,
       havidrome-core,
-      hspec,
+      hedgehog,
       http-client,
       http-client-tls,
       http-types,
@@ -162,14 +161,13 @@ let
       ];
 
       testHaskellDepends = [
-        QuickCheck
         base
         brick
         bytestring
         directory
         filepath
         havidrome-core
-        hspec
+        hedgehog
         http-client
         http-types
         stm
