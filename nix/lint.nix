@@ -27,9 +27,13 @@ let
     "tui/test"
   ];
 
+  # The relaxations of the shared ruleset, named after it and passed after
+  # it, so that a rule let off in one module is let off nowhere else.
+  local = ".hlint-local.yaml";
+
   source = toSource {
     inherit root;
-    fileset = unions (map (directory: root + "/${directory}") directories);
+    fileset = unions ([ (root + "/${local}") ] ++ map (directory: root + "/${directory}") directories);
   };
 
   # hlint parses with its own defaults, not the project's, so it is told the
@@ -64,10 +68,17 @@ let
   ];
 
   # Passing --hint at all is what turns off hlint's search for a `.hlint.yaml`
-  # beside the sources, so the shared ruleset is the only one that applies.
-  # A second --hint would be how a single module is let off a rule: later
-  # files win. There is none, so nothing is.
-  arguments = lib.concatStringsSep " " ([ "--hint=${hlint-config}" ] ++ language ++ directories);
+  # beside the sources, so the shared ruleset and the local file are the only
+  # ones that apply. The local one comes second because later files win.
+  arguments =
+    lib.concatStringsSep " " (
+      [
+        "--hint=${hlint-config}"
+        "--hint=${local}"
+      ]
+      ++ language
+      ++ directories
+    );
 
   # hlint quotes the code it complains about, and the code is not all ASCII;
   # without a UTF-8 locale it dies on the first such character it prints.
