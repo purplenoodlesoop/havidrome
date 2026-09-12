@@ -32,8 +32,8 @@ module Havidrome.Audio.State
   ) where
 
 import Data.Char (toUpper)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Subsonic.Types (Seconds (..))
 
@@ -112,9 +112,9 @@ explain = \case
   Unplayable reason -> sentence reason
 
 sentence :: Text -> Text
-sentence said = case Text.uncons said of
+sentence said = case T.uncons said of
   Nothing -> said
-  Just (opening, rest) -> Text.cons (toUpper opening) rest
+  Just (opening, rest) -> T.cons (toUpper opening) rest
 
 -- | Something the backend reports of its own accord. A track that was stopped
 -- announces nothing, so 'Finished' means the audio really ran out, once.
@@ -175,7 +175,7 @@ step command state = case command of
   SeekBy delta -> onPlayback $ \playback ->
     let at = clampTo playback.track (shiftBy delta playback.elapsed)
      in (Loaded playback {elapsed = at}, [SeekTo at])
-  Stop -> onPlayback $ \_ -> (Stopped, [Unload])
+  Stop -> onPlayback $ const (Stopped, [Unload])
   Observed at -> onPlayback $ \playback ->
     (Loaded playback {elapsed = clampTo playback.track at}, [])
   Opened -> onPlayback $ \playback -> case playback.phase of
@@ -186,8 +186,8 @@ step command state = case command of
   Began -> onPlayback $ \playback -> case playback.phase of
     Opening -> (Loaded playback {phase = Begun}, [])
     _ -> (Loaded playback, [])
-  Ended -> onPlayback $ \_ -> (Stopped, [Announce Finished])
-  Broke failure -> onPlayback $ \_ -> (Stopped, [Announce (Failed failure)])
+  Ended -> onPlayback $ const (Stopped, [Announce Finished])
+  Broke failure -> onPlayback $ const (Stopped, [Announce (Failed failure)])
  where
   -- With no track loaded there is nothing to pause, seek, stop or report, so
   -- everything the player says late — after a stop, or about the track it was

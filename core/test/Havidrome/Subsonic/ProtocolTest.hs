@@ -9,11 +9,10 @@ import Data.Aeson.Key (Key)
 import Data.Aeson.Types (Pair)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LazyByteString
-import Data.List (sortOn)
-import Data.Maybe (fromMaybe)
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Havidrome.Check (example)
+import Data.List (sort, sortOn)
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Havidrome.Check (Checks, example)
 import Havidrome.Subsonic.Fixtures
   ( albumsAnswer
   , albumsWithoutYearAnswer
@@ -65,289 +64,349 @@ tests :: Group
 tests =
   Group
     "Havidrome.Subsonic.Protocol"
-    [
-      ( "a ping is signed with the salted password hash, never the password"
-      , example (url Ping === "https://music.example.org/rest/ping?f=json&" <> credentialQuery)
-      )
-    ,
-      ( "a request never carries the password itself"
-      , example (assert (not (testCredentials.password `Text.isInfixOf` url Ping)))
-      )
-    ,
-      ( "no request carries the password, whoever is asking and whatever is asked for"
-      , property do
-          server <- forAll anyServer
-          credentials <- forAll anyCredentials
-          salt <- forAll anySalt
-          endpoint <- forAll anyEndpoint
-          song <- forAll (SongId <$> anyId)
-          assert
-            (not (credentials.password `Text.isInfixOf` endpointUrl server credentials salt endpoint))
-          assert
-            (not (credentials.password `Text.isInfixOf` audioUrl server credentials salt song))
-      )
-    ,
-      ( "one artist's albums are asked for by id"
-      , example
-          ( url (GetArtist (ArtistId "a1"))
-              === "https://music.example.org/rest/getArtist?id=a1&f=json&" <> credentialQuery
+    ( signing
+        <> addressing
+        <> serverAddress
+        <> audio
+        <> reading
+        <> readingSongs
+        <> refusing
+        <> artistOrder
+        <> albumOrder
+        <> songOrder
+    )
+
+-- | How a call is signed, and what it never carries.
+signing :: Checks
+signing =
+  [
+    ( "a ping is signed with the salted password hash, never the password"
+    , example (url Ping === "https://music.example.org/rest/ping?f=json&" <> credentialQuery)
+    )
+  ,
+    ( "a request never carries the password itself"
+    , example (assert (not (testCredentials.password `T.isInfixOf` url Ping)))
+    )
+  ,
+    ( "no request carries the password, whoever is asking and whatever is asked for"
+    , property do
+        server <- forAll anyServer
+        credentials <- forAll anyCredentials
+        salt <- forAll anySalt
+        endpoint <- forAll anyEndpoint
+        song <- forAll (SongId <$> anyId)
+        assert
+          (not (credentials.password `T.isInfixOf` endpointUrl server credentials salt endpoint))
+        assert
+          (not (credentials.password `T.isInfixOf` audioUrl server credentials salt song))
+    )
+  ]
+
+-- | The address each call is made at.
+addressing :: Checks
+addressing =
+  [
+    ( "one artist's albums are asked for by id"
+    , example
+        ( url (GetArtist (ArtistId "a1"))
+            === "https://music.example.org/rest/getArtist?id=a1&f=json&" <> credentialQuery
+        )
+    )
+  ,
+    ( "one album's songs are asked for by id"
+    , example
+        ( url (GetAlbum (AlbumId "b1"))
+            === "https://music.example.org/rest/getAlbum?id=b1&f=json&" <> credentialQuery
+        )
+    )
+  ,
+    ( "a call about one artist, album or song carries that id, whichever it is"
+    , property do
+        server <- forAll anyServer
+        credentials <- forAll anyCredentials
+        salt <- forAll anySalt
+        ident <- forAll anyId
+        endpoint <- forAll (Gen.element [GetArtist (ArtistId ident), GetAlbum (AlbumId ident)])
+        assert
+          (("id=" <> ident <> "&") `T.isInfixOf` endpointUrl server credentials salt endpoint)
+        assert
+          ( ("id=" <> ident <> "&")
+              `T.isInfixOf` audioUrl server credentials salt (SongId ident)
           )
-      )
-    ,
-      ( "one album's songs are asked for by id"
-      , example
-          ( url (GetAlbum (AlbumId "b1"))
-              === "https://music.example.org/rest/getAlbum?id=b1&f=json&" <> credentialQuery
-          )
-      )
-    ,
-      ( "a call about one artist, album or song carries that id, whichever it is"
-      , property do
-          server <- forAll anyServer
-          credentials <- forAll anyCredentials
-          salt <- forAll anySalt
-          ident <- forAll anyId
-          endpoint <- forAll (Gen.element [GetArtist (ArtistId ident), GetAlbum (AlbumId ident)])
-          assert
-            (("id=" <> ident <> "&") `Text.isInfixOf` endpointUrl server credentials salt endpoint)
-          assert
-            ( ("id=" <> ident <> "&")
-                `Text.isInfixOf` audioUrl server credentials salt (SongId ident)
+    )
+  ]
+
+-- | Where a request is addressed, whatever the server's own address ends in.
+serverAddress :: Checks
+serverAddress =
+  [
+    ( "a slash the server address already ends with is not doubled"
+    , example
+        ( endpointUrl (Server "https://music.example.org/") testCredentials testSalt Ping
+            === url Ping
+        )
+    )
+  ,
+    ( "a request is addressed under the server's own address, however it ends"
+    , property do
+        Server address <- forAll anyServer
+        slashes <- forAll (Gen.int (Range.linear 0 3))
+        credentials <- forAll anyCredentials
+        salt <- forAll anySalt
+        endpoint <- forAll anyEndpoint
+        let request = endpointUrl (Server address) credentials salt endpoint
+        endpointUrl (Server (address <> T.replicate slashes "/")) credentials salt endpoint
+          === request
+        assert ((address <> "/rest/") `T.isPrefixOf` request)
+    )
+  ,
+    ( "what a query string cannot carry literally is escaped"
+    , example
+        ( assert
+            ( "u=some%20one%26x&"
+                `T.isInfixOf` endpointUrl testServer (Credentials "some one&x" "hunter2") testSalt Ping
             )
-      )
-    ,
-      ( "a slash the server address already ends with is not doubled"
-      , example
-          ( endpointUrl (Server "https://music.example.org/") testCredentials testSalt Ping
-              === url Ping
-          )
-      )
-    ,
-      ( "a request is addressed under the server's own address, however it ends"
-      , property do
-          Server address <- forAll anyServer
-          slashes <- forAll (Gen.int (Range.linear 0 3))
-          credentials <- forAll anyCredentials
-          salt <- forAll anySalt
-          endpoint <- forAll anyEndpoint
-          let request = endpointUrl (Server address) credentials salt endpoint
-          endpointUrl (Server (address <> Text.replicate slashes "/")) credentials salt endpoint
-            === request
-          assert ((address <> "/rest/") `Text.isPrefixOf` request)
-      )
-    ,
-      ( "what a query string cannot carry literally is escaped"
-      , example
-          ( assert
-              ( "u=some%20one%26x&"
-                  `Text.isInfixOf` endpointUrl testServer (Credentials "some one&x" "hunter2") testSalt Ping
-              )
-          )
-      )
-    ,
-      ( "audio is asked for as the file the server stores"
-      , example
-          ( audioUrl testServer testCredentials testSalt (SongId "s1")
-              === "https://music.example.org/rest/stream?id=s1&format=raw&" <> credentialQuery
-          )
-      )
-    ,
-      ( "an audio request names no format other than the stored one, and no bit rate"
-      , example do
-          let request = audioUrl testServer testCredentials testSalt (SongId "s1")
-          length (Text.breakOnAll "format=" request) === 1
-          assert ("format=raw" `Text.isInfixOf` request)
-          assert (not ("maxBitRate" `Text.isInfixOf` request))
-      )
-    ,
-      ( "a ping is read"
-      , example (decodePing pingAnswer === Right ())
-      )
-    ,
-      ( "artists are read out of the server's index groups"
-      , example
-          ( fmap (map (.name)) (decodeArtists artistsAnswer)
-              === Right ["zebra", "Aphex Twin", "anohni"]
-          )
-      )
-    ,
-      ( "every artist the server lists is read back, in its order, however it grouped them"
-      , property do
-          groups <- forAll (Gen.list (Range.linear 0 4) (Gen.list (Range.linear 0 5) anyArtist))
-          decodeArtists (artistsAnswerOf groups) === Right (concat groups)
-      )
-    ,
-      ( "albums are read, with the year the server gave or none"
-      , example
-          ( fmap (map (.year)) (decodeAlbums albumsAnswer)
-              === Right [Just 2001, Just 1992, Nothing]
-          )
-      )
-    ,
-      ( "every album the server lists is read back, in its order, year or no year"
-      , property do
-          albums <- forAll (Gen.list (Range.linear 0 8) anyAlbum)
-          decodeAlbums (albumsAnswerOf albums) === Right albums
-      )
-    ,
-      ( "songs are read with their track name and total time"
-      , example
-          ( fmap (map (\s -> (s.title, s.duration))) (decodeSongs songsAnswer)
-              === Right
-                [ ("Pulsewidth", Seconds 228)
-                , ("Xtal", Seconds 293)
-                , ("Tha", Seconds 543)
-                ]
-          )
-      )
-    ,
-      ( "a song the server timed at nothing is given a total time of zero"
-      , example
-          ( fmap (map (.duration)) (decodeSongs songWithoutDurationAnswer)
-              === Right [Seconds 0]
-          )
-      )
-    ,
-      ( "every song the server lists is read back, in its order, whatever it left out"
-      , property do
-          listed <- forAll (Gen.list (Range.linear 0 8) anyListedSong)
-          decodeSongs (songsAnswerOf (map snd listed)) === Right (map fst listed)
-      )
-    ,
-      ( "an album the server lists no songs for is read as empty"
-      , example (decodeSongs emptyAlbumAnswer === Right [])
-      )
-    ,
-      ( "an answer that is not JSON is refused"
-      , example (assert (isMalformed (decodePing "<html>gateway</html>")))
-      )
-    ,
-      ( "an answer missing the payload the call asked for is refused"
-      , example (assert (isMalformed (decodeArtists pingAnswer)))
-      )
-    ,
-      ( "a rejected password is told from anything else"
-      , example
-          (decodePing wrongPasswordAnswer === Left (AuthRejected "Wrong username or password"))
-      )
-    ,
-      ( "a server's other complaints are kept apart from rejected credentials"
-      , example (decodeSongs notFoundAnswer === Left (ServerFailure 70 "Album not found"))
-      )
-    ,
-      ( "the codes that mean the credentials were refused are told from every other code"
-      , property do
-          code <- forAll (Gen.int (Range.linear 0 100))
-          reason <- forAll anyName
-          decodePing (failedAnswerOf code reason)
-            === Left
-              ( if code `elem` [40, 41, 42, 43, 44]
-                  then AuthRejected reason
-                  else ServerFailure code reason
-              )
-      )
-    ,
-      ( "a failure the server gives no reason for is survived"
-      , example
-          ( assert case decodePing unexplainedFailureAnswer of
-              Left (ServerFailure _ _) -> True
-              _ -> False
-          )
-      )
-    ,
-      ( "artists are put in alphabetical order, whatever their capitals"
-      , example
-          ( fmap (map (.name) . byArtistName) (decodeArtists artistsAnswer)
-              === Right ["anohni", "Aphex Twin", "zebra"]
-          )
-      )
-    ,
-      ( "any artists at all come out alphabetically, whatever their capitals"
-      , property do
-          artists <- forAll (Gen.list (Range.linear 0 12) anyArtist)
-          assert (inOrder (map (Text.toCaseFold . (.name)) (byArtistName artists)))
-      )
-    ,
-      ( "ordering the artists loses none of them and invents none"
-      , property do
-          artists <- forAll (Gen.list (Range.linear 0 12) anyArtist)
-          sortOn artistKey (byArtistName artists) === sortOn artistKey artists
-      )
-    ,
-      ( "the artists come out the same however the server listed them"
-      , property do
-          artists <- forAll (Gen.list (Range.linear 0 12) anyArtist)
-          byArtistName (reverse artists) === byArtistName artists
-      )
-    ,
-      ( "an artist's albums are put oldest year first"
-      , example
-          ( fmap (map (.name) . byAlbumYear) (decodeAlbums albumsAnswer)
-              === Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
-          )
-      )
-    ,
-      ( "an album the server gave no year for is put above the oldest, by name"
-      , example
-          ( fmap (map (.name) . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
-              === Right ["Demos", "Tapes", "Live"]
-          )
-      )
-    ,
-      ( "any albums at all come out oldest first, the ones with no year above them, by name"
-      , property do
-          albums <- forAll (Gen.list (Range.linear 0 12) anyAlbum)
-          assert
-            (inOrder (map (\a -> (a.year, Text.toCaseFold a.name)) (byAlbumYear albums)))
-      )
-    ,
-      ( "ordering the albums loses none of them and invents none"
-      , property do
-          albums <- forAll (Gen.list (Range.linear 0 12) anyAlbum)
-          sortOn albumKey (byAlbumYear albums) === sortOn albumKey albums
-      )
-    ,
-      ( "the albums come out the same however the server listed them"
-      , property do
-          albums <- forAll (Gen.list (Range.linear 0 12) anyAlbum)
-          byAlbumYear (reverse albums) === byAlbumYear albums
-      )
-    ,
-      ( "an album's songs are put in album order, disc by disc"
-      , example
-          ( fmap (map (.title) . byTrackOrder) (decodeSongs songsAnswer)
-              === Right ["Xtal", "Tha", "Pulsewidth"]
-          )
-      )
-    ,
-      ( "a song the server gave no track number for is put first, by name"
-      , example
-          ( fmap (map (.title) . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
-              === Right ["Loose end", "Sketch", "Opener"]
-          )
-      )
-    ,
-      ( "any songs at all come out disc by disc and track by track, the unnumbered above them, by name"
-      , property do
-          songs <- forAll (Gen.list (Range.linear 0 12) anySong)
-          assert
-            ( inOrder
-                (map (\s -> (s.disc, s.track, Text.toCaseFold s.title)) (byTrackOrder songs))
+        )
+    )
+  ]
+
+-- | Asking for a song's audio, as the server stores it.
+audio :: Checks
+audio =
+  [
+    ( "audio is asked for as the file the server stores"
+    , example
+        ( audioUrl testServer testCredentials testSalt (SongId "s1")
+            === "https://music.example.org/rest/stream?id=s1&format=raw&" <> credentialQuery
+        )
+    )
+  ,
+    ( "an audio request names no format other than the stored one, and no bit rate"
+    , example do
+        let request = audioUrl testServer testCredentials testSalt (SongId "s1")
+        length (T.breakOnAll "format=" request) === 1
+        assert ("format=raw" `T.isInfixOf` request)
+        assert (not ("maxBitRate" `T.isInfixOf` request))
+    )
+  ]
+-- | A ping, the artists and the albums, as the server answers them.
+-- | What the server's answers are read back as.
+reading :: Checks
+reading =
+  [
+    ( "a ping is read"
+    , example (decodePing pingAnswer === Right ())
+    )
+  ,
+    ( "artists are read out of the server's index groups"
+    , example
+        ( fmap (fmap (.name)) (decodeArtists artistsAnswer)
+            === Right ["zebra", "Aphex Twin", "anohni"]
+        )
+    )
+  ,
+    ( "every artist the server lists is read back, in its order, however it grouped them"
+    , property do
+        groups <- forAll (Gen.list (Range.linear 0 4) (Gen.list (Range.linear 0 5) anyArtist))
+        decodeArtists (artistsAnswerOf groups) === Right (concat groups)
+    )
+  ,
+    ( "albums are read, with the year the server gave or none"
+    , example
+        ( fmap (fmap (.year)) (decodeAlbums albumsAnswer)
+            === Right [Just 2001, Just 1992, Nothing]
+        )
+    )
+  ,
+    ( "every album the server lists is read back, in its order, year or no year"
+    , property do
+        albums <- forAll (Gen.list (Range.linear 0 8) anyAlbum)
+        decodeAlbums (albumsAnswerOf albums) === Right albums
+    )
+  ]
+
+-- | The songs of an album, as the server lists them.
+readingSongs :: Checks
+readingSongs =
+  [
+    ( "songs are read with their track name and total time"
+    , example
+        ( fmap (fmap (\s -> (s.title, s.duration))) (decodeSongs songsAnswer)
+            === Right
+              [ ("Pulsewidth", Seconds 228)
+              , ("Xtal", Seconds 293)
+              , ("Tha", Seconds 543)
+              ]
+        )
+    )
+  ,
+    ( "a song the server timed at nothing is given a total time of zero"
+    , example
+        ( fmap (fmap (.duration)) (decodeSongs songWithoutDurationAnswer)
+            === Right [Seconds 0]
+        )
+    )
+  ,
+    ( "every song the server lists is read back, in its order, whatever it left out"
+    , property do
+        listed <- forAll (Gen.list (Range.linear 0 8) anyListedSong)
+        decodeSongs (songsAnswerOf (fmap snd listed)) === Right (fmap fst listed)
+    )
+  ,
+    ( "an album the server lists no songs for is read as empty"
+    , example (decodeSongs emptyAlbumAnswer === Right [])
+    )
+  ]
+
+-- | The answers that are no answer, and what they are told apart as.
+refusing :: Checks
+refusing =
+  [
+    ( "an answer that is not JSON is refused"
+    , example (assert (isMalformed (decodePing "<html>gateway</html>")))
+    )
+  ,
+    ( "an answer missing the payload the call asked for is refused"
+    , example (assert (isMalformed (decodeArtists pingAnswer)))
+    )
+  ,
+    ( "a rejected password is told from anything else"
+    , example
+        (decodePing wrongPasswordAnswer === Left (AuthRejected "Wrong username or password"))
+    )
+  ,
+    ( "a server's other complaints are kept apart from rejected credentials"
+    , example (decodeSongs notFoundAnswer === Left (ServerFailure 70 "Album not found"))
+    )
+  ,
+    ( "the codes that mean the credentials were refused are told from every other code"
+    , property do
+        code <- forAll (Gen.int (Range.linear 0 100))
+        reason <- forAll anyName
+        decodePing (failedAnswerOf code reason)
+          === Left
+            ( if code `elem` [40, 41, 42, 43, 44]
+                then AuthRejected reason
+                else ServerFailure code reason
             )
-      )
-    ,
-      ( "ordering the songs loses none of them and invents none"
-      , property do
-          songs <- forAll (Gen.list (Range.linear 0 12) anySong)
-          sortOn songKey (byTrackOrder songs) === sortOn songKey songs
-      )
-    ,
-      ( "the songs come out the same however the server listed them"
-      , property do
-          songs <- forAll (Gen.list (Range.linear 0 12) anySong)
-          byTrackOrder (reverse songs) === byTrackOrder songs
-      )
-    ]
+    )
+  ,
+    ( "a failure the server gives no reason for is survived"
+    , example
+        ( assert case decodePing unexplainedFailureAnswer of
+            Left (ServerFailure _ _) -> True
+            _ -> False
+        )
+    )
+  ]
+
+-- | The order the artists come out in.
+artistOrder :: Checks
+artistOrder =
+  [
+    ( "artists are put in alphabetical order, whatever their capitals"
+    , example
+        ( fmap (fmap (.name) . byArtistName) (decodeArtists artistsAnswer)
+            === Right ["anohni", "Aphex Twin", "zebra"]
+        )
+    )
+  ,
+    ( "any artists at all come out alphabetically, whatever their capitals"
+    , property do
+        artists <- forAll (Gen.list (Range.linear 0 12) anyArtist)
+        assert (inOrder (fmap (T.toCaseFold . (.name)) (byArtistName artists)))
+    )
+  ,
+    ( "ordering the artists loses none of them and invents none"
+    , property do
+        artists <- forAll (Gen.list (Range.linear 0 12) anyArtist)
+        sortOn artistKey (byArtistName artists) === sortOn artistKey artists
+    )
+  ,
+    ( "the artists come out the same however the server listed them"
+    , property do
+        artists <- forAll (Gen.list (Range.linear 0 12) anyArtist)
+        byArtistName (reverse artists) === byArtistName artists
+    )
+  ]
+
+-- | The order an artist's albums come out in.
+albumOrder :: Checks
+albumOrder =
+  [
+    ( "an artist's albums are put oldest year first"
+    , example
+        ( fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsAnswer)
+            === Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
+        )
+    )
+  ,
+    ( "an album the server gave no year for is put above the oldest, by name"
+    , example
+        ( fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
+            === Right ["Demos", "Tapes", "Live"]
+        )
+    )
+  ,
+    ( "any albums at all come out oldest first, the ones with no year above them, by name"
+    , property do
+        albums <- forAll (Gen.list (Range.linear 0 12) anyAlbum)
+        assert
+          (inOrder (fmap (\a -> (a.year, T.toCaseFold a.name)) (byAlbumYear albums)))
+    )
+  ,
+    ( "ordering the albums loses none of them and invents none"
+    , property do
+        albums <- forAll (Gen.list (Range.linear 0 12) anyAlbum)
+        sortOn albumKey (byAlbumYear albums) === sortOn albumKey albums
+    )
+  ,
+    ( "the albums come out the same however the server listed them"
+    , property do
+        albums <- forAll (Gen.list (Range.linear 0 12) anyAlbum)
+        byAlbumYear (reverse albums) === byAlbumYear albums
+    )
+  ]
+
+-- | The order an album's songs come out in.
+songOrder :: Checks
+songOrder =
+  [
+    ( "an album's songs are put in album order, disc by disc"
+    , example
+        ( fmap (fmap (.title) . byTrackOrder) (decodeSongs songsAnswer)
+            === Right ["Xtal", "Tha", "Pulsewidth"]
+        )
+    )
+  ,
+    ( "a song the server gave no track number for is put first, by name"
+    , example
+        ( fmap (fmap (.title) . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
+            === Right ["Loose end", "Sketch", "Opener"]
+        )
+    )
+  ,
+    ( "any songs at all come out disc by disc and track by track, the unnumbered above them, by name"
+    , property do
+        songs <- forAll (Gen.list (Range.linear 0 12) anySong)
+        assert
+          ( inOrder
+              (fmap (\s -> (s.disc, s.track, T.toCaseFold s.title)) (byTrackOrder songs))
+          )
+    )
+  ,
+    ( "ordering the songs loses none of them and invents none"
+    , property do
+        songs <- forAll (Gen.list (Range.linear 0 12) anySong)
+        sortOn songKey (byTrackOrder songs) === sortOn songKey songs
+    )
+  ,
+    ( "the songs come out the same however the server listed them"
+    , property do
+        songs <- forAll (Gen.list (Range.linear 0 12) anySong)
+        byTrackOrder (reverse songs) === byTrackOrder songs
+    )
+  ]
 
 url :: Endpoint -> Text
 url = endpointUrl testServer testCredentials testSalt
@@ -363,7 +422,7 @@ isMalformed answer = case answer of
 -- | Whether a list is in the order it promises to come out in: nothing before
 -- what should precede it.
 inOrder :: (Ord a) => [a] -> Bool
-inOrder xs = and (zipWith (<=) xs (drop 1 xs))
+inOrder xs = xs == sort xs
 
 -- | Everything one of them is, so that two with the same key are the same
 -- one: what tells a reordering that loses or invents nothing from one that
@@ -415,12 +474,12 @@ anyEndpoint =
     ]
 
 anyArtist :: Gen Artist
-anyArtist = Artist <$> (ArtistId <$> anyId) <*> anyName
+anyArtist = Artist . ArtistId <$> anyId <*> anyName
 
 anyAlbum :: Gen Album
 anyAlbum =
-  Album
-    <$> (AlbumId <$> anyId)
+  Album . AlbumId
+    <$> anyId
     <*> anyName
     <*> Gen.maybe (Gen.int (Range.linear 1900 2030))
 
@@ -438,7 +497,7 @@ anyListedSong = do
     ( Song
         { id = SongId ident
         , title
-        , duration = Seconds (fromMaybe 0 duration)
+        , duration = maybe (Seconds 0) Seconds duration
         , track
         , disc
         }
@@ -468,10 +527,10 @@ given name = foldMap (\value -> [name .= value])
 -- | Artists as @getArtists@ sends them: grouped under index letters, which is
 -- the server's grouping and none of the player's business.
 artistsAnswerOf :: [[Artist]] -> ByteString
-artistsAnswerOf groups = okAnswer ["artists" .= object ["index" .= map index groups]]
+artistsAnswerOf groups = okAnswer ["artists" .= object ["index" .= fmap index groups]]
   where
     index group =
-      object ["name" .= ("X" :: Text), "artist" .= map artistJson group]
+      object ["name" .= ("X" :: Text), "artist" .= fmap artistJson group]
 
     artistJson artist =
       object ["id" .= artistIdText artist.id, "name" .= artist.name]
@@ -481,7 +540,7 @@ albumsAnswerOf :: [Album] -> ByteString
 albumsAnswerOf albums =
   okAnswer
     [ "artist"
-        .= object ["id" .= ("a1" :: Text), "name" .= ("Someone" :: Text), "album" .= map albumJson albums]
+        .= object ["id" .= ("a1" :: Text), "name" .= ("Someone" :: Text), "album" .= fmap albumJson albums]
     ]
   where
     albumJson album =

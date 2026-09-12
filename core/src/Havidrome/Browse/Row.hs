@@ -11,8 +11,8 @@ module Havidrome.Browse.Row
   , mark
   ) where
 
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Subsonic.Types (Album (..), Artist (..), Song (..), SongId)
 
 -- | What one item of a level reads as. An artist is its name; an album carries
@@ -50,4 +50,4 @@ mark = "▶"
 
 figure :: Int -> Maybe Int -> Text
 figure width =
-  maybe (Text.replicate width " ") (Text.justifyRight width ' ' . Text.pack . show)
+  maybe (T.replicate width " ") (T.justifyRight width ' ' . T.pack . show)

@@ -18,9 +18,9 @@ module Havidrome.Width
   , shorten
   ) where
 
-import Data.Char (isControl)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Char (isControl, ord)
+import Data.Text as T (Text)
+import Data.Text qualified as T
 
 -- | The columns one character takes.
 char :: Char -> Int
@@ -32,12 +32,12 @@ char character
   | wide code = 2
   | otherwise = 1
   where
-    code = fromEnum character
+    code = ord character
 
 -- | The columns a line of text takes, which is what its characters take
 -- between them.
 text :: Text -> Int
-text = Text.foldl' (\taken character -> taken + char character) 0
+text = T.foldl' (\taken character -> taken + char character) 0
 
 -- | Text on one line of at most this many columns. What does not fit is cut
 -- off, and an ellipsis at the end says so. A character that would move the
@@ -45,17 +45,17 @@ text = Text.foldl' (\taken character -> taken + char character) 0
 shorten :: Int -> Text -> Text
 shorten room said
   | text flat <= room = flat
-  | room < text ellipsis = Text.empty
+  | room < text ellipsis = T.empty
   | otherwise = fitting (room - text ellipsis) flat <> ellipsis
   where
-    flat = Text.map (\character -> if isControl character then ' ' else character) said
+    flat = T.map (\character -> if isControl character then ' ' else character) said
     ellipsis = "…"
 
 -- | The longest start of the text that takes at most this many columns.
 fitting :: Int -> Text -> Text
-fitting room said = Text.take (length (takeWhile (<= room) reaches)) said
+fitting room said = T.take (length (takeWhile (<= room) reaches)) said
   where
-    reaches = scanl1 (+) (map char (Text.unpack said))
+    reaches = scanl1 (+) (fmap char (T.unpack said))
 
 -- | Whether a character hangs off the one before it rather than taking a
 -- column of its own: a non-spacing or enclosing mark, a format character, a
@@ -78,15 +78,15 @@ wide code =
     && ( code <= 0x115F -- Hangul Jamo initial consonants.
           || code == 0x2329
           || code == 0x232A
-          || (code >= 0x2E80 && code <= 0xA4CF && code /= 0x303F) -- CJK to Yi.
-          || (code >= 0xAC00 && code <= 0xD7A3) -- Hangul syllables.
-          || (code >= 0xF900 && code <= 0xFAFF) -- CJK compatibility ideographs.
-          || (code >= 0xFE10 && code <= 0xFE19) -- Vertical forms.
-          || (code >= 0xFE30 && code <= 0xFE6F) -- CJK compatibility forms.
-          || (code >= 0xFF00 && code <= 0xFF60) -- Full-width forms.
-          || (code >= 0xFFE0 && code <= 0xFFE6)
-          || (code >= 0x20000 && code <= 0x2FFFD)
-          || (code >= 0x30000 && code <= 0x3FFFD)
+          || code >= 0x2E80 && code <= 0xA4CF && code /= 0x303F -- CJK to Yi.
+          || code >= 0xAC00 && code <= 0xD7A3 -- Hangul syllables.
+          || code >= 0xF900 && code <= 0xFAFF -- CJK compatibility ideographs.
+          || code >= 0xFE10 && code <= 0xFE19 -- Vertical forms.
+          || code >= 0xFE30 && code <= 0xFE6F -- CJK compatibility forms.
+          || code >= 0xFF00 && code <= 0xFF60 -- Full-width forms.
+          || code >= 0xFFE0 && code <= 0xFFE6
+          || code >= 0x20000 && code <= 0x2FFFD
+          || code >= 0x30000 && code <= 0x3FFFD
        )
 
 -- | The characters that take no column, as the ranges they fall in, lowest

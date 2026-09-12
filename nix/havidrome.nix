@@ -84,7 +84,6 @@ let
         crypton
         http-types
         text
-        transformers
       ];
 
       testHaskellDepends = [

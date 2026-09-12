@@ -25,14 +25,14 @@ import Hedgehog.Main (defaultMain)
 main :: IO ()
 main =
   defaultMain $
-    map
+    fmap
       checkSequential
       [ HavidromeTest.tests
       , StoreTest.tests
       , AudioTest.tests
       , JournalTest.tests
       ]
-      <> map
+      <> fmap
         checkParallel
         [ VtyTest.tests
         , SubsonicTest.tests

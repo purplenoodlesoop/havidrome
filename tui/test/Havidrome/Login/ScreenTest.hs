@@ -7,9 +7,9 @@
 -- reaches the terminal as.
 module Havidrome.Login.ScreenTest (tests) where
 
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Havidrome.Check (example)
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Havidrome.Check (Checks, example)
 import Havidrome.Login (Field (Password, ServerUrl, Username), Form (..), blank)
 import Havidrome.Login.Screen (draw, theme)
 import Hedgehog (Gen, Group (Group), assert, forAll, property, (===))
@@ -21,77 +21,96 @@ tests :: Group
 tests =
   Group
     "Havidrome.Login.Screen"
-    [
-      ( "draw fills the screen with the three fields under the player's name"
-      , example do
-          shown (40, 7) blank
-            === ["havidrome", "", "Server URL", "Username", "Password", "", ""]
-      )
-    ,
-      ( "draw shows what is typed next to the label of its field"
-      , example do
-          shown (40, 5) blank {username = "someone", focus = Username}
-            === ["havidrome", "", "Server URL", "Username    someone", "Password"]
-      )
-    ,
-      ( "draw never shows a character of the password"
-      , example do
-          let screen = shown (40, 5) blank {password = "secret", focus = Password}
-          screen !! 4 === "Password    ••••••"
-          assert (all (not . Text.isInfixOf "secret") screen)
-      )
-    ,
-      ( "draw marks the field being typed into, and no other"
-      , example do
-          marked (40, 7) blank {focus = ServerUrl} === ["Server URL"]
-          marked (40, 7) blank {focus = Username} === ["Username"]
-          marked (40, 7) blank {focus = Password} === ["Password"]
-      )
-    ,
-      ( "draw keeps what the server said in the strip along the bottom"
-      , example do
-          last (shown (60, 7) refused) === "The server refused these credentials: wrong password"
-      )
-    ,
-      ( "the margin leaves the outer rows and columns blank, all of it inside"
-      , example do
-          assert (all vacant (border (whole (60, 9) refused)))
-          screenshot (whole (60, 9) refused)
-            === [ ""
-                , " havidrome"
-                , ""
-                , " Server URL  https://music.example.org"
-                , " Username    someone"
-                , " Password    ••••••"
-                , ""
-                , " The server refused these credentials: wrong password"
-                , ""
-                ]
-      )
-    ,
-      ( "the margin stays blank whatever the terminal's width and height"
-      , property do
-          region <- forAll size
-          form <- forAll (Gen.element [blank, refused])
-          filter (not . vacant) (border (whole region form)) === []
-      )
-    ,
-      ( "the field being typed into is the only row that stands out, whatever is typed"
-      , property do
-          form <- forAll aForm
-          let standing = marked (60, 7) form
-          length standing === 1
-          assert (all (Text.isPrefixOf (label form.focus)) standing)
-      )
-    ,
-      ( "no character of the password ever reaches the screen, whatever it is"
-      , property do
-          form <- forAll aForm
-          let screen = shown (60, 7) form
-              onScreen typed = any (Text.isInfixOf (Text.singleton typed)) screen
-          assert (not (any onScreen (Text.unpack form.password)))
-      )
-    ]
+    ( drawing
+        <> margin
+        <> anyForm
+    )
+
+-- | What the screen draws for a form.
+drawing :: Checks
+drawing =
+  [
+    ( "draw fills the screen with the three fields under the player's name"
+    , example do
+        shown (40, 7) blank
+          === ["havidrome", "", "Server URL", "Username", "Password", "", ""]
+    )
+  ,
+    ( "draw shows what is typed next to the label of its field"
+    , example do
+        shown (40, 5) blank {username = "someone", focus = Username}
+          === ["havidrome", "", "Server URL", "Username    someone", "Password"]
+    )
+  ,
+    ( "draw never shows a character of the password"
+    , example do
+        let screen = shown (40, 5) blank {password = "secret", focus = Password}
+        drop 4 screen === ["Password    ••••••"]
+        assert (not (any (T.isInfixOf "secret") screen))
+    )
+  ,
+    ( "draw marks the field being typed into, and no other"
+    , example do
+        marked (40, 7) blank {focus = ServerUrl} === ["Server URL"]
+        marked (40, 7) blank {focus = Username} === ["Username"]
+        marked (40, 7) blank {focus = Password} === ["Password"]
+    )
+  ,
+    ( "draw keeps what the server said in the strip along the bottom"
+    , example do
+        drop 6 (shown (60, 7) refused)
+          === ["The server refused these credentials: wrong password"]
+    )
+  ]
+
+-- | The blank cell around the screen.
+margin :: Checks
+margin =
+  [
+    ( "the margin leaves the outer rows and columns blank, all of it inside"
+    , example do
+        assert (all vacant (border (whole (60, 9) refused)))
+        screenshot (whole (60, 9) refused)
+          === [ ""
+              , " havidrome"
+              , ""
+              , " Server URL  https://music.example.org"
+              , " Username    someone"
+              , " Password    ••••••"
+              , ""
+              , " The server refused these credentials: wrong password"
+              , ""
+              ]
+    )
+  ,
+    ( "the margin stays blank whatever the terminal's width and height"
+    , property do
+        region <- forAll size
+        form <- forAll (Gen.element [blank, refused])
+        filter (not . vacant) (border (whole region form)) === []
+    )
+  ]
+
+-- | What holds of a form however it is filled in.
+anyForm :: Checks
+anyForm =
+  [
+    ( "the field being typed into is the only row that stands out, whatever is typed"
+    , property do
+        form <- forAll aForm
+        let standing = marked (60, 7) form
+        length standing === 1
+        assert (all (T.isPrefixOf (label form.focus)) standing)
+    )
+  ,
+    ( "no character of the password ever reaches the screen, whatever it is"
+    , property do
+        form <- forAll aForm
+        let screen = shown (60, 7) form
+            onScreen typed = any (T.isInfixOf (T.singleton typed)) screen
+        assert (not (any onScreen (T.unpack form.password)))
+    )
+  ]
 
 -- | Terminals from none at all, through ones too small to hold anything inside
 -- their margin, to ones that hold the whole screen.

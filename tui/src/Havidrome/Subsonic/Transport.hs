@@ -12,9 +12,9 @@ module Havidrome.Subsonic.Transport
 import Control.Exception (try)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as Lazy
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Data.Text.Encoding qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Journal (HasJournal (getJournal), Journal (writes))
 import Havidrome.Subsonic.Types
@@ -41,7 +41,7 @@ newtype Transport = Transport
 -- 'NetworkFailure' the caller is handed.
 httpTransport :: (HasJournal env) => env -> Manager -> Transport
 httpTransport env manager = Transport $ \url ->
-  case parseRequest (Text.unpack url) of
+  case parseRequest (T.unpack url) of
     Nothing ->
       pure (Left (NetworkFailure ("not a usable server address: " <> url)))
     Just request -> do
@@ -49,7 +49,7 @@ httpTransport env manager = Transport $ \url ->
       case attempt of
         Left exception -> do
           (getJournal env).writes
-            ("the request to " <> url <> " failed: " <> Text.pack (show exception))
+            ("the request to " <> url <> " failed: " <> T.pack (show exception))
           pure (Left (classifyException exception))
         Right response ->
           pure
@@ -66,7 +66,7 @@ mkHttpTransport env = httpTransport env <$> newTlsManager
 -- unknown host, a refused connection, a TLS failure, a timeout.
 classifyException :: HttpException -> SubsonicError
 classifyException exception =
-  NetworkFailure ("could not reach the server: " <> Text.pack (show exception))
+  NetworkFailure ("could not reach the server: " <> T.pack (show exception))
 
 -- | A reply with a status. Subsonic reports its own failures inside a 200, so
 -- anything else came from the server or something in front of it — and a 401
@@ -79,4 +79,4 @@ classifyStatus status body
   | otherwise = Left (ServerFailure code reason)
  where
   code = statusCode status
-  reason = Text.decodeUtf8Lenient (statusMessage status)
+  reason = T.decodeUtf8Lenient (statusMessage status)

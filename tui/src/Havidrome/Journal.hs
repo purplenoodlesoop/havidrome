@@ -20,8 +20,8 @@ module Havidrome.Journal
 
 import Control.Exception (IOException, try)
 import Data.ByteString qualified as ByteString
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (defaultTimeLocale, formatTime)
@@ -82,14 +82,14 @@ writing said = ignoringIO $ do
   createDirectoryIfMissing True directory
   setFileMode directory ownerOnlyDirectory
   at <- getCurrentTime
-  let stamp = Text.pack (formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" at)
+  let stamp = T.pack (formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" at)
   ByteString.appendFile path (encodeUtf8 (stamp <> " " <> oneLine said <> "\n"))
   setFileMode path ownerOnlyFile
 
 -- | An entry is a line, so whatever an exception had to say about itself is
 -- flattened onto one.
 oneLine :: Text -> Text
-oneLine = Text.unwords . Text.words
+oneLine = T.unwords . T.words
 
 ignoringIO :: IO () -> IO ()
 ignoringIO act = do

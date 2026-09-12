@@ -2,7 +2,7 @@
 -- as it was written.
 module Havidrome.CredentialsTest (tests) where
 
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Havidrome.Check (example)
 import Havidrome.Credentials
   ( Credentials (..)

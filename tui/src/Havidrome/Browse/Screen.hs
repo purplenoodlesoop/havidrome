@@ -66,11 +66,10 @@ import Brick.Widgets.List (GenericList, list, listMoveTo, listSelectedAttr, rend
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (bracket)
 import Control.Monad (forever)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (get, put)
+import Control.Monad.State (get, liftIO, put)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Data.Vector qualified as Vector
 import Graphics.Vty qualified as Vty
 import Havidrome.Browse
@@ -81,9 +80,9 @@ import Havidrome.Browse
   )
 import Havidrome.Browse qualified as Browse
 import Havidrome.Browse.Row (Row (row), marking)
-import Havidrome.Browse.Strip (Moment, Showing (Overlay, Wrong), Strip)
 import Havidrome.Browse.Strip qualified as Strip
 import Havidrome.Clock (Clock (now), HasClock (getClock))
+import Havidrome.Divide (quotientRemainder)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Key.Vty (pressed)
 import Havidrome.Library (Library)
@@ -92,7 +91,7 @@ import Havidrome.Playback (Playing (..), Session (..), startingAt)
 import Havidrome.Subsonic (Artist, Song (..), SongId, explain)
 import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 import Havidrome.Width qualified as Width
-import Optics.Core (view, (%))
+import Optics.Core qualified as Optics
 
 -- | The name brick knows a level's list by. One name per level, so no level
 -- inherits another's scroll position.
@@ -107,7 +106,7 @@ data Name
 -- audio is on, and how browsing ended, once it has ended.
 data Screen = Screen
   { browse :: Browse
-  , strip :: Strip
+  , strip :: Strip.Strip
   , marked :: Maybe SongId
   -- ^ The song playback is on, which carries the mark in whichever song list
   -- it is in; nothing while nothing is playing.
@@ -252,7 +251,7 @@ step library session instruction screen = case instruction of
 -- | The beat the player hears between key presses: the moment it happened at,
 -- which is both when what the audio has done is taken in and the clock a line
 -- with a few seconds to live is measured against.
-newtype Beat = Beat Moment
+newtype Beat = Beat Strip.Moment
   deriving stock (Eq, Show)
 
 -- | What the player takes in on a beat: everything the audio has done since
@@ -264,7 +263,7 @@ newtype Beat = Beat Moment
 -- audio reports lands on the strip in place of the overlay's contents. The mark
 -- moves with the audio too — onto the song an album moved on to or a skip
 -- landed on, and off every song once the playing has ended.
-onBeat :: Session -> Moment -> Screen -> IO Screen
+onBeat :: Session -> Strip.Moment -> Screen -> IO Screen
 onBeat session at screen = do
   failures <- session.attend
   playing <- session.nowPlaying
@@ -276,7 +275,7 @@ onBeat session at screen = do
 
 -- | The song that carries the mark: the one being played, if any is.
 markOf :: Maybe Playing -> Maybe SongId
-markOf = fmap (view (#song % #id))
+markOf = fmap (Optics.view (#song Optics.% #id))
 
 -- | Hands the terminal to the browsing screen, takes it back when browsing
 -- ends, and says how it ended. The beat runs for exactly as long as the screen
@@ -356,8 +355,8 @@ draw screen =
   ]
   where
     bottom = \case
-      Wrong said -> withAttr troubleAttribute (line said)
-      Overlay at playing -> withAttr overlayAttribute (across (\width -> Strip.overlaid at width playing))
+      Strip.Wrong said -> withAttr troubleAttribute (line said)
+      Strip.Overlay at playing -> withAttr overlayAttribute (across (\width -> Strip.overlaid at width playing))
 
 -- | A row laid out for the width the screen has for it when it is drawn, and
 -- across the whole of that width. What it lays out is left whole, so a row
@@ -439,9 +438,12 @@ depth = 3
 -- columns at the right taking what does not divide.
 shares :: Int -> Int -> [Int]
 shares count width =
-  [base + fromEnum (at >= count - over) | at <- [0 .. count - 1]]
+  [base + extra at | at <- [0 .. count - 1]]
   where
-    (base, over) = max 0 width `divMod` count
+    extra at = if at >= count - over then 1 else 0
+    -- No columns to share between is no width each, and the comprehension
+    -- above asks for none of it.
+    (base, over) = fromMaybe (0, 0) (quotientRemainder (max 0 width) count)
 
 -- | A row of text across the full width it is given, so that highlighting one
 -- covers the line and not just its letters, and shortened to that width when

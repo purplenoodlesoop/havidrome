@@ -42,8 +42,8 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Char8 qualified as Char8
 import Data.Foldable (traverse_)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Audio.Ipc (Notice (..), observePosition, quit, readNotice, render)
 import Havidrome.Audio.State
@@ -64,7 +64,8 @@ import Havidrome.Subsonic.Types (Seconds (..))
 import Network.HTTP.Client (HttpException, Manager, httpNoBody, method, parseRequest)
 import Network.HTTP.Client.TLS (newTlsManager)
 import Network.Socket (Family (AF_UNIX), Socket, SocketType (Stream), defaultProtocol, socketPair, socketToHandle)
-import Optics.Core (view, (%))
+import Optics.Core (view)
+import Optics.Core qualified as Optics
 import System.IO (BufferMode (LineBuffering), Handle, IOMode (ReadWriteMode), hClose, hFlush, hSetBuffering)
 import System.Process
   ( CreateProcess (std_err, std_in, std_out)
@@ -120,7 +121,7 @@ withMpv ::
   (HasJournal env) =>
   env ->
   FilePath ->
-  [String] ->
+  [Text] ->
   Reach ->
   (Audio -> IO a) ->
   IO a
@@ -147,7 +148,7 @@ data Mpv = Mpv
 -- | How mpv is run: no window, no terminal, none of the user's own mpv
 -- configuration, and its IPC on the socket it is given as standard input. It
 -- stays idle between tracks instead of exiting.
-arguments :: [String]
+arguments :: [Text]
 arguments =
   [ "--no-config"
   , "--no-terminal"
@@ -156,7 +157,7 @@ arguments =
   , "--input-ipc-client=fd://0"
   ]
 
-start :: (HasJournal env) => env -> FilePath -> [String] -> Reach -> IO Mpv
+start :: (HasJournal env) => env -> FilePath -> [Text] -> Reach -> IO Mpv
 start env program options reach = do
   (ours, theirs) <- socketPair AF_UNIX Stream defaultProtocol
   line <- socketToHandle ours ReadWriteMode
@@ -169,12 +170,12 @@ start env program options reach = do
   reader <- forkIO (drain env player)
   pure (Mpv player process reader)
 
-spawn :: FilePath -> [String] -> Socket -> IO ProcessHandle
+spawn :: FilePath -> [Text] -> Socket -> IO ProcessHandle
 spawn program options socket = do
   theirs <- socketToHandle socket ReadWriteMode
   (_, _, _, process) <-
     createProcess
-      (proc program options)
+      (proc program (fmap T.unpack options))
         { std_in = UseHandle theirs
         , std_out = NoStream
         , std_err = NoStream
@@ -188,7 +189,7 @@ end env mpv = do
   ignoringIO
     env
     "the line to the player would not close"
-    (hClose (view (#player % #line) mpv))
+    (hClose (view (#player Optics.% #line) mpv))
   terminateProcess mpv.process
   _ <- waitForProcess mpv.process
   pure ()
@@ -239,7 +240,7 @@ drain env player = do
   line <- try (Char8.hGetLine player.line)
   case line of
     Left (fault :: IOException) -> do
-      (getJournal env).writes ("the player stopped: " <> Text.pack (show fault))
+      (getJournal env).writes ("the player stopped: " <> T.pack (show fault))
       broke env player "the player stopped"
     Right said -> do
       traverse_ (react env player) (readNotice said)
@@ -261,7 +262,7 @@ broke env player detail = do
   case current of
     Stopped -> pure ()
     Loaded playback -> do
-      answered <- view (#reach % #answers) player (view (#track % #url) playback)
+      answered <- view (#reach Optics.% #answers) player (view (#track Optics.% #url) playback)
       perform env player (Broke (failureOf answered detail))
 
 -- | A server that still answers means the file itself is at fault; a server
@@ -283,19 +284,17 @@ newtype Reach = Reach
 -- that no audio is fetched to answer the question. Any answer at all, refusal
 -- included, means the server was reached.
 mkHttpReach :: (HasJournal env) => env -> IO Reach
-mkHttpReach env = do
-  manager <- newTlsManager
-  pure (Reach (probe env manager))
+mkHttpReach env = Reach . probe env <$> newTlsManager
 
 probe :: (HasJournal env) => env -> Manager -> Text -> IO Bool
-probe env manager url = case parseRequest (Text.unpack url) of
+probe env manager url = case parseRequest (T.unpack url) of
   Nothing -> pure False
   Just request -> do
     attempt <- try (httpNoBody request {method = "HEAD"} manager)
     case attempt of
       Left (fault :: HttpException) -> do
         (getJournal env).writes
-          ("the server did not answer for " <> url <> ": " <> Text.pack (show fault))
+          ("the server did not answer for " <> url <> ": " <> T.pack (show fault))
         pure False
       Right _ -> pure True
 
@@ -306,6 +305,6 @@ ignoringIO env about act = do
   attempt <- try act
   case attempt of
     Left (fault :: IOException) ->
-      (getJournal env).writes (about <> ": " <> Text.pack (show fault))
+      (getJournal env).writes (about <> ": " <> T.pack (show fault))
     Right () -> pure ()
 

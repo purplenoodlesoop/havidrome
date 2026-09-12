@@ -46,6 +46,7 @@ library
         Havidrome.Browse.Row
         Havidrome.Browse.Strip
         Havidrome.Credentials
+        Havidrome.Divide
         Havidrome.Key
         Havidrome.Library
         Havidrome.Login
@@ -106,6 +107,7 @@ test-suite havidrome-core-test
         Havidrome.BrowseTest
         Havidrome.Check
         Havidrome.CredentialsTest
+        Havidrome.DivideTest
         Havidrome.LoginTest
         Havidrome.Playback.QueueTest
         Havidrome.Subsonic.ProtocolTest

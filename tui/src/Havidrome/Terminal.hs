@@ -14,7 +14,7 @@ module Havidrome.Terminal
 
 import Brick (App, customMainWithDefaultVty)
 import Brick.BChan (BChan)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Data.Text.IO qualified as Text.IO
 import Graphics.Vty qualified as Vty
 import System.IO (stderr)

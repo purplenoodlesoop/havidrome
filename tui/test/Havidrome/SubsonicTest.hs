@@ -3,11 +3,12 @@
 -- test sees both what came back and what was asked for.
 module Havidrome.SubsonicTest (tests) where
 
+import Control.Monad (void)
 import Data.ByteString (ByteString)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Havidrome.Check (example)
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Havidrome.Check (Checks, example)
 import Havidrome.Credentials qualified as Credentials
 import Havidrome.Library (Library (..))
 import Havidrome.Subsonic
@@ -20,120 +21,144 @@ tests :: Group
 tests =
   Group
     "Havidrome.Subsonic"
-    [
-      ( "accepts credentials the server pings back on"
-      , example do
-          answer <- evalIO (answering (Right pingAnswer) (\subsonic -> subsonic.accepts account))
-          answer === Right ()
-      )
-    ,
-      ( "reports a rejected password as a refusal"
-      , example do
-          answer <-
-            evalIO (answering (Right wrongPasswordAnswer) (\subsonic -> subsonic.accepts account))
-          answer === Left (AuthRejected "Wrong username or password")
-      )
-    ,
-      ( "reports an unreachable host as a network failure, not a refusal"
-      , example do
-          let down = NetworkFailure "could not reach the server"
-          answer <- evalIO (answering (Left down) (\subsonic -> subsonic.accepts account))
-          answer === Left down
-      )
-    ,
-      ( "asks the server to ping"
-      , example do
-          requested <- evalIO do
-            (subsonic, asked) <- stub (Right pingAnswer)
-            _ <- subsonic.accepts account
-            readIORef asked
-          assert ("/rest/ping?" `Text.isInfixOf` requested)
-      )
-    ,
-      ( "hands back every artist, alphabetically"
-      , example do
-          named <-
-            evalIO (answering (Right artistsAnswer) (fmap (fmap (map (.name))) . listing (.artists)))
-          named === Right ["anohni", "Aphex Twin", "zebra"]
-      )
-    ,
-      ( "passes a network failure straight through"
-      , example do
-          answer <- evalIO (answering (Left (NetworkFailure "down")) (listing (.artists)))
-          fmap (map (.name)) answer === Left (NetworkFailure "down")
-      )
-    ,
-      ( "hands back the albums of the artist it asked for, oldest year first"
-      , example do
-          named <-
-            evalIO . answering (Right albumsAnswer) $
-              fmap (fmap (map (.name))) . listing (\library -> library.albums (ArtistId "a1"))
-          named === Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
-      )
-    ,
-      ( "asks for that artist and no other"
-      , example do
-          requested <- evalIO do
-            (subsonic, asked) <- stub (Right albumsAnswer)
-            _ <- listing (\library -> library.albums (ArtistId "a1")) subsonic
-            readIORef asked
-          assert ("/rest/getArtist?id=a1&" `Text.isInfixOf` requested)
-      )
-    ,
-      ( "hands back the songs of the album it asked for, in album order"
-      , example do
-          titled <-
-            evalIO . answering (Right songsAnswer) $
-              fmap (fmap (map (.title))) . listing (\library -> library.songs (AlbumId "b1"))
-          titled === Right ["Xtal", "Tha", "Pulsewidth"]
-      )
-    ,
-      ( "asks for that album and no other"
-      , example do
-          requested <- evalIO do
-            (subsonic, asked) <- stub (Right songsAnswer)
-            _ <- listing (\library -> library.songs (AlbumId "b1")) subsonic
-            readIORef asked
-          assert ("/rest/getAlbum?id=b1&" `Text.isInfixOf` requested)
-      )
-    ,
-      ( "points at the stored file, signed like every other call"
-      , example do
-          (subsonic, _) <- evalIO (stub (Right pingAnswer))
-          subsonic.addresses account (SongId "s1")
-            === "https://music.example.org/rest/stream?id=s1&format=raw&u=someone&t="
-              <> testToken
-              <> "&s=abc123&v=1.16.1&c=havidrome"
-      )
-    ,
-      ( "passes whatever failure the transport reports straight through, on every call"
-      , property do
-          failure <- forAll trouble
-          asking <- forAll call
-          answer <- evalIO (answering (Left failure) (asking.make account))
-          answer === Left failure
-      )
-    ,
-      ( "addresses every call to the server the account names, and no other"
-      , property do
-          (host, them) <- forAll anAccount
-          asking <- forAll call
-          requested <- evalIO do
-            (subsonic, asked) <- stub (Right pingAnswer)
-            _ <- asking.make them subsonic
-            readIORef asked
-          assert ((host <> "/rest/") `Text.isPrefixOf` requested)
-      )
-    ,
-      ( "asks for a song's audio under that server too, naming the song and the stored file"
-      , property do
-          (host, them) <- forAll anAccount
-          identifier <- forAll songId
-          (subsonic, _) <- evalIO (stub (Right pingAnswer))
-          let wanted = host <> "/rest/stream?id=" <> identifier <> "&format=raw&"
-          assert (wanted `Text.isPrefixOf` subsonic.addresses them (SongId identifier))
-      )
-    ]
+    ( accepting
+        <> listings
+        <> audio
+        <> anyCall
+    )
+
+-- | The credential check, and what it makes of a server that refuses.
+accepting :: Checks
+accepting =
+  [
+    ( "accepts credentials the server pings back on"
+    , example do
+        answer <- evalIO (answering (Right pingAnswer) (\subsonic -> subsonic.accepts account))
+        answer === Right ()
+    )
+  ,
+    ( "reports a rejected password as a refusal"
+    , example do
+        answer <-
+          evalIO (answering (Right wrongPasswordAnswer) (\subsonic -> subsonic.accepts account))
+        answer === Left (AuthRejected "Wrong username or password")
+    )
+  ,
+    ( "reports an unreachable host as a network failure, not a refusal"
+    , example do
+        let down = NetworkFailure "could not reach the server"
+        answer <- evalIO (answering (Left down) (\subsonic -> subsonic.accepts account))
+        answer === Left down
+    )
+  ]
+
+-- | The three listings, and what each asks the server for.
+listings :: Checks
+listings =
+  [
+    ( "asks the server to ping"
+    , example do
+        requested <- evalIO do
+          (subsonic, asked) <- stub (Right pingAnswer)
+          _ <- subsonic.accepts account
+          readIORef asked
+        assert ("/rest/ping?" `T.isInfixOf` requested)
+    )
+  ,
+    ( "hands back every artist, alphabetically"
+    , example do
+        named <-
+          evalIO (answering (Right artistsAnswer) (fmap (fmap (fmap (.name))) . listing (.artists)))
+        named === Right ["anohni", "Aphex Twin", "zebra"]
+    )
+  ,
+    ( "passes a network failure straight through"
+    , example do
+        answer <- evalIO (answering (Left (NetworkFailure "down")) (listing (.artists)))
+        fmap (fmap (.name)) answer === Left (NetworkFailure "down")
+    )
+  ,
+    ( "hands back the albums of the artist it asked for, oldest year first"
+    , example do
+        named <-
+          evalIO . answering (Right albumsAnswer) $
+            fmap (fmap (fmap (.name))) . listing (\library -> library.albums (ArtistId "a1"))
+        named === Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
+    )
+  ,
+    ( "asks for that artist and no other"
+    , example do
+        requested <- evalIO do
+          (subsonic, asked) <- stub (Right albumsAnswer)
+          _ <- listing (\library -> library.albums (ArtistId "a1")) subsonic
+          readIORef asked
+        assert ("/rest/getArtist?id=a1&" `T.isInfixOf` requested)
+    )
+  ,
+    ( "hands back the songs of the album it asked for, in album order"
+    , example do
+        titled <-
+          evalIO . answering (Right songsAnswer) $
+            fmap (fmap (fmap (.title))) . listing (\library -> library.songs (AlbumId "b1"))
+        titled === Right ["Xtal", "Tha", "Pulsewidth"]
+    )
+  ,
+    ( "asks for that album and no other"
+    , example do
+        requested <- evalIO do
+          (subsonic, asked) <- stub (Right songsAnswer)
+          _ <- listing (\library -> library.songs (AlbumId "b1")) subsonic
+          readIORef asked
+        assert ("/rest/getAlbum?id=b1&" `T.isInfixOf` requested)
+    )
+  ]
+
+-- | The file a song is played from.
+audio :: Checks
+audio =
+  [
+    ( "points at the stored file, signed like every other call"
+    , example do
+        (subsonic, _) <- evalIO (stub (Right pingAnswer))
+        subsonic.addresses account (SongId "s1")
+          === "https://music.example.org/rest/stream?id=s1&format=raw&u=someone&t="
+            <> testToken
+            <> "&s=abc123&v=1.16.1&c=havidrome"
+    )
+  ]
+
+-- | What holds of every call the player makes, whatever it is.
+anyCall :: Checks
+anyCall =
+  [
+    ( "passes whatever failure the transport reports straight through, on every call"
+    , property do
+        failure <- forAll trouble
+        asking <- forAll call
+        answer <- evalIO (answering (Left failure) (asking.make account))
+        answer === Left failure
+    )
+  ,
+    ( "addresses every call to the server the account names, and no other"
+    , property do
+        (host, them) <- forAll anAccount
+        asking <- forAll call
+        requested <- evalIO do
+          (subsonic, asked) <- stub (Right pingAnswer)
+          _ <- asking.make them subsonic
+          readIORef asked
+        assert ((host <> "/rest/") `T.isPrefixOf` requested)
+    )
+  ,
+    ( "asks for a song's audio under that server too, naming the song and the stored file"
+    , property do
+        (host, them) <- forAll anAccount
+        identifier <- forAll songId
+        (subsonic, _) <- evalIO (stub (Right pingAnswer))
+        let wanted = host <> "/rest/stream?id=" <> identifier <> "&format=raw&"
+        assert (wanted `T.isPrefixOf` subsonic.addresses them (SongId identifier))
+    )
+  ]
 
 -- | The calls over a transport that answers with the same thing every time,
 -- and the address it was last asked for.
@@ -167,12 +192,12 @@ listing fetch subsonic = fetch (subsonic.browses account)
 -- and reduced to whether it worked, so that any of the four stands where any
 -- other does.
 data Call = Call
-  { named :: String
+  { named :: Text
   , make :: Credentials.Credentials -> Subsonic -> IO (Either SubsonicError ())
   }
 
 instance Show Call where
-  show asking = asking.named
+  show asking = T.unpack asking.named
 
 -- | Every failure a transport can report, whatever it says about itself.
 trouble :: Gen SubsonicError
@@ -195,7 +220,7 @@ call =
     , Call "an album's songs" (\them subsonic -> nothingBack ((subsonic.browses them).songs (AlbumId "b1")))
     ]
  where
-  nothingBack = fmap (fmap (const ()))
+  nothingBack = fmap void
 
 -- | An account on some server, named and signed in however: the server's own
 -- address beside it, because that is what a call must be addressed under.

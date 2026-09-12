@@ -11,7 +11,7 @@ import Havidrome.Key (Key (..), Modifier (..))
 
 -- | The press vty has reported, or nothing when it is one no screen binds.
 pressed :: Vty.Key -> [Vty.Modifier] -> Maybe (Key, [Modifier])
-pressed key modifiers = (,map held modifiers) <$> struck key
+pressed key modifiers = (,fmap held modifiers) <$> struck key
 
 struck :: Vty.Key -> Maybe Key
 struck = \case

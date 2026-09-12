@@ -27,7 +27,7 @@ module Havidrome.Playback
   ) where
 
 import Control.Concurrent.MVar (modifyMVar, modifyMVar_, newMVar, readMVar)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import GHC.Generics (Generic)
 import Havidrome.Audio
   ( Audio (..)
@@ -41,7 +41,8 @@ import Havidrome.Audio
 import Havidrome.Playback.Playing
 import Havidrome.Playback.Queue
 import Havidrome.Subsonic.Types (Seconds (..), Song (..), SongId)
-import Optics.Core (view, (%))
+import Optics.Core (view)
+import Optics.Core qualified as Optics
 
 -- | An album played through one audio backend: everything the player can ask
 -- of it, and everything it has to say back. How far into a song the audio has
@@ -107,66 +108,95 @@ newSession audio address = do
   -- only the one event loop ever reaches it, so there is nothing for STM to
   -- keep from interleaving.
   place <- newMVar Nothing
-  let -- Puts the session on an album position and plays the song there, or,
-      -- where the album has run out, leaves it playing nothing. Every change
-      -- of what is playing goes through here.
-      settle at = do
-        case at of
-          Nothing -> audio.stop
-          Just here -> audio.play (trackOf address (view (#queue % #playing) here)) (Seconds 0)
-        pure at
-
-      -- Throws away whatever the backend has already said, because it is
-      -- about the song that is being replaced. What it says of the song
-      -- started in its place comes after.
-      discard = do
-        heard <- audio.nextEvent
-        case heard of
-          Nothing -> pure ()
-          Just _ -> discard
-
-      moveTo at = discard >> settle at
-
-      advance = withPlace (\here -> settle (followed <$> forward here.queue))
-
-      heed shown current = do
-        heard <- audio.nextEvent
-        case heard of
-          Nothing -> pure (current, reverse shown)
-          Just Finished -> advance current >>= heed shown
-          Just (Failed failure) -> case failure of
-            Unplayable _ -> advance current >>= heed (failure : shown)
-            Unreachable _ -> settle Nothing >>= heed (failure : shown)
-
+  let backing = Backing audio address
       onPlace = modifyMVar_ place
-
   pure
     Session
-      { start = \queue -> onPlace $ \_ -> moveTo (Just (Place queue Picked))
-      , next = onPlace $ withPlace $ \here -> moveTo (followed <$> forward here.queue)
-      , previous = onPlace $ withPlace $ \here -> moveTo (Just (followed (backward here.queue)))
-      , stop = onPlace $ \_ -> moveTo Nothing
+      { start = \queue -> onPlace $ \_ -> moveTo backing (Just (Place queue Picked))
+      , next = onPlace $ withPlace $ \here -> moveTo backing (followed <$> forward here.queue)
+      , previous = onPlace $ withPlace $ \here -> moveTo backing (Just (followed (backward here.queue)))
+      , stop = onPlace $ \_ -> moveTo backing Nothing
       , pause = audio.pause
       , resume = audio.resume
-      , togglePause = do
-          state <- audio.nowPlaying
-          case state of
-            Stopped -> pure ()
-            Loaded playback -> case playback.motion of
-              Running -> audio.pause
-              Paused -> audio.resume
+      , togglePause = toggled audio
       , seekBy = audio.seekBy
       , nowPlaying = do
           current <- readMVar place
           state <- audio.nowPlaying
           pure (playingAt state <$> current)
-      , attend = modifyMVar place (heed [])
+      , attend = modifyMVar place (heed backing [])
       }
+
+-- | What a session plays through: the audio backend, and where the audio of
+-- a song lives. Every operation of a session that reaches the sound reaches
+-- it through one of these.
+data Backing = Backing
+  { audio :: Audio
+  , address :: SongId -> Text
+  }
+  deriving stock (Generic)
+
+-- | Puts the session on an album position and plays the song there, or, where
+-- the album has run out, leaves it playing nothing. Every change of what is
+-- playing goes through here.
+settle :: Backing -> Maybe Place -> IO (Maybe Place)
+settle backing at = do
+  case at of
+    Nothing -> backing.audio.stop
+    Just here ->
+      backing.audio.play
+        (trackOf backing.address (view (#queue Optics.% #playing) here))
+        (Seconds 0)
+  pure at
+
+-- | Throws away whatever the backend has already said, because it is about
+-- the song that is being replaced. What it says of the song started in its
+-- place comes after.
+discard :: Backing -> IO ()
+discard backing = do
+  heard <- backing.audio.nextEvent
+  case heard of
+    Nothing -> pure ()
+    Just _ -> discard backing
+
+-- | Leaves the session playing that album position, and nothing of the song
+-- it replaced still to be heard about.
+moveTo :: Backing -> Maybe Place -> IO (Maybe Place)
+moveTo backing at = discard backing >> settle backing at
+
+-- | On to the next song of the album, or off the end of it.
+advance :: Backing -> Maybe Place -> IO (Maybe Place)
+advance backing = withPlace (\here -> settle backing (followed <$> forward here.queue))
+
+-- | Everything the backend has said since it was last asked, taken in one
+-- event at a time, and the failures it said that the player has to show.
+heed :: Backing -> [Failure] -> Maybe Place -> IO (Maybe Place, [Failure])
+heed backing shown current = do
+  heard <- backing.audio.nextEvent
+  case heard of
+    Nothing -> pure (current, reverse shown)
+    Just Finished -> advance backing current >>= heed backing shown
+    Just (Failed failure) -> case failure of
+      Unplayable _ -> advance backing current >>= heed backing (failure : shown)
+      Unreachable _ -> settle backing Nothing >>= heed backing (failure : shown)
+
+-- | Halts the audio if it is running, and lets it run again if it is held.
+-- One key does both, so which of the two it is is asked of the backend rather
+-- than kept here as well. With nothing playing there is nothing to hold, and
+-- nothing happens.
+toggled :: Audio -> IO ()
+toggled audio = do
+  state <- audio.nowPlaying
+  case state of
+    Stopped -> pure ()
+    Loaded playback -> case playback.motion of
+      Running -> audio.pause
+      Paused -> audio.resume
 
 playingAt :: State -> Place -> Playing
 playingAt state place =
   Playing
-    { song = view (#queue % #playing) place
+    { song = view (#queue Optics.% #playing) place
     , elapsed = elapsedIn state
     , arrival = place.arrival
     , sound = soundIn state
@@ -186,4 +216,4 @@ trackOf address song =
 -- | With no album in hand there is nothing to move through, so a control that
 -- would move within one does nothing at all.
 withPlace :: (Place -> IO (Maybe Place)) -> Maybe Place -> IO (Maybe Place)
-withPlace act = maybe (pure Nothing) act
+withPlace = maybe (pure Nothing)

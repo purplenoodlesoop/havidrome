@@ -10,6 +10,7 @@ module Havidrome.Login
   ( -- * The form
     Form (..)
   , Field (..)
+  , fields
   , blank
   , value
   , ahead
@@ -30,8 +31,9 @@ module Havidrome.Login
   ) where
 
 import Data.Char (isPrint)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Maybe (fromMaybe)
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Credentials qualified as Credentials
 import Havidrome.Key (Key (..), Modifier (Ctrl))
 import Havidrome.Subsonic.Types (SubsonicError, explain)
@@ -96,13 +98,27 @@ alter field change form = case field of
   Username -> form {username = change form.username}
   Password -> form {password = change form.password}
 
+-- | Every field, in the order the form asks for them.
+fields :: [Field]
+fields = [minBound ..]
+
 -- | The field after this one, round from the last back to the first.
 ahead :: Field -> Field
-ahead field = if field == maxBound then minBound else succ field
+ahead = following fields
 
 -- | The field before this one, round from the first back to the last.
 back :: Field -> Field
-back field = if field == minBound then maxBound else pred field
+back = following (reverse fields)
+
+-- The field each one of an order is followed by, the last followed by the
+-- first. An order that names every field answers for every field, so the
+-- field asked about is never the one given back.
+following :: [Field] -> Field -> Field
+following order field = fromMaybe field (lookup field (zip order rotated))
+  where
+    rotated = case order of
+      [] -> []
+      first : rest -> rest <> [first]
 
 -- | What a key press means. Nothing else on the login screen does anything.
 data Command
@@ -169,7 +185,7 @@ step entry instruction form = case instruction of
   Leave -> pure (Left Abandoned)
   Ahead -> stay quiet {focus = ahead form.focus}
   Back -> stay quiet {focus = back form.focus}
-  Type character -> stay (alter form.focus (<> Text.singleton character) quiet)
+  Type character -> stay (alter form.focus (<> T.singleton character) quiet)
   Rub -> stay (alter form.focus dropLast quiet)
   Submit ->
     entry.accepts filled >>= \case
@@ -187,13 +203,13 @@ step entry instruction form = case instruction of
         }
 
 dropLast :: Text -> Text
-dropLast = Text.dropEnd 1
+dropLast = T.dropEnd 1
 
 -- | What a field is called, in a column of its own so that what is typed into
 -- the three of them lines up.
 labelled :: Field -> Text
 labelled =
-  Text.justifyLeft 12 ' ' . \case
+  T.justifyLeft 12 ' ' . \case
     ServerUrl -> "Server URL"
     Username -> "Username"
     Password -> "Password"
@@ -203,5 +219,5 @@ labelled =
 -- can be taken off the screen but its length.
 masked :: Field -> Text -> Text
 masked = \case
-  Password -> \typed -> Text.replicate (Text.length typed) "•"
+  Password -> \typed -> T.replicate (T.length typed) "•"
   _ -> id

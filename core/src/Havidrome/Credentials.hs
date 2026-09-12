@@ -20,8 +20,8 @@ module Havidrome.Credentials
   , explain
   ) where
 
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 
 -- | Everything needed to talk to one Navidrome account.
 data Credentials = Credentials
@@ -65,12 +65,12 @@ data Fault
 -- place a 'Fault' becomes text.
 explain :: Fault -> Text
 explain fault =
-  "the stored credentials could not be read: " <> Text.pack (show fault)
+  "the stored credentials could not be read: " <> T.pack (show fault)
 
 -- | The contents of a config file holding these credentials.
 render :: Credentials -> Text
 render credentials =
-  Text.unlines
+  T.unlines
     [ field <> "=" <> escape (value credentials)
     | (field, value) <- fields
     ]
@@ -79,7 +79,7 @@ render credentials =
 -- be credentials is a 'Fault', never an exception.
 parse :: Text -> Either Fault Credentials
 parse text = do
-  assigned <- traverse assignment (filter (not . Text.null) (Text.lines text))
+  assigned <- traverse assignment (filter (not . T.null) (T.lines text))
   let only field = case [value | (field', value) <- assigned, field' == field] of
         [value] -> Right value
         [] -> Left (MissingField field)
@@ -89,10 +89,10 @@ parse text = do
 -- | One @field=value@ line, with the value unescaped.
 assignment :: Text -> Either Fault (Text, Text)
 assignment line = maybe (Left (BadLine line)) Right $ do
-  let (field, rest) = Text.breakOn "=" line
-  escaped <- Text.stripPrefix "=" rest
+  let (field, rest) = T.breakOn "=" line
+  escaped <- T.stripPrefix "=" rest
   value <- unescape escaped
-  if field `elem` map fst fields then Just (field, value) else Nothing
+  if field `elem` fmap fst fields then Just (field, value) else Nothing
 
 fields :: [(Text, Credentials -> Text)]
 fields =
@@ -108,15 +108,15 @@ passwordField = "password"
 
 -- | Hides from a line-oriented file the two characters that would confuse it.
 escape :: Text -> Text
-escape = Text.concatMap $ \character -> case character of
+escape = T.concatMap $ \character -> case character of
   '\\' -> "\\\\"
   '\n' -> "\\n"
-  _ -> Text.singleton character
+  _ -> T.singleton character
 
 -- | The inverse of 'escape'; 'Nothing' for an escape that 'escape'
 -- never writes.
 unescape :: Text -> Maybe Text
-unescape = fmap Text.pack . go . Text.unpack
+unescape = fmap T.pack . go . T.unpack
   where
     go [] = Just []
     go ('\\' : character : rest) = case character of

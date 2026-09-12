@@ -2,7 +2,7 @@
 -- gives its column, and the mark the song playback is on carries.
 module Havidrome.Browse.RowTest (tests) where
 
-import Data.Text qualified as Text
+import Data.Text qualified as T
 import Havidrome.Browse.Fixtures (album, artist, song)
 import Havidrome.Browse.Row (Row (row), mark, marking)
 import Havidrome.Check (example)
@@ -40,8 +40,8 @@ tests =
     ,
       ( "marking keeps the name in line with the unmarked rows around it"
       , example
-          ( Text.length (marking (Just (SongId "s")) vordhosbn)
-              === Text.length (row vordhosbn)
+          ( T.length (marking (Just (SongId "s")) vordhosbn)
+              === T.length (row vordhosbn)
           )
       )
     ,

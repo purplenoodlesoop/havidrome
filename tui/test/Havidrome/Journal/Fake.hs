@@ -7,7 +7,7 @@ module Havidrome.Journal.Fake
   ) where
 
 import Data.IORef (IORef, atomicModifyIORef', newIORef)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Havidrome.Journal (Journal (Journal, file, writes))
 
 -- | A journal that keeps nothing. It is what a test about something else

@@ -23,7 +23,7 @@ module Havidrome
   ) where
 
 import Data.Foldable (traverse_)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Havidrome.Audio (Audio, HasAudio (getAudio), withAudio)
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit), browsing, opening)
 import Havidrome.Clock (Clock, HasClock (getClock), mkClock)

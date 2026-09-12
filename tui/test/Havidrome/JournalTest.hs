@@ -7,15 +7,17 @@ module Havidrome.JournalTest (tests) where
 
 import Control.Exception (bracket)
 import Data.Bits ((.&.))
+import Data.Either (isLeft)
 import Data.IORef (readIORef)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Data.Text.IO qualified as Text.IO
 import Havidrome.Check (example)
 import Havidrome.Journal (Journal (file, writes), mkJournal)
 import Havidrome.Journal.Fake (recording)
 import Havidrome.Subsonic.Transport (Transport (fetch), mkHttpTransport)
 import Hedgehog (Group (Group), Property, assert, evalIO, (===))
+import Lists (drop1)
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath ((</>))
@@ -72,7 +74,7 @@ appends = example do
     secondRun <- mkJournal
     secondRun.writes "the second run said this"
     secondRun.file >>= Text.IO.readFile
-  fmap unstamped (Text.lines said)
+  fmap unstamped (T.lines said)
     === [ "the player started"
         , "the first run said this"
         , "and then this"
@@ -98,14 +100,14 @@ caughtIsJournalled = example do
     (journal, recorded) <- recording
     transport <- mkHttpTransport journal
     answer <- transport.fetch nowhere
-    (either (const True) (const False) answer,) <$> readIORef recorded
+    (isLeft answer,) <$> readIORef recorded
   assert failed
-  fmap (Text.isPrefixOf ("the request to " <> nowhere <> " failed: ")) written === [True]
+  fmap (T.isPrefixOf ("the request to " <> nowhere <> " failed: ")) written === [True]
 
 -- | A line without the moment it was stamped with, which is whatever the clock
 -- said and so is not a thing to assert on.
 unstamped :: Text -> Text
-unstamped = Text.unwords . drop 1 . Text.words
+unstamped = T.unwords . drop1 . T.words
 
 -- | An invented address nothing answers on, so that the request fails the way
 -- it fails against a server that cannot be reached.
@@ -120,9 +122,9 @@ withStateHome use =
 
 -- | Runs an action with a variable set, or unset, putting back whatever was
 -- there before.
-withEnvironment :: String -> Maybe String -> IO a -> IO a
+withEnvironment :: Text -> Maybe FilePath -> IO a -> IO a
 withEnvironment name value action =
-  bracket (lookupEnv name) (restore name) (const (restore name value >> action))
-
-restore :: String -> Maybe String -> IO ()
-restore name = maybe (unsetEnv name) (setEnv name)
+  bracket (lookupEnv named) restore (const (restore value >> action))
+ where
+  named = T.unpack name
+  restore = maybe (unsetEnv named) (setEnv named)

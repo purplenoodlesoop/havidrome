@@ -10,10 +10,10 @@ module Havidrome.Browse.ScreenTest (tests) where
 
 import Control.Monad (foldM, forM)
 import Data.Either (fromRight)
-import Data.List (nub, transpose)
+import Data.List (group, transpose)
 import Data.Maybe (catMaybes, isNothing)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Graphics.Vty qualified as Vty
 import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Browse (Browse (AtSongs), selected)
@@ -22,11 +22,13 @@ import Havidrome.Browse.Fixtures
   , artist
   , artists
   , bar
+  , btoumRoumada
   , drukqsSongs
   , failing
   , filledIn
+  , jynweythek
   , library
-  , sketchesSongs
+  , untitled
   )
 import Havidrome.Browse.Row (Row (row), mark)
 import Havidrome.Browse.Screen
@@ -52,7 +54,7 @@ import Havidrome.Browse.Screen
   , theme
   )
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Wrong), showing)
-import Havidrome.Check (example)
+import Havidrome.Check (Checks, example)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
@@ -76,8 +78,6 @@ import Havidrome.Subsonic
 import Hedgehog
   ( Gen
   , Group (Group)
-  , Property
-  , PropertyName
   , PropertyT
   , assert
   , evalIO
@@ -94,10 +94,44 @@ tests :: Group
 tests =
   Group
     "Havidrome.Browse.Screen"
-    (keys <> stepping <> picking <> overlay <> marking <> columns <> margin)
+    ( keys
+        <> ignoring
+        <> stepping
+        <> picking
+        <> silent
+        <> browsingOn
+        <> leaving
+        <> pausing
+        <> skipping
+        <> seeks
+        <> leftAlone
+        <> overlay
+        <> placing
+        <> indicator
+        <> noIndicator
+        <> complaints
+        <> progress
+        <> limits
+        <> reasons
+        <> eitherSymbol
+        <> onceLoaded
+        <> noSymbol
+        <> marking
+        <> elsewhere
+        <> moving
+        <> gone
+        <> columns
+        <> rowPicked
+        <> returning
+        <> scrolling
+        <> alongside
+        <> shortened
+        <> headings
+        <> margin
+    )
 
--- | What each key press means to the screen.
-keys :: [(PropertyName, Property)]
+-- | What each key press the screen binds means to it.
+keys :: Checks
 keys =
   [
     ( "command moves the selection with the arrows"
@@ -140,7 +174,12 @@ keys =
         command RightArrow [Shift] === Just (Seek 30)
         command LeftArrow [Shift] === Just (Seek (-30))
     )
-  ,
+  ]
+
+-- | The key presses the screen binds to nothing at all.
+ignoring :: Checks
+ignoring =
+  [
     ( "command ignores every other key"
     , example do
         command (Character 'x') [] === Nothing
@@ -157,7 +196,7 @@ keys =
     ( "command ignores every key press the screen does not bind, whatever is held with it"
     , property do
         press <- forAll unbound
-        command (fst press) (snd press) === Nothing
+        uncurry command press === Nothing
     )
   ,
     ( "command binds no letter key on its own to leaving the player"
@@ -168,7 +207,7 @@ keys =
   ]
 
 -- | What one key press does to the screen and to the run.
-stepping :: [(PropertyName, Property)]
+stepping :: Checks
 stepping =
   [
     ( "step leaves the player on Ctrl+C, at any level"
@@ -188,8 +227,7 @@ stepping =
     ( "step ends browsing on no other key"
     , example do
         ended <- driving $ \_ session ->
-          forM [(MoveDown, []), (Descend, []), (Ascend, [Descend])] $ \(instruction, path) ->
-            ends session instruction path
+          forM [(MoveDown, []), (Descend, []), (Ascend, [Descend])] (uncurry (ends session))
         ended === replicate 3 Nothing
     )
   ,
@@ -229,7 +267,7 @@ stepping =
   ]
 
 -- | What Enter on a song does to the audio under the screen.
-picking :: [(PropertyName, Property)]
+picking :: Checks
 picking =
   [
     ( "picking a song plays the song the selection is on"
@@ -237,8 +275,8 @@ picking =
         (told, song) <- driving $ \standin session -> do
           _ <- after session playingDrukqs
           (,) <$> loaded standin <*> playing session
-        told === [from (drukqsSongs !! 0)]
-        song === Just (drukqsSongs !! 0)
+        told === [from btoumRoumada]
+        song === Just btoumRoumada
     )
   ,
     ( "picking a song leaves the lists exactly where they were, but for the mark on it"
@@ -256,7 +294,7 @@ picking =
           screen <- after session playingDrukqs
           _ <- ranOut standin session screen 2
           loaded standin
-        told === map from drukqsSongs
+        told === fmap from drukqsSongs
     )
   ,
     ( "picking replaces what is playing when the song is of another album"
@@ -264,8 +302,8 @@ picking =
         (told, song) <- driving $ \standin session -> do
           _ <- after session (playingDrukqs <> toSketches <> [Descend])
           (,) <$> loaded standin <*> playing session
-        told === [from (drukqsSongs !! 0), from (sketchesSongs !! 0)]
-        song === Just (sketchesSongs !! 0)
+        told === [from btoumRoumada, from untitled]
+        song === Just untitled
     )
   ,
     ( "picking then follows that album to its end, and no further"
@@ -274,10 +312,15 @@ picking =
           screen <- after session (playingDrukqs <> toSketches <> [Descend])
           _ <- ranOut standin session screen 3
           (,) <$> loaded standin <*> session.nowPlaying
-        told === [from (drukqsSongs !! 0), from (sketchesSongs !! 0)]
+        told === [from btoumRoumada, from untitled]
         fmap (.song) song === Nothing
     )
-  ,
+  ]
+
+-- | Picking where the level has no song to play.
+silent :: Checks
+silent =
+  [
     ( "picking plays nothing at a level that has no song to pick"
     , example do
         told <- driving $ \standin session -> do
@@ -293,7 +336,12 @@ picking =
           loaded standin
         told === []
     )
-  ,
+  ]
+
+-- | Browsing on while a song of an album plays.
+browsingOn :: Checks
+browsingOn =
+  [
     ( "browsing goes on moving, going back up and descending, and the song plays on"
     , example do
         (screen, told, song, motion) <- driving $ \standin session -> do
@@ -301,8 +349,8 @@ picking =
             resuming session playingDrukqs [MoveDown, MoveUp, Ascend, Ascend, MoveDown, Descend]
           (,,,) screen <$> loaded standin <*> playing session <*> motionOf standin
         trail screen === [["zebra"], []]
-        told === [from (drukqsSongs !! 0)]
-        song === Just (drukqsSongs !! 0)
+        told === [from btoumRoumada]
+        song === Just btoumRoumada
         motion === Just Running
     )
   ,
@@ -312,9 +360,14 @@ picking =
           screen <- resuming session playingDrukqs [Ascend, Ascend, MoveUp, Descend, Descend]
           _ <- ranOut standin session screen 2
           loaded standin
-        told === map from drukqsSongs
+        told === fmap from drukqsSongs
     )
-  ,
+  ]
+
+-- | What leaving the player or the account does to the audio.
+leaving :: Checks
+leaving =
+  [
     ( "leaving the player stops the audio on the way out"
     , example do
         (ending, song, motion) <- driving $ \standin session -> do
@@ -342,7 +395,12 @@ picking =
         told === []
         (fmap (.song) song, motion) === (Nothing, Nothing)
     )
-  ,
+  ]
+
+-- | Space, which holds the audio and lets it run on from where it stopped.
+pausing :: Checks
+pausing =
+  [
     ( "space holds the audio, and freezes the elapsed time with it"
     , example do
         (motion, at) <- driving $ \standin session -> do
@@ -364,15 +422,20 @@ picking =
         motion === Just Running
         at === Just (Seconds 40)
     )
-  ,
+  ]
+
+-- | n and p, which move the playing along the album.
+skipping :: Checks
+skipping =
+  [
     ( "n plays the next song of the album"
     , example do
         (song, told) <- driving $ \standin session -> do
           screen <- after session playingDrukqs
           _ <- pressing session screen [NextSong]
           (,) <$> playing session <*> loaded standin
-        song === Just (drukqsSongs !! 1)
-        told === map from (take 2 drukqsSongs)
+        song === Just jynweythek
+        told === fmap from (take 2 drukqsSongs)
     )
   ,
     ( "n on the album's last song ends the playing"
@@ -391,8 +454,8 @@ picking =
           reach standin (Seconds 60)
           _ <- pressing session screen [PreviousSong]
           (,) <$> playing session <*> loaded standin
-        song === Just (drukqsSongs !! 0)
-        told === [from (drukqsSongs !! 1), from (drukqsSongs !! 0)]
+        song === Just btoumRoumada
+        told === [from jynweythek, from btoumRoumada]
     )
   ,
     ( "p on the first song plays the first song again"
@@ -402,10 +465,15 @@ picking =
           reach standin (Seconds 60)
           _ <- pressing session screen [PreviousSong]
           (,) <$> playing session <*> loaded standin
-        song === Just (drukqsSongs !! 0)
-        told === [from (drukqsSongs !! 0), from (drukqsSongs !! 0)]
+        song === Just btoumRoumada
+        told === [from btoumRoumada, from btoumRoumada]
     )
-  ,
+  ]
+
+-- | The arrows, which move the playing song along itself.
+seeks :: Checks
+seeks =
+  [
     ( "the arrows move the song 5s, and the elapsed time with it"
     , example do
         (forward, back) <- driving $ \standin session -> do
@@ -443,8 +511,8 @@ picking =
           _ <- ranOut standin session stepped 1
           (,,) at told <$> playing session
         at === Just (Seconds 96)
-        told === [from (drukqsSongs !! 0)]
-        song === Just (drukqsSongs !! 1)
+        told === [from btoumRoumada]
+        song === Just jynweythek
     )
   ,
     ( "a seek stops at the start of the track, and reaches no earlier song"
@@ -455,10 +523,15 @@ picking =
           _ <- pressing session screen [Seek (-30)]
           (,,) <$> elapsed session <*> playing session <*> loaded standin
         at === Just (Seconds 0)
-        song === Just (drukqsSongs !! 0)
-        told === [from (drukqsSongs !! 0)]
+        song === Just btoumRoumada
+        told === [from btoumRoumada]
     )
-  ,
+  ]
+
+-- | What the controls leave exactly as they found it.
+leftAlone :: Checks
+leftAlone =
+  [
     ( "the controls leave the selection and the level as they were, at every level"
     , example do
         unmoved <- driving $ \_ session ->
@@ -484,8 +557,8 @@ picking =
     )
   ]
 
--- | What the strip along the bottom shows about the audio.
-overlay :: [(PropertyName, Property)]
+-- | What the overlay shows of the song playing.
+overlay :: Checks
 overlay =
   [
     ( "the overlay shows the playing song's name and its elapsed and total time"
@@ -534,10 +607,15 @@ overlay =
           songs <- onDrukqs standin session
           albums <- taking library session songs Ascend >>= beaten session 1
           names <- taking library session albums Ascend >>= beaten session 2
-          pure (map stripRow [songs, albums, names])
+          pure (fmap stripRow [songs, albums, names])
         rows === replicate 3 ("⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
     )
-  ,
+  ]
+
+-- | Where the overlay sits, and when it is not there at all.
+placing :: Checks
+placing =
+  [
     ( "the overlay takes the bottom row inside the margin and the row above it, no more"
     , example do
         (started, browsing) <- driving $ \standin session -> do
@@ -560,7 +638,12 @@ overlay =
         fmap (.song) song === Nothing
         shown (60, 6) ended === shown (60, 6) browsing
     )
-  ,
+  ]
+
+-- | The loading indicator a song picked with Enter is given.
+indicator :: Checks
+indicator =
+  [
     ( "a song picked with Enter shows a loading indicator in place of the elapsed time"
     , example do
         screen <- driving (\_ session -> loadingDrukqs session)
@@ -589,7 +672,12 @@ overlay =
         stripRow repicked === "  Jynweythek  " <> bar 0 19 <> "     ⠋ / 2:09"
         stripRow started === "⏵ Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
     )
-  ,
+  ]
+
+-- | The songs that are given no indicator, and space pressed over one.
+noIndicator :: Checks
+noIndicator =
+  [
     ( "the indicator is never shown for the song the album moves on to by itself"
     , example do
         moved <- driving $ \standin session -> do
@@ -623,9 +711,14 @@ overlay =
         wasHeld === Just Paused
         nowRunning === Just Running
         at === Just (Seconds 0)
-        told === [from (drukqsSongs !! 0)]
+        told === [from btoumRoumada]
     )
-  ,
+  ]
+
+-- | A playback failure, which is given the whole strip.
+complaints :: Checks
+complaints =
+  [
     ( "a file that will not play is given the whole strip"
     , example do
         failed <- driving $ \standin session -> do
@@ -643,7 +736,12 @@ overlay =
           beaten session 1 screen
         onStrip failed === Just (Wrong "The server could not be reached: it is down")
     )
-  ,
+  ]
+
+-- | The part of the bar the audio has filled.
+progress :: Checks
+progress =
+  [
     ( "the progress bar sits on the strip's one line, between the track name and the times"
     , example do
         screen <- driving onDrukqs
@@ -688,7 +786,7 @@ overlay =
           back <- seeking forward (-30)
           nudgedBack <- seeking back (-5)
           nudged <- seeking nudgedBack 5
-          pure (map stripRow [forward, back, nudgedBack, nudged])
+          pure (fmap stripRow [forward, back, nudgedBack, nudged])
         rows
           === [ "⏵ Btoum Roumada  " <> bar 13 3 <> "  1:18 / 1:36"
               , "⏵ Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
@@ -696,7 +794,12 @@ overlay =
               , "⏵ Btoum Roumada  " <> bar 8 8 <> "  0:48 / 1:36"
               ]
     )
-  ,
+  ]
+
+-- | The bar at either end of the track, at other widths, and given way.
+limits :: Checks
+limits =
+  [
     ( "the progress bar stays at whichever end of the track a seek past it stops at"
     , example do
         (ended, started) <- driving $ \standin session -> do
@@ -723,7 +826,7 @@ overlay =
           begin standin
           screen <- beaten session 0 picked
           later <- beaten session 10 screen
-          pure (map stripRow [screen, later])
+          pure (fmap stripRow [screen, later])
         rows === replicate 2 ("⏵ Silence  " <> bar 0 22 <> "  0:00 / 0:00")
     )
   ,
@@ -733,7 +836,7 @@ overlay =
           screen <- onDrukqs standin session
           reach standin (Seconds 48)
           beaten session 1 screen
-        let stripAt width = last (shown (width, 5) partWay)
+        let stripAt width = mconcat (drop 4 (shown (width, 5) partWay))
         stripAt 32 === "⏵ Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
         stripAt 82 === "⏵ Btoum Roumada  " <> bar 26 26 <> "  0:48 / 1:36"
     )
@@ -748,7 +851,12 @@ overlay =
         unmarked (shown (20, 6) started)
           === shown (20, 4) browsing <> ["", "⏵ Btoum Roumada    0"]
     )
-  ,
+  ]
+
+-- | What a skipped track or an unreachable server leaves in the strip.
+reasons :: Checks
+reasons =
+  [
     ( "a skipped track's reason goes in place of the overlay's contents"
     , example do
         screen <- driving (breaking (Unplayable "the file will not play: it is corrupt"))
@@ -762,7 +870,7 @@ overlay =
           later <- beaten session 10 screen
           (,) later <$> loaded standin
         stripRow later === "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
-        told === map from (take 2 drukqsSongs)
+        told === fmap from (take 2 drukqsSongs)
     )
   ,
     ( "a network failure's reason stays there however long it is left"
@@ -783,14 +891,19 @@ overlay =
         onStrip moved === Nothing
         onKeys moved === ["  1   Jynweythek"]
     )
-  ,
+  ]
+
+-- | The playing and paused symbols while the audio runs, is held, or loads.
+eitherSymbol :: Checks
+eitherSymbol =
+  [
     ( "one symbol shows while the audio runs and another while it is held, switched by each space"
     , example do
         symbols <- driving $ \standin session -> do
           running <- onDrukqs standin session
           held <- pressing session running [PauseOrResume] >>= beaten session 1
           again <- pressing session held [PauseOrResume] >>= beaten session 2
-          pure (map standing [running, held, again])
+          pure (fmap standing [running, held, again])
         symbols === [["⏵"], ["⏸"], ["⏵"]]
     )
   ,
@@ -799,7 +912,7 @@ overlay =
         (rows, symbols) <- driving $ \_ session -> do
           loading <- loadingDrukqs session
           holding <- pressing session loading [PauseOrResume] >>= beaten session 1
-          pure (map stripRow [loading, holding], map standing [loading, holding])
+          pure (fmap stripRow [loading, holding], fmap standing [loading, holding])
         rows === replicate 2 ("  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36")
         symbols === [[], []]
     )
@@ -811,7 +924,7 @@ overlay =
           forward <- pressing session screen [NextSong] >>= beaten session 1
           back <- pressing session forward [PreviousSong] >>= beaten session 2
           movedOn <- ranOut standin session back 1
-          pure (map stripRow [forward, back, movedOn], map standing [forward, back, movedOn])
+          pure (fmap stripRow [forward, back, movedOn], fmap standing [forward, back, movedOn])
         rows
           === [ "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
               , "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
@@ -819,7 +932,12 @@ overlay =
               ]
         symbols === [[], [], []]
     )
-  ,
+  ]
+
+-- | Which symbol a song that has finished loading is left with.
+onceLoaded :: Checks
+onceLoaded =
+  [
     ( "the playing one shows once a song loads with no space pressed, however it started"
     , example do
         symbols <- driving $ \standin session -> do
@@ -832,7 +950,7 @@ overlay =
           movedOn <- ranOut standin session forwardBegun 1
           begin standin
           movedOnBegun <- beaten session 3 movedOn
-          pure (map standing [pickedBegun, forwardBegun, movedOnBegun])
+          pure (fmap standing [pickedBegun, forwardBegun, movedOnBegun])
         symbols === replicate 3 ["⏵"]
     )
   ,
@@ -848,11 +966,16 @@ overlay =
           movedOn <- ranOut standin session forwardBegun 1 >>= flip (pressing session) [PauseOrResume]
           begin standin
           movedOnBegun <- beaten session 3 movedOn
-          (,) (map standing [pickedBegun, forwardBegun, movedOnBegun]) <$> motionOf standin
+          (,) (fmap standing [pickedBegun, forwardBegun, movedOnBegun]) <$> motionOf standin
         symbols === replicate 3 ["⏸"]
         motion === Just Paused
     )
-  ,
+  ]
+
+-- | When neither symbol is on screen.
+noSymbol :: Checks
+noSymbol =
+  [
     ( "neither shows while a skipped track's reason is in the strip, the next song behind it"
     , example do
         behind <- driving $ \standin session -> do
@@ -885,8 +1008,8 @@ overlay =
     )
   ]
 
--- | Where the mark on the playing song is, and where it is not.
-marking :: [(PropertyName, Property)]
+-- | Where the mark on the playing song is.
+marking :: Checks
 marking =
   [
     ( "the mark is one space before its name, with the selection on it"
@@ -935,7 +1058,12 @@ marking =
         songsOf screen === Just ("Aphex Twin", "2001  Drukqs")
         carrying screen === ["    ▶ Btoum Roumada"]
     )
-  ,
+  ]
+
+-- | The songs and albums the mark is never on.
+elsewhere :: Checks
+elsewhere =
+  [
     ( "the mark is on no song of another album of the same artist"
     , example do
         screen <- driving $ \standin session ->
@@ -952,7 +1080,12 @@ marking =
         songsOf screen === Just ("anohni", "2017  Paradise")
         carrying screen === []
     )
-  ,
+  ]
+
+-- | Where the mark moves as the playing does.
+moving :: Checks
+moving =
+  [
     ( "the mark moves on with the album when a song finishes by itself"
     , example do
         screen <- driving $ \standin session ->
@@ -985,7 +1118,12 @@ marking =
           onDrukqs standin session >>= flip (pressing session) [MoveDown, MoveDown, Descend]
         carrying screen === ["  2 ▶ Vordhosbn"]
     )
-  ,
+  ]
+
+-- | When no song is marked at all.
+gone :: Checks
+gone =
+  [
     ( "the mark is on no song once the album's last song has finished"
     , example do
         screen <- driving $ \standin session ->
@@ -1012,7 +1150,7 @@ marking =
         marked <- driving $ \standin session -> do
           albums <- onDrukqs standin session >>= flip (pressing session) [Ascend]
           names <- pressing session albums [Ascend]
-          pure (map carrying [albums, names])
+          pure (fmap carrying [albums, names])
         marked === [[], []]
     )
   ,
@@ -1027,13 +1165,13 @@ marking =
   ]
 
 -- | How the levels sit side by side on the terminal.
-columns :: [(PropertyName, Property)]
+columns :: Checks
 columns =
   [
     ( "the columns open on the artist list alone, one column at the left"
     , example do
         wide 6 start === ["Artists", rules 1, "anohni", "Aphex Twin", "zebra", ""]
-        assert (all ((<= 40) . Text.length) (wide 6 start))
+        assert (all ((<= 40) . T.length) (wide 6 start))
     )
   ,
     ( "the columns put the keys on the first artist, and on no other row"
@@ -1063,7 +1201,12 @@ columns =
         wide 6 screen === drukqsColumns
         trail screen === [["Aphex Twin"], ["2001  Drukqs"], ["      Btoum Roumada"]]
     )
-  ,
+  ]
+
+-- | Which row of which column is highlighted.
+rowPicked :: Checks
+rowPicked =
+  [
     ( "the keys move in the rightmost column, and no highlighted row left of it"
     , example do
         (movedSongs, movedAlbums) <- driving $ \_ session -> do
@@ -1079,15 +1222,20 @@ columns =
     , example do
         (albums, songs) <- driving $ \_ session ->
           (,) <$> after session [MoveDown, Descend] <*> after session toDrukqs
-        map reversed (drawnAs "      Sketches" albums) === [True]
+        fmap reversed (drawnAs "      Sketches" albums) === [True]
         drawnAs "Aphex Twin" albums === drawnAs "      Sketches" albums
         emboldened albums === ["Artists", "Albums"]
-        map reversed (drawnAs "      Btoum Roumada" songs) === [True]
+        fmap reversed (drawnAs "      Btoum Roumada" songs) === [True]
         drawnAs "Aphex Twin" songs === drawnAs "      Btoum Roumada" songs
         drawnAs "2001  Drukqs" songs === drawnAs "      Btoum Roumada" songs
         emboldened songs === ["Artists", "Albums", "Songs"]
     )
-  ,
+  ]
+
+-- | What Esc leaves of the columns.
+returning :: Checks
+returning =
+  [
     ( "Esc loses the rightmost, leaving the rest exactly as they were left"
     , example do
         (albums, artistsAlone, unmoved, leftAtAlbums, leftAtArtists) <- driving $ \_ session -> do
@@ -1108,7 +1256,12 @@ columns =
         wide 6 screen === ambientColumns
         trail screen === [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
     )
-  ,
+  ]
+
+-- | Each column scrolling on its own.
+scrolling :: Checks
+scrolling =
+  [
     ( "the columns scroll each on its own"
     , example do
         (artistsScrolled, albums, albumsScrolled) <- driving $ \_ session -> do
@@ -1117,15 +1270,17 @@ columns =
                   { Library.artists = pure (Right [])
                   , Library.albums =
                       const . pure . Right $
-                        zipWith
-                          (\year name -> album name name (Just year))
-                          [2001 ..]
-                          ["First", "Second", "Third", "Fourth", "Fifth"]
+                        [ album "First" "First" (Just 2001)
+                        , album "Second" "Second" (Just 2002)
+                        , album "Third" "Third" (Just 2003)
+                        , album "Fourth" "Fourth" (Just 2004)
+                        , album "Fifth" "Fifth" (Just 2005)
+                        ]
                   , Library.songs = const (pure (Right []))
                   }
               crowding = foldM (taking crowded session)
               many =
-                opening (map (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
+                opening (fmap (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
           artistsScrolled <- crowding many [MoveDown, MoveDown, MoveDown, MoveDown]
           albums <- crowding artistsScrolled [Descend]
           (,,) artistsScrolled albums <$> crowding albums [MoveDown, MoveDown, MoveDown]
@@ -1145,7 +1300,12 @@ columns =
               , across ["five", "2004  Fourth"]
               ]
     )
-  ,
+  ]
+
+-- | A column with nothing in it, and the columns alongside a playing song.
+alongside :: Checks
+alongside =
+  [
     ( "an artist with no albums gives an empty second column, left again on Esc"
     , example do
         (screen, back, leftAtArtists) <- driving $ \_ session -> do
@@ -1179,10 +1339,15 @@ columns =
         trail caught === [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
         take 5 (wide 7 artistsAlone) === take 5 (wide 7 start)
         onKeys artistsAlone === ["Aphex Twin"]
-        song === Just (drukqsSongs !! 0)
+        song === Just btoumRoumada
         motion === Just Running
     )
-  ,
+  ]
+
+-- | A row too long for its column, and the blank row above a strip.
+shortened :: Checks
+shortened =
+  [
     ( "a row too long for its column is shortened, and none wraps onto another line"
     , example do
         screen <- driving (\_ session -> after session toDrukqs)
@@ -1206,7 +1371,12 @@ columns =
         let rows = within region screen
         assert (all (all vacant) (take 1 (drop (snd region - 2) rows)))
     )
-  ,
+  ]
+
+-- | The lines under the headings, the rule between columns, and the strip.
+headings :: Checks
+headings =
+  [
     ( "the Artists heading has a line under it, the first artist on the row below"
     , example (take 3 (wide 6 start) === ["Artists", rules 1, "anohni"])
     )
@@ -1226,8 +1396,8 @@ columns =
         screen <- driving (\_ session -> after session toDrukqs)
         let rule at = do
               let drawn = downColumn 6 at screen
-              map snd drawn === replicate 6 '│'
-              length (nub drawn) === 1
+              fmap snd drawn === replicate 6 '│'
+              length (group drawn) === 1
         rule 40
         rule 80
     )
@@ -1235,12 +1405,12 @@ columns =
     ( "what went wrong is kept in the strip along the bottom"
     , example do
         screen <- driving (\_ session -> stumbling session [Descend])
-        last (wide 6 screen) === "The server could not be reached: down"
+        drop 5 (wide 6 screen) === ["The server could not be reached: down"]
     )
   ]
 
 -- | The blank cell around every screen.
-margin :: [(PropertyName, Property)]
+margin :: Checks
 margin =
   [
     ( "the terminal's outer rows and columns are blank at every level, the columns inside"
@@ -1248,7 +1418,7 @@ margin =
         (albums, songs) <- driving $ \_ session ->
           (,) <$> after session [MoveDown, Descend] <*> after session toDrukqs
         assert (all (all vacant . border . whole (122, 8)) [start, albums, songs])
-        screenshot (whole (122, 8) songs) === [""] <> map (" " <>) drukqsColumns <> [""]
+        screenshot (whole (122, 8) songs) === [""] <> fmap (" " <>) drukqsColumns <> [""]
     )
   ,
     ( "a song's strip is on the row above the blank bottom row, with a blank row above it"
@@ -1451,13 +1621,13 @@ onStrip screen = showing screen.strip
 -- give the first song of Drukqs a bar of 16 columns, one for every 6s of its
 -- 1:36.
 stripRow :: Screen -> Text
-stripRow = last . shown (46, 5)
+stripRow = mconcat . drop 4 . shown (46, 5)
 
 -- | Which of the strip's two symbols, the playing one and the paused one, are
 -- anywhere on a terminal wide and tall enough to show every column and the
 -- strip.
 standing :: Screen -> [Text]
-standing screen = filter (\symbol -> any (Text.isInfixOf symbol) (wide 8 screen)) ["⏵", "⏸"]
+standing screen = filter (\symbol -> any (T.isInfixOf symbol) (wide 8 screen)) ["⏵", "⏸"]
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
@@ -1487,41 +1657,41 @@ wide height = shown (120, height)
 -- Each column takes 40 of its columns, the second and third starting with the
 -- rule between them and the column to the left.
 across :: [Text] -> Text
-across = Text.stripEnd . Text.intercalate "│" . zipWith (`Text.justifyLeft` ' ') (40 : repeat 39)
+across = T.stripEnd . T.intercalate "│" . zipWith (`T.justifyLeft` ' ') (40 : repeat 39)
 
 -- | The row of that terminal under the headings of this many columns: a line
 -- across each column, and the rule between one column and the next as it is on
 -- every other row.
 rules :: Int -> Text
-rules count = Text.intercalate "│" (map (`Text.replicate` "─") (take count (40 : repeat 39)))
+rules count = T.intercalate "│" (fmap (`T.replicate` "─") (take count (40 : repeat 39)))
 
 -- | What that terminal has in this one of its columns, top row to bottom, and
 -- how each is drawn: the look of the rule between two columns, taken whole.
 downColumn :: Int -> Int -> Screen -> [Cell]
-downColumn height at = map (!! at) . within (120, height)
+downColumn height at = concatMap (take 1 . drop at) . within (120, height)
 
 -- | Where the keys are on that terminal: the row highlighted in its rightmost
 -- column.
 onKeys :: Screen -> [Text]
-onKeys = foldl (\_ rightmost -> rightmost) [] . trail
+onKeys = mconcat . take 1 . reverse . trail
 
 -- | The rows highlighted on that terminal, column by column from the artists
 -- rightwards, each column's top to bottom: the row picked in each column left
 -- of the one being browsed, and the row the keys are on in that one.
 trail :: Screen -> [[Text]]
-trail = map catMaybes . transpose . map (map highlit . cells . concatMap letters) . runs . within (120, 6)
+trail = fmap catMaybes . transpose . fmap (fmap highlit . cells . concatMap letters) . runs . within (120, 6)
  where
-  letters (look, said) = map (reversed look,) (Text.unpack said)
+  letters (look, said) = fmap (reversed look,) (T.unpack said)
   cells characters = case break ((== '│') . snd) characters of
     (cell, []) -> [cell]
     (cell, _ : rest) -> cell : cells rest
   highlit cell = case [character | (True, character) <- cell] of
     [] -> Nothing
-    lit -> Just (Text.stripEnd (Text.pack lit))
+    lit -> Just (T.stripEnd (T.pack lit))
 
 -- | How each run of that terminal that reads exactly this is drawn.
 drawnAs :: Text -> Screen -> [Maybe Vty.Attr]
-drawnAs said = map fst . filter ((== said) . Text.stripEnd . snd) . concat . runs . within (120, 6)
+drawnAs said = fmap fst . concatMap (filter ((== said) . T.stripEnd . snd)) . runs . within (120, 6)
 
 -- | Each stretch of it in bold: the columns' headings and the now-playing
 -- overlay.
@@ -1559,16 +1729,16 @@ ambientColumns =
 -- | The rows that carry the playing mark, as the column each is in reads them,
 -- on a terminal wide enough to leave every row whole.
 carrying :: Screen -> [Text]
-carrying = filter (Text.isInfixOf mark) . concatMap (map Text.stripEnd . Text.splitOn "│") . wide 8
+carrying = concatMap (filter (T.isInfixOf mark) . fmap T.stripEnd . T.splitOn "│") . wide 8
 
 -- | The same rows with the mark given back the space it stands in, which is
 -- what they read as with nothing playing.
 unmarked :: [Text] -> [Text]
-unmarked = map (Text.replace mark " ")
+unmarked = fmap (T.replace mark " ")
 
 -- | The artist and the album whose songs are the column being browsed, as
 -- their rows read, when songs are what is being browsed.
 songsOf :: Screen -> Maybe (Text, Text)
 songsOf screen = case screen.browse of
-  AtSongs names records _ -> (,) <$> (row <$> selected names) <*> (row <$> selected records)
+  AtSongs names records _ -> (,) . row <$> selected names <*> (row <$> selected records)
   _ -> Nothing

@@ -8,7 +8,11 @@ module Havidrome.Browse.Fixtures
   , artists
   , aphexAlbums
   , drukqsSongs
+  , btoumRoumada
+  , jynweythek
+  , vordhosbn
   , sketchesSongs
+  , untitled
   , artist
   , album
   , song
@@ -19,10 +23,10 @@ module Havidrome.Browse.Fixtures
   , filledIn
   ) where
 
-import Data.Map.Strict (Map)
+import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
 import Havidrome.Subsonic.Types
@@ -92,16 +96,23 @@ silence = song "s6" "Silence" 0 (Just 3)
 
 -- | An album of a single song, so that playing it through takes one ending.
 sketchesSongs :: [Song]
-sketchesSongs = [song "s0" "Untitled" 61 (Just 1)]
+sketchesSongs = [untitled]
+
+-- | The one song of Sketches.
+untitled :: Song
+untitled = song "s0" "Untitled" 61 (Just 1)
 
 -- | An album carrying a song the server gives no track number for, which the
 -- client puts first.
 drukqsSongs :: [Song]
-drukqsSongs =
-  [ unnumbered "s3" "Btoum Roumada" 96
-  , song "s4" "Jynweythek" 129 (Just 1)
-  , song "s5" "Vordhosbn" 293 (Just 2)
-  ]
+drukqsSongs = [btoumRoumada, jynweythek, vordhosbn]
+
+-- | The songs of Drukqs by name, in the order the client lists them: the one
+-- with no track number first, then the two the server numbers.
+btoumRoumada, jynweythek, vordhosbn :: Song
+btoumRoumada = unnumbered "s3" "Btoum Roumada" 96
+jynweythek = song "s4" "Jynweythek" 129 (Just 1)
+vordhosbn = song "s5" "Vordhosbn" 293 (Just 2)
 
 artist :: Text -> Text -> Artist
 artist identifier name = Artist {id = ArtistId identifier, name}
@@ -127,8 +138,8 @@ unnumbered identifier name seconds = song identifier name seconds Nothing
 -- | The now-playing overlay's bar with this many of its columns filled, and
 -- this many more empty.
 bar :: Int -> Int -> Text
-bar filled empty = Text.replicate filled "█" <> Text.replicate empty "░"
+bar filled empty = T.replicate filled "█" <> T.replicate empty "░"
 
 -- | How many columns of the bar on this line are filled.
 filledIn :: Text -> Int
-filledIn = Text.count "█"
+filledIn = T.count "█"

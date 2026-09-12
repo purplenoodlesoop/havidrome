@@ -36,14 +36,16 @@ module Havidrome.Browse.Strip
   , Moment (..)
   ) where
 
+import Data.Maybe (fromMaybe)
 import Data.Ord (clamp)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Audio.State
   ( Failure (Unplayable, Unreachable)
   , Motion (Paused, Running)
   , explain
   )
+import Havidrome.Divide (quotient, quotientRemainder, remainder)
 import Havidrome.Playback.Playing
   ( Arrival (Picked)
   , Playing (..)
@@ -128,7 +130,7 @@ showing strip = case strip.said of
 -- throughout, loading or not.
 overlaid :: Moment -> Int -> Playing -> Text
 overlaid at width playing =
-  Text.intercalate gap [titled, progress (width - taken) elapsed total, times]
+  T.intercalate gap [titled, progress (width - taken) elapsed total, times]
   where
     song = playing.song
     titled = symbol playing.sound <> " " <> song.title
@@ -137,7 +139,7 @@ overlaid at width playing =
     times = sofar <> " / " <> clock total
     sofar
       | playing.arrival == Picked && playing.sound == Loading =
-          Text.justifyRight (Width.text (clock elapsed)) ' ' (spinner at)
+          T.justifyRight (Width.text (clock elapsed)) ' ' (spinner at)
       | otherwise = clock elapsed
     gap = "  "
     taken = Width.text titled + Width.text times + 2 * Width.text gap
@@ -154,10 +156,10 @@ symbol = \case
 -- | The loading indicator at a moment: a dot running round a braille cell, a
 -- step every tenth of a second, which is as often as a beat comes.
 spinner :: Moment -> Text
-spinner (Moment at) = Text.take 1 (Text.drop turn turns)
+spinner (Moment at) = maybe "" frame (remainder (floor (at * 10)) (T.length turns))
   where
     turns = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    turn = floor (at * 10) `mod` Text.length turns
+    frame turn = T.take 1 (T.drop turn turns)
 
 -- | A bar this many columns wide, filled for the part of the total that has
 -- elapsed. Only whole columns fill, so the bar is empty until a column's worth
@@ -165,12 +167,12 @@ spinner (Moment at) = Text.take 1 (Text.drop turn turns)
 -- to be filled for, and its bar stays empty however long it runs.
 progress :: Int -> Seconds -> Seconds -> Text
 progress width (Seconds elapsed) (Seconds total) =
-  Text.replicate filled "█" <> Text.replicate (columns - filled) "░"
+  T.replicate filled "█" <> T.replicate (columns - filled) "░"
   where
     columns = max 0 width
-    filled
-      | total <= 0 = 0
-      | otherwise = clamp (0, columns) (columns * elapsed `div` total)
+    -- A total of nothing has nothing to divide into, and neither has one of
+    -- less than nothing.
+    filled = maybe 0 (clamp (0, columns)) (quotient (columns * elapsed) (max 0 total))
 
 -- | A length of time as a clock reads it: minutes and seconds, and hours as
 -- well once there are any.
@@ -179,10 +181,10 @@ clock (Seconds total) = case hours of
   0 -> number minutes <> ":" <> pad seconds
   _ -> number hours <> ":" <> pad minutes <> ":" <> pad seconds
   where
-    (hours, rest) = max 0 total `divMod` 3600
-    (minutes, seconds) = rest `divMod` 60
-    number = Text.pack . show
-    pad = Text.justifyRight 2 '0' . number
+    (hours, rest) = fromMaybe (0, 0) (quotientRemainder (max 0 total) 3600)
+    (minutes, seconds) = fromMaybe (0, 0) (quotientRemainder rest 60)
+    number = T.pack . show
+    pad = T.justifyRight 2 '0' . number
 
 -- | The strip a beat leaves behind: the song the audio is on now, and
 -- whatever it failed at since the last beat.
@@ -195,9 +197,9 @@ beat :: Moment -> Maybe Playing -> [Failure] -> Strip -> Strip
 beat at playing failures strip =
   Strip
     { playing
-    , said = case failures of
+    , said = case reverse failures of
         [] -> strip.said >>= lasting at
-        _ -> Just (saidOf at (last failures))
+        latest : _ -> Just (saidOf at latest)
     , at
     }
 

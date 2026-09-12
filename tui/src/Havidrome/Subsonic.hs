@@ -20,8 +20,8 @@ module Havidrome.Subsonic
   ) where
 
 import Data.ByteString (ByteString)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Credentials qualified as Credentials
 import Havidrome.Journal (HasJournal)
@@ -42,7 +42,8 @@ import Havidrome.Subsonic.Protocol
   )
 import Havidrome.Subsonic.Transport (Transport (..), mkHttpTransport)
 import Havidrome.Subsonic.Types
-import Optics.Core (view, (%))
+import Optics.Core (view)
+import Optics.Core qualified as Optics
 import System.Random (randomRIO)
 
 -- | Everything the player asks a Navidrome server, whatever account it asks
@@ -103,7 +104,7 @@ call ::
   IO (Either SubsonicError a)
 call client endpoint decode = do
   answer <-
-    view (#transport % #fetch) client
+    view (#transport Optics.% #fetch) client
       (endpointUrl client.server client.credentials client.salt endpoint)
   pure (answer >>= decode)
 
@@ -128,7 +129,12 @@ audioFor client = audioUrl client.server client.credentials client.salt
 -- | Draws a fresh salt. Sixteen characters from an alphabet that needs no
 -- escaping in a URL, comfortably over the six the API asks for.
 randomSalt :: IO Salt
-randomSalt = mkSalt . Text.pack <$> traverse (const draw) [1 :: Int .. 16]
+randomSalt = mkSalt . mconcat <$> traverse (const draw) [1 :: Int .. 16]
   where
+    alphabet :: Text
     alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-    draw = (alphabet !!) <$> randomRIO (0, length alphabet - 1)
+    draw = character <$> randomRIO (0, T.length alphabet - 1)
+    -- The character at that place of the alphabet, as the one-character
+    -- text it is. A place the alphabet does not have would give an empty
+    -- one, and none outside it is ever drawn.
+    character place = T.take 1 (T.drop place alphabet)

@@ -36,6 +36,13 @@ in
       nixBuild ".#checks.${system}.havidrome-core-test"
     );
 
+    # The lint gate is a check like any other, so the task is that check run
+    # on its own: `lint` and `nix flake check` can never read the ruleset
+    # differently, because there is one command and both reach it.
+    lint = task "Lint both packages against the shared hlint ruleset" (
+      nixBuild ".#checks.${system}.lint-check"
+    );
+
     check = task "Run the whole gate" "${nix}/bin/nix flake check --print-build-logs";
   };
 }

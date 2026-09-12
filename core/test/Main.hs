@@ -9,6 +9,7 @@ import Havidrome.Browse.RowTest qualified as RowTest
 import Havidrome.Browse.StripTest qualified as StripTest
 import Havidrome.BrowseTest qualified as BrowseTest
 import Havidrome.CredentialsTest qualified as CredentialsTest
+import Havidrome.DivideTest qualified as DivideTest
 import Havidrome.LoginTest qualified as LoginTest
 import Havidrome.Playback.QueueTest qualified as QueueTest
 import Havidrome.Subsonic.ProtocolTest qualified as ProtocolTest
@@ -18,11 +19,12 @@ import Hedgehog (Group, checkParallel)
 import Hedgehog.Main (defaultMain)
 
 main :: IO ()
-main = defaultMain (map checkParallel groups)
+main = defaultMain (fmap checkParallel groups)
 
 groups :: [Group]
 groups =
-  [ WidthTest.tests
+  [ DivideTest.tests
+  , WidthTest.tests
   , CredentialsTest.tests
   , TypesTest.tests
   , ProtocolTest.tests

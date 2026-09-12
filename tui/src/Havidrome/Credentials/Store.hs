@@ -19,7 +19,7 @@ module Havidrome.Credentials.Store
 import Control.Exception (IOException, displayException, try)
 import Control.Monad (when)
 import Data.ByteString qualified as ByteString
-import Data.Text qualified as Text
+import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8', encodeUtf8)
 import Havidrome.Credentials (Credentials, Fault (NotAccessible), parse, render)
 import Havidrome.Journal (HasJournal (getJournal), Journal (writes))
@@ -88,9 +88,9 @@ loading env = do
   where
     unreachable :: FilePath -> IOException -> IO Stored
     unreachable path fault = do
-      let said = Text.pack (displayException fault)
+      let said = T.pack (displayException fault)
       (getJournal env).writes
-        ("the config file " <> Text.pack path <> " could not be read: " <> said)
+        ("the config file " <> T.pack path <> " could not be read: " <> said)
       pure (Unreadable (NotAccessible said))
 
     readable bytes = case decodeUtf8' bytes of

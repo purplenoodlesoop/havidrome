@@ -20,16 +20,16 @@ module Havidrome.Subsonic.Fixtures
   ) where
 
 import Data.ByteString (ByteString)
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Data.Text.Encoding qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Havidrome.Subsonic.Protocol (Salt, mkSalt)
 import Havidrome.Subsonic.Types (Credentials (..), Server (..))
 
 -- | Reads a fixture written with @'@ where JSON wants @"@, so the fixtures
 -- stay legible as Haskell string literals.
-json :: String -> ByteString
-json = Text.encodeUtf8 . Text.pack . map (\c -> if c == '\'' then '"' else c)
+json :: Text -> ByteString
+json = T.encodeUtf8 . T.map (\c -> if c == '\'' then '"' else c)
 
 testServer :: Server
 testServer = Server "https://music.example.org"

@@ -10,11 +10,11 @@ module Havidrome.AudioTest (tests) where
 import Control.Concurrent (threadDelay)
 import Data.ByteString.Builder qualified as Builder
 import Data.ByteString.Lazy qualified as Lazy
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Data.Word (Word32)
 import Havidrome.Audio
-import Havidrome.Check (example)
+import Havidrome.Check (Checks, example)
 import Havidrome.Journal.Fake (silent)
 import Hedgehog (Group (Group), PropertyT, annotate, assert, evalIO, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
@@ -28,141 +28,177 @@ tests :: Group
 tests =
   Group
     "Havidrome.Audio"
-    [
-      ( "blames the file when the server still answers"
-      , example do
-          failureOf True "unrecognized file format"
-            === Unplayable "the file will not play: unrecognized file format"
-      )
-    ,
-      ( "blames the network when it does not"
-      , example do
-          failureOf False "loading failed"
-            === Unreachable "the server could not be reached: loading failed"
-      )
-    ,
-      ( "blames the one or the other by whether the server answered, whatever went wrong"
-      , property do
-          detail <- forAll (Gen.text (Range.linear 0 40) Gen.unicode)
-          failureOf True detail === Unplayable ("the file will not play: " <> detail)
-          failureOf False detail === Unreachable ("the server could not be reached: " <> detail)
-      )
-    ,
-      ( "plays a track and reports it finished"
-      , example . driving (playing (Seconds 4) (\audio _ -> waitForEvent audio)) $ \finished ->
+    ( blame
+        <> running
+        <> holding
+        <> seeks
+        <> stopping
+        <> complaints
+    )
+
+-- | Which of the two failures a complaint from the player is read as.
+blame :: Checks
+blame =
+  [
+    ( "blames the file when the server still answers"
+    , example do
+        failureOf True "unrecognized file format"
+          === Unplayable "the file will not play: unrecognized file format"
+    )
+  ,
+    ( "blames the network when it does not"
+    , example do
+        failureOf False "loading failed"
+          === Unreachable "the server could not be reached: loading failed"
+    )
+  ,
+    ( "blames the one or the other by whether the server answered, whatever went wrong"
+    , property do
+        detail <- forAll (Gen.text (Range.linear 0 40) Gen.unicode)
+        failureOf True detail === Unplayable ("the file will not play: " <> detail)
+        failureOf False detail === Unreachable ("the server could not be reached: " <> detail)
+    )
+  ]
+
+-- | A track playing, and the position and the phase it reports.
+running :: Checks
+running =
+  [
+    ( "plays a track and reports it finished"
+    , example . driving (playing (Seconds 4) (\audio _ -> waitForEvent audio)) $ \finished ->
+        finished === Just Finished
+    )
+  ,
+    ( "reports the position advancing while it plays"
+    , example . driving (playing (Seconds 0) (\audio _ -> reaches audio (Seconds 1))) $ assert
+    )
+  ,
+    ( "starts where it is told to, not at the beginning"
+    , example . driving (playing (Seconds 3) (\audio _ -> reaches audio (Seconds 3))) $ assert
+    )
+  ,
+    ( "reports the audio starting once the track has been opened"
+    , example . driving (playing (Seconds 0) (\audio _ -> begun audio)) $ assert
+    )
+  ,
+    ( "reports it for a track held while it loads, which stays held at its start"
+    , example
+        . driving
+          ( playing (Seconds 0) $ \audio _ -> do
+              audio.pause
+              started <- begun audio
+              threadDelay 1500000
+              held <- reached audio
+              audio.resume
+              moved <- reaches audio (Seconds 1)
+              pure (started, held, moved)
+          )
+        $ \(started, held, moved) -> do
+          assert started
+          held === Just (Seconds 0)
+          assert moved
+    )
+  ]
+
+-- | A pause, which freezes the position until the audio runs on.
+holding :: Checks
+holding =
+  [
+    ( "freezes the position on a pause, and resuming continues from it"
+    , example
+        . driving
+          ( playing (Seconds 0) $ \audio _ -> do
+              _ <- reaches audio (Seconds 1)
+              audio.pause
+              settle
+              held <- reached audio
+              threadDelay 1500000
+              stillHeld <- reached audio
+              audio.resume
+              moved <- waitUntil (fmap (> held) (reached audio))
+              pure (held, stillHeld, moved)
+          )
+        $ \(held, stillHeld, moved) -> do
+          stillHeld === held
+          assert moved
+    )
+  ]
+
+-- | A seek, and the ends of the track it stops at.
+seeks :: Checks
+seeks =
+  [
+    ( "moves the audio and the reported position by the amount it is seeked"
+    , example . driving (seeking 3 (\audio _ -> reached audio)) $ \there ->
+        there === Just (Seconds 4)
+    )
+  ,
+    ( "lands at the start rather than before it"
+    , example . driving (seeking (-30) (\audio _ -> reached audio)) $ \there ->
+        there === Just (Seconds 0)
+    )
+  ,
+    ( "lands at the end rather than past it, and the track then finishes"
+    , example
+        . driving
+          ( seeking 300 $ \audio track -> do
+              there <- reached audio
+              audio.resume
+              finished <- waitForEvent audio
+              pure (there, track.duration, finished)
+          )
+        $ \(there, ending, finished) -> do
+          there === Just ending
           finished === Just Finished
-      )
-    ,
-      ( "reports the position advancing while it plays"
-      , example . driving (playing (Seconds 0) (\audio _ -> reaches audio (Seconds 1))) $ assert
-      )
-    ,
-      ( "starts where it is told to, not at the beginning"
-      , example . driving (playing (Seconds 3) (\audio _ -> reaches audio (Seconds 3))) $ assert
-      )
-    ,
-      ( "reports the audio starting once the track has been opened"
-      , example . driving (playing (Seconds 0) (\audio _ -> begun audio)) $ assert
-      )
-    ,
-      ( "reports it for a track held while it loads, which stays held at its start"
-      , example
-          . driving
-            ( playing (Seconds 0) $ \audio _ -> do
-                audio.pause
-                started <- begun audio
-                threadDelay 1500000
-                held <- reached audio
-                audio.resume
-                moved <- reaches audio (Seconds 1)
-                pure (started, held, moved)
-            )
-          $ \(started, held, moved) -> do
-            assert started
-            held === Just (Seconds 0)
-            assert moved
-      )
-    ,
-      ( "freezes the position on a pause, and resuming continues from it"
-      , example
-          . driving
-            ( playing (Seconds 0) $ \audio _ -> do
-                _ <- reaches audio (Seconds 1)
-                audio.pause
-                settle
-                held <- reached audio
-                threadDelay 1500000
-                stillHeld <- reached audio
-                audio.resume
-                moved <- waitUntil (fmap (> held) (reached audio))
-                pure (held, stillHeld, moved)
-            )
-          $ \(held, stillHeld, moved) -> do
-            stillHeld === held
-            assert moved
-      )
-    ,
-      ( "moves the audio and the reported position by the amount it is seeked"
-      , example . driving (seeking 3 (\audio _ -> reached audio)) $ \there ->
-          there === Just (Seconds 4)
-      )
-    ,
-      ( "lands at the start rather than before it"
-      , example . driving (seeking (-30) (\audio _ -> reached audio)) $ \there ->
-          there === Just (Seconds 0)
-      )
-    ,
-      ( "lands at the end rather than past it, and the track then finishes"
-      , example
-          . driving
-            ( seeking 300 $ \audio track -> do
-                there <- reached audio
-                audio.resume
-                finished <- waitForEvent audio
-                pure (there, track.duration, finished)
-            )
-          $ \(there, ending, finished) -> do
-            there === Just ending
-            finished === Just Finished
-      )
-    ,
-      ( "plays nothing more once stopped, and does not call that finishing"
-      , example
-          . driving
-            ( playing (Seconds 0) $ \audio _ -> do
-                _ <- reaches audio (Seconds 1)
-                audio.stop
-                quiet <- timeout 1500000 audio.awaitEvent
-                (,) quiet <$> audio.nowPlaying
-            )
-          $ \(quiet, left) -> do
-            quiet === Nothing
-            left === Stopped
-      )
-    ,
-      ( "reports a file that will not play as a play failure"
-      , example . driving (garbage True (\audio _ -> waitForEvent audio)) $ \failed ->
-          failed === Just (Failed (Unplayable "the file will not play: unrecognized file format"))
-      )
-    ,
-      ( "reports a server it cannot reach as a network failure"
-      , example . driving (garbage False (\audio _ -> waitForEvent audio)) $ \failed ->
-          failed
-            === Just (Failed (Unreachable "the server could not be reached: unrecognized file format"))
-      )
-    ,
-      ( "asks the server itself, and calls a server that answers nothing a network failure"
-      , example
-          . driving
-            ( do
-                reach <- mkHttpReach silent
-                withPlayer reach $ \audio -> do
-                  audio.play (Track nowhere (Seconds 60)) (Seconds 0)
-                  waitForEvent audio
-            )
-          $ \failed -> assert (case failed of Just (Failed (Unreachable _)) -> True; _ -> False)
-      )
-    ]
+    )
+  ]
+
+-- | The audio stopped, which is not the track finishing.
+stopping :: Checks
+stopping =
+  [
+    ( "plays nothing more once stopped, and does not call that finishing"
+    , example
+        . driving
+          ( playing (Seconds 0) $ \audio _ -> do
+              _ <- reaches audio (Seconds 1)
+              audio.stop
+              quiet <- timeout 1500000 audio.awaitEvent
+              (,) quiet <$> audio.nowPlaying
+          )
+        $ \(quiet, left) -> do
+          quiet === Nothing
+          left === Stopped
+    )
+  ]
+
+-- | What the player is told about a track it cannot play at all.
+complaints :: Checks
+complaints =
+  [
+    ( "reports a file that will not play as a play failure"
+    , example . driving (garbage True (\audio _ -> waitForEvent audio)) $ \failed ->
+        failed === Just (Failed (Unplayable "the file will not play: unrecognized file format"))
+    )
+  ,
+    ( "reports a server it cannot reach as a network failure"
+    , example . driving (garbage False (\audio _ -> waitForEvent audio)) $ \failed ->
+        failed
+          === Just (Failed (Unreachable "the server could not be reached: unrecognized file format"))
+    )
+  ,
+    ( "asks the server itself, and calls a server that answers nothing a network failure"
+    , example
+        . driving
+          ( do
+              reach <- mkHttpReach silent
+              withPlayer reach $ \audio -> do
+                audio.play (Track nowhere (Seconds 60)) (Seconds 0)
+                waitForEvent audio
+          )
+        $ \failed -> assert (case failed of Just (Failed (Unreachable _)) -> True; _ -> False)
+    )
+  ]
 
 -- | Checks what a real player did, or says there was none to drive and lets
 -- the check pass: outside Nix there may be no mpv, and inside it there always
@@ -182,7 +218,7 @@ tone = Seconds 6
 
 -- | A tone playing from this point on, and what a scenario made of it.
 playing :: Seconds -> (Audio -> Track -> IO a) -> IO (Maybe a)
-playing from = withTrack (silence tone) tone (answering True) from
+playing = withTrack (silence tone) tone (answering True)
 
 -- | A tone held one second in and seeked by this much, and what a scenario
 -- made of it. It is held first so that the position a seek leaves is the one
@@ -212,7 +248,7 @@ withTrack content duration reach from use =
   withSystemTempDirectory "havidrome-audio" $ \dir -> do
     let file = dir </> "track"
     Lazy.writeFile file content
-    let track = Track (Text.pack file) duration
+    let track = Track (T.pack file) duration
     withPlayer reach $ \audio -> audio.play track from >> use audio track
 
 -- | mpv on a null output, or nothing at all where there is no mpv to run.

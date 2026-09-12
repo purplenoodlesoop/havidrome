@@ -6,11 +6,12 @@
 -- test sees exactly what a run did and in what order — a logout among it.
 module HavidromeTest (tests) where
 
-import Control.Exception (bracket, finally, try)
+import Control.Exception (bracket, bracket_, finally, try)
 import Control.Monad.Trans.State.Strict (State, execState, state)
 import Data.ByteString qualified as ByteString
-import Data.Text (Text)
-import Data.Text.Encoding qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Havidrome
   ( Account (Account, asks, browses, forgets)
@@ -20,13 +21,14 @@ import Havidrome
   , start
   )
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit))
-import Havidrome.Check (example)
+import Havidrome.Check (Checks, example)
 import Havidrome.Credentials (Credentials (Credentials), Fault (MissingField))
 import Havidrome.Credentials.Store (Store (file, save), Stored (Absent, Present, Unreadable), mkStore)
 import Havidrome.Journal.Fake (silent)
 import Hedgehog (Gen, Group (Group), annotateShow, assert, evalIO, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
+import Lists (drop1)
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (setEnv, unsetEnv)
 import System.Exit (ExitCode (ExitFailure))
@@ -38,105 +40,135 @@ tests :: Group
 tests =
   Group
     "Havidrome"
-    [
-      ( "start asks for credentials when none are stored"
-      , example (start Absent === Ask)
-      )
-    ,
-      ( "start browses with the credentials that are stored, asking nothing"
-      , example (start (Present someone) === Browse someone)
-      )
-    ,
-      ( "start stops when what is stored cannot be read as credentials"
-      , example do
-          start (Unreadable (MissingField "password"))
-            === Stop "the stored credentials could not be read: MissingField \"password\""
-      )
-    ,
-      ( "browses the account a run starts with, asking for none"
-      , example (ran [] [Quit] (Just someone) === [Browsed someone])
-      )
-    ,
-      ( "asks for an account when a run starts with none"
-      , example (ran [Just someone] [Quit] Nothing === [Asked, Browsed someone])
-      )
-    ,
-      ( "browses nothing when the login screen is left"
-      , example (ran [Nothing] [] Nothing === [Asked])
-      )
-    ,
-      ( "forgets the account on a logout, and browses whatever is entered next"
-      , example do
-          ran [Just anyone] [LoggedOut, Quit] (Just someone)
-            === [Browsed someone, Forgot, Asked, Browsed anyone]
-      )
-    ,
-      ( "goes on doing so, logout after logout"
-      , example do
-          ran [Just anyone, Just someone] [LoggedOut, LoggedOut, Quit] (Just someone)
-            === [ Browsed someone
-                , Forgot
-                , Asked
-                , Browsed anyone
-                , Forgot
-                , Asked
-                , Browsed someone
-                ]
-      )
-    ,
-      ( "has forgotten the account already when that login screen is left"
-      , example do
-          ran [Nothing] [LoggedOut] (Just someone) === [Browsed someone, Forgot, Asked]
-      )
-    ,
-      ( "forgets the account before every login screen but the first"
-      , property do
-          taken <- forAll script
-          annotateShow taken.steps
-          assert (all forgotten (following taken.steps))
-      )
-    ,
-      ( "forgets only on the way back to a login screen, and every time"
-      , property do
-          taken <- forAll script
-          annotateShow taken.steps
-          assert (all asking (following taken.steps))
-      )
-    ,
-      ( "browses the accounts it was handed, in the order it was handed them"
-      , property do
-          taken <- forAll script
-          annotateShow taken.steps
-          let handed = maybe [] pure taken.started <> takeWhileJust taken.answering
-          assert (browsed taken.steps `isPrefixOfList` handed)
-      )
-    ,
-      ( "never browses two accounts, nor asks twice, without the other between"
-      , property do
-          taken <- forAll script
-          annotateShow taken.steps
-          assert (all apart (following taken.steps))
-      )
-    ,
-      ( "run stops instead of browsing when the artist list cannot be fetched"
-      , example do
-          (_, stopped) <- evalIO . withOwnDirectories $ do
-            (mkStore silent).save (Credentials nowhere "someone" "secret")
-            complaining run
-          stopped === Left (ExitFailure 1)
-      )
-    ,
-      ( "run says on the terminal why it cannot go on, and leaves that line behind"
-      , example do
-          (said, stopped) <- evalIO . withOwnDirectories $ do
-            path <- (mkStore silent).file
-            createDirectoryIfMissing True (takeDirectory path)
-            ByteString.writeFile path "server=https://music.example.org\nusername=someone\n"
-            complaining run
-          said === "havidrome: the stored credentials could not be read: MissingField \"password\"\n"
-          stopped === Left (ExitFailure 1)
-      )
-    ]
+    ( starting
+        <> opening
+        <> logouts
+        <> always
+        <> stopping
+    )
+
+-- | Where a run starts, given what the config file holds.
+starting :: Checks
+starting =
+  [
+    ( "start asks for credentials when none are stored"
+    , example (start Absent === Ask)
+    )
+  ,
+    ( "start browses with the credentials that are stored, asking nothing"
+    , example (start (Present someone) === Browse someone)
+    )
+  ,
+    ( "start stops when what is stored cannot be read as credentials"
+    , example do
+        start (Unreadable (MissingField "password"))
+          === Stop "the stored credentials could not be read: MissingField \"password\""
+    )
+  ]
+
+-- | The account a run opens with, and the login screen it asks.
+opening :: Checks
+opening =
+  [
+    ( "browses the account a run starts with, asking for none"
+    , example (ran [] [Quit] (Just someone) === [Browsed someone])
+    )
+  ,
+    ( "asks for an account when a run starts with none"
+    , example (ran [Just someone] [Quit] Nothing === [Asked, Browsed someone])
+    )
+  ,
+    ( "browses nothing when the login screen is left"
+    , example (ran [Nothing] [] Nothing === [Asked])
+    )
+  ]
+
+-- | A logout, and the login screen that follows it.
+logouts :: Checks
+logouts =
+  [
+    ( "forgets the account on a logout, and browses whatever is entered next"
+    , example do
+        ran [Just anyone] [LoggedOut, Quit] (Just someone)
+          === [Browsed someone, Forgot, Asked, Browsed anyone]
+    )
+  ,
+    ( "goes on doing so, logout after logout"
+    , example do
+        ran [Just anyone, Just someone] [LoggedOut, LoggedOut, Quit] (Just someone)
+          === [ Browsed someone
+              , Forgot
+              , Asked
+              , Browsed anyone
+              , Forgot
+              , Asked
+              , Browsed someone
+              ]
+    )
+  ,
+    ( "has forgotten the account already when that login screen is left"
+    , example do
+        ran [Nothing] [LoggedOut] (Just someone) === [Browsed someone, Forgot, Asked]
+    )
+  ]
+
+-- | What holds of a run however the login screen answers it.
+always :: Checks
+always =
+  [
+    ( "forgets the account before every login screen but the first"
+    , property do
+        taken <- forAll script
+        annotateShow taken.steps
+        assert (all forgotten (following taken.steps))
+    )
+  ,
+    ( "forgets only on the way back to a login screen, and every time"
+    , property do
+        taken <- forAll script
+        annotateShow taken.steps
+        assert (all asking (following taken.steps))
+    )
+  ,
+    ( "browses the accounts it was handed, in the order it was handed them"
+    , property do
+        taken <- forAll script
+        annotateShow taken.steps
+        let handed = foldMap pure taken.started <> takeWhileJust taken.answering
+        assert (browsed taken.steps `isPrefixOfList` handed)
+    )
+  ,
+    ( "never browses two accounts, nor asks twice, without the other between"
+    , property do
+        taken <- forAll script
+        annotateShow taken.steps
+        assert (all apart (following taken.steps))
+    )
+  ]
+
+-- | Where the player has nowhere to browse, and says so.
+stopping :: Checks
+stopping =
+  [
+    ( "run stops instead of browsing when the artist list cannot be fetched"
+    , example do
+        (_, stopped) <- evalIO . withOwnDirectories $ do
+          (mkStore silent).save (Credentials nowhere "someone" "secret")
+          complaining run
+        stopped === Left (ExitFailure 1)
+    )
+  ,
+    ( "run says on the terminal why it cannot go on, and leaves that line behind"
+    , example do
+        (said, stopped) <- evalIO . withOwnDirectories $ do
+          path <- (mkStore silent).file
+          createDirectoryIfMissing True (takeDirectory path)
+          ByteString.writeFile path "server=https://music.example.org\nusername=someone\n"
+          complaining run
+        said === "havidrome: the stored credentials could not be read: MissingField \"password\"\n"
+        stopped === Left (ExitFailure 1)
+    )
+  ]
 
 -- | An account to start a run with. Nothing answers at its server.
 someone :: Credentials
@@ -227,7 +259,7 @@ anAccount = do
 
 -- | Each step of a run beside the one before it.
 following :: [Step] -> [(Step, Step)]
-following steps = zip steps (drop 1 steps)
+following steps = zip steps (drop1 steps)
 
 -- | Whether a login screen that comes after something has a forgetting before
 -- it.
@@ -274,9 +306,12 @@ withOwnDirectories action =
       withEnvironment "XDG_CONFIG_HOME" config $
         withEnvironment "XDG_STATE_HOME" state' action
 
-withEnvironment :: String -> String -> IO a -> IO a
-withEnvironment name value action =
-  bracket (setEnv name value) (const (unsetEnv name)) (const action)
+-- | Runs an action with one environment variable set to this path, unset again
+-- afterwards.
+withEnvironment :: Text -> FilePath -> IO a -> IO a
+withEnvironment name value = bracket_ (setEnv named value) (unsetEnv named)
+ where
+  named = T.unpack name
 
 -- | Runs something with what it leaves on the terminal caught rather than
 -- printed: the line comes back to be read, and none of it lands among the
@@ -290,4 +325,4 @@ complaining action =
         hDuplicateTo sink stderr
         try action `finally` (hFlush stderr >> hDuplicateTo saved stderr)
     said <- ByteString.readFile path
-    pure (Text.decodeUtf8Lenient said, ended)
+    pure (T.decodeUtf8Lenient said, ended)
