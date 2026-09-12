@@ -2,6 +2,7 @@
 -- what the player is told about it.
 module Havidrome.Audio.StateTest (tests) where
 
+import Data.Text qualified as Text
 import Havidrome.Audio.State
   ( Command (Began, Broke, Ended, Observed, Opened, Pause, Resume, SeekBy, Start, Stop)
   , Effect (Announce, Load, SeekTo, SetPaused, Unload)
@@ -9,7 +10,7 @@ import Havidrome.Audio.State
   , Failure (Unplayable, Unreachable)
   , Motion (Paused, Running)
   , Phase (Begun, Opening, Requested)
-  , Playback (Playback, elapsed)
+  , Playback (Playback, elapsed, phase, track)
   , State (Loaded, Stopped)
   , Track (Track, duration, url)
   , clampTo
@@ -18,7 +19,7 @@ import Havidrome.Audio.State
   )
 import Havidrome.Check (example)
 import Havidrome.Subsonic.Types (Seconds (..))
-import Hedgehog (Group (Group), diff, failure, forAll, property, (===))
+import Hedgehog (Gen, Group (Group), diff, failure, forAll, property, success, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 
@@ -216,6 +217,70 @@ tests =
       ( "failing says nothing about a track already stopped"
       , example (told (Broke (Unplayable "corrupt")) Stopped === [])
       )
+    ,
+      ( "whatever happens to it, the position never leaves the track"
+      , property do
+          state <- forAll anyState
+          commands <- forAll (Gen.list (Range.linear 0 20) anyCommand)
+          case foldl (\current command -> fst (step command current)) state commands of
+            Stopped -> success
+            Loaded playback -> do
+              diff playback.elapsed (>=) (Seconds 0)
+              diff playback.elapsed (<=) playback.track.duration
+      )
+    ,
+      ( "with nothing playing, nothing but a start does anything at all"
+      , property do
+          command <- forAll (Gen.filter (not . starts) anyCommand)
+          step command Stopped === (Stopped, [])
+      )
+    ,
+      ( "a start plays the track it names, from where it names, whatever was playing"
+      , property do
+          state <- forAll anyState
+          next <- forAll anyTrack
+          from <- forAll anyPosition
+          let at = clampTo next from
+          step (Start next from) state
+            === (Loaded (Playback next Running at Requested), [Load next.url at, SetPaused False])
+      )
+    ,
+      ( "nothing but a track running out or failing is ever reported"
+      , property do
+          state <- forAll anyState
+          command <- forAll (Gen.filter (not . reports) anyCommand)
+          filter announcement (told command state) === []
+      )
+    ,
+      ( "a track that ran out or failed is playing no longer, and is reported once"
+      , property do
+          state <- forAll anyState
+          command <- forAll (Gen.filter reports anyCommand)
+          let after = fst (step command state)
+          after === Stopped
+          told command after === []
+      )
+    ,
+      ( "what the player says about a track is never given back to it as an order"
+      , property do
+          state <- forAll anyState
+          at <- forAll anyPosition
+          told Opened state === []
+          told Began state === []
+          told (Observed at) state === []
+      )
+    ,
+      ( "holding a track and letting it go move nothing but the motion"
+      , property do
+          state <- forAll anyState
+          command <- forAll (Gen.element [Pause, Resume])
+          case (state, fst (step command state)) of
+            (Loaded before, Loaded after) -> do
+              after.track === before.track
+              after.elapsed === before.elapsed
+              after.phase === before.phase
+            (before, after) -> after === before
+      )
     ]
 
 -- | Three minutes of audio at a made-up address; long enough that a seek has
@@ -245,3 +310,74 @@ stateAfter = foldl (\state command -> fst (step command state)) initial
 -- | What the player is told when a command lands on a state.
 told :: Command -> State -> [Effect]
 told command = snd . step command
+
+-- | Any track at all: an address of its own, and a length anything that moves
+-- inside it has to stay within.
+anyTrack :: Gen Track
+anyTrack = do
+  ident <- Gen.int (Range.linear 1 999)
+  seconds <- Gen.int (Range.linear 0 600)
+  pure
+    Track
+      { url = "https://music.example.org/rest/stream?id=s" <> Text.pack (show ident)
+      , duration = Seconds seconds
+      }
+
+-- | A position anywhere, before a track's start and past its end included,
+-- which is what the user and the player may each ask for.
+anyPosition :: Gen Seconds
+anyPosition = Seconds <$> Gen.int (Range.linearFrom 0 (-300) 900)
+
+-- | Any state the machine can be in: nothing playing, or a track loaded.
+anyState :: Gen State
+anyState = Gen.choice [pure Stopped, Loaded <$> anyPlayback]
+
+-- | A track loaded, moving or held, anywhere inside itself and any way along
+-- towards its audio starting.
+anyPlayback :: Gen Playback
+anyPlayback = do
+  playing <- anyTrack
+  motion <- Gen.element [Running, Paused]
+  at <- anyPosition
+  phase <- Gen.element [Requested, Opening, Begun]
+  pure (Playback playing motion (clampTo playing at) phase)
+
+-- | Anything that can happen to it: a control the user pressed, or a word
+-- from the player.
+anyCommand :: Gen Command
+anyCommand =
+  Gen.choice
+    [ Start <$> anyTrack <*> anyPosition
+    , pure Pause
+    , pure Resume
+    , SeekBy <$> Gen.int (Range.linearFrom 0 (-900) 900)
+    , pure Stop
+    , Observed <$> anyPosition
+    , pure Opened
+    , pure Began
+    , pure Ended
+    , Broke <$> anyFailure
+    ]
+
+anyFailure :: Gen Failure
+anyFailure = Gen.choice [Unreachable <$> reason, Unplayable <$> reason]
+  where
+    reason = Gen.text (Range.linear 0 12) Gen.unicode
+
+starts :: Command -> Bool
+starts command = case command of
+  Start _ _ -> True
+  _ -> False
+
+-- | Whether a command is one of the two the machine reports on: a track that
+-- ran out, and one that could not be played.
+reports :: Command -> Bool
+reports command = case command of
+  Ended -> True
+  Broke _ -> True
+  _ -> False
+
+announcement :: Effect -> Bool
+announcement effect = case effect of
+  Announce _ -> True
+  _ -> False
