@@ -118,9 +118,14 @@ perform standin command = do
   effects <- atomicModifyIORef' standin.state (step command)
   traverse_ (record standin) effects
 
+-- The strict atomic modify that hands nothing back. `Data.IORef.Extra` has
+-- it, and this is the whole of what we would take that package for.
+atomicModifyIORef'_ :: IORef a -> (a -> a) -> IO ()
+atomicModifyIORef'_ ref change = atomicModifyIORef' ref (\before -> (change before, ()))
+
 record :: Standin -> Effect -> IO ()
 record standin effect = case effect of
   Load url from ->
-    atomicModifyIORef' standin.tracks (\before -> ((url, from) : before, ()))
+    atomicModifyIORef'_ standin.tracks ((url, from) :)
   Announce event -> atomically (writeTChan standin.events event)
   _ -> pure ()

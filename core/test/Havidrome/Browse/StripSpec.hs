@@ -6,7 +6,6 @@
 -- against a clock the spec winds itself, with nothing waited for.
 module Havidrome.Browse.StripSpec (spec) where
 
-import Data.Maybe (fromMaybe)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Havidrome.Audio.State (Failure (Unplayable, Unreachable), Motion (Paused, Running))
@@ -24,7 +23,7 @@ import Havidrome.Browse.Strip
   , showing
   , wrong
   )
-import Havidrome.Divide (quotient, remainder)
+import Havidrome.Divide (quotient)
 import Havidrome.Playback.Playing
   ( Arrival (Followed, Picked)
   , Playing (Playing)
@@ -33,7 +32,7 @@ import Havidrome.Playback.Playing
 import Havidrome.Subsonic.Types (Seconds (Seconds))
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (NonNegative (NonNegative), (===))
+import Test.QuickCheck (Gen, NonNegative (NonNegative), chooseInt, forAll, (===))
 
 spec :: Spec
 spec = do
@@ -95,13 +94,14 @@ overlay = describe "overlaid" $ do
     overlaid (Moment 0) 32 (silence 7) `shouldBe` "⏵ Silence  " <> bar 0 8 <> "  0:07 / 0:00"
 
   prop "fills exactly the width it is given, wherever in the track the audio is" $
-    \(NonNegative spare) (NonNegative seconds) ->
-      T.length (overlaid (Moment 0) (30 + spare) (btoum (into seconds))) === 30 + spare
+    \(NonNegative spare) ->
+      forAll into $ \at ->
+        T.length (overlaid (Moment 0) (30 + spare) (btoum at)) === 30 + spare
 
   prop "fills as many whole columns as the part of the track played is worth" $
-    \(NonNegative spare) (NonNegative seconds) ->
-      let at = into seconds
-       in filledIn (overlaid (Moment 0) (30 + spare) (btoum at)) === fromMaybe 0 (quotient (spare * at) 96)
+    \(NonNegative spare) ->
+      forAll into $ \at ->
+        Just (filledIn (overlaid (Moment 0) (30 + spare) (btoum at))) === quotient (spare * at) 96
 
   prop "never fills less of the bar for more of the track" $
     \width (NonNegative sooner) (NonNegative later) ->
@@ -125,10 +125,10 @@ motion = describe "whether the song's audio runs or is held" $ do
       `shouldBe` replicate 3 (" Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
 
   prop "fills exactly the width it is given, running or held" $
-    \(NonNegative spare) (NonNegative seconds) ->
-      let at = into seconds
-       in fmap (T.length . overlaid (Moment 0) (30 + spare)) [btoum at, heldBtoum at]
-            === replicate 2 (30 + spare)
+    \(NonNegative spare) ->
+      forAll into $ \at ->
+        fmap (T.length . overlaid (Moment 0) (30 + spare)) [btoum at, heldBtoum at]
+          === replicate 2 (30 + spare)
 
 loading :: Spec
 loading = describe "a song picked, while it loads" $ do
@@ -239,9 +239,9 @@ brokenly, offlinely :: Text
 brokenly = "The file will not play: it is broken"
 offlinely = "The server could not be reached: it is down"
 
--- | A number of seconds somewhere in Btoum Roumada, which runs 1:36.
-into :: Int -> Int
-into seconds = fromMaybe 0 (remainder seconds 97)
+-- | Any second of Btoum Roumada, which runs 1:36.
+into :: Gen Int
+into = chooseInt (0, 96)
 
 -- | The first song of Drukqs, 1:36 long, picked and its audio running, this
 -- far into it. Its symbol, name and times take 30 columns with the gaps

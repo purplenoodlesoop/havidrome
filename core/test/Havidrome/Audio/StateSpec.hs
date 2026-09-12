@@ -27,7 +27,7 @@ paused = loaded Paused Begun
 
 -- | The state a run of commands leaves behind, from nothing playing.
 stateAfter :: [Command] -> State
-stateAfter = foldl (\state command -> fst (step command state)) initial
+stateAfter = foldl' (\state command -> fst (step command state)) initial
 
 -- | What the player is told when a command lands on a state.
 told :: Command -> State -> [Effect]

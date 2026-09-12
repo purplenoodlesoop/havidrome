@@ -22,16 +22,15 @@ song n =
     }
 
 -- | The queue over an album that starts at the song in this place, counting
--- from nothing.
-at :: [Song] -> Int -> Queue
-at songs' place =
-  fromMaybe (error "the album has no song in that place") $
-    startingAt songs' (songs' !! place).id
+-- from nothing. A place the album does not have makes no queue, and every
+-- spec here asks for one it has.
+at :: [Song] -> Int -> Maybe Queue
+at whole place = startingAt whole (song (place + 1)).id
 
 -- | Moving the queue as a run of steps: forward where it can go forward,
 -- backward otherwise.
 walk :: [Bool] -> Queue -> Queue
-walk steps queue = foldl move queue steps
+walk steps queue = foldl' move queue steps
  where
   move current forwards
     | forwards = fromMaybe current (forward current)
@@ -39,7 +38,7 @@ walk steps queue = foldl move queue steps
 
 -- | Where those same steps land, counted in places rather than songs.
 walkedTo :: Int -> [Bool] -> Int -> Int
-walkedTo count steps place = foldl move place steps
+walkedTo count steps place = foldl' move place steps
  where
   move current forwards
     | forwards = min (count - 1) (current + 1)
@@ -58,38 +57,38 @@ spec = do
       startingAt [] (SongId "s1") `shouldSatisfy` isNothing
 
     it "keeps the album, in the order it was given" $
-      songs (album 4 `at` 2) `shouldBe` album 4
+      fmap songs (album 4 `at` 2) `shouldBe` Just (album 4)
 
   describe "moving forward" $ do
     it "goes to the next song of the album" $
-      fmap (.playing) (forward (album 3 `at` 0)) `shouldBe` Just (song 2)
+      fmap (.playing) (album 3 `at` 0 >>= forward) `shouldBe` Just (song 2)
 
     it "runs out after the last song" $
-      forward (album 3 `at` 2) `shouldSatisfy` isNothing
+      (album 3 `at` 2 >>= forward) `shouldSatisfy` isNothing
 
     it "reaches every later song of the album, in order" $
-      fmap (.playing) (walkTo (album 4 `at` 1)) `shouldBe` [song 2, song 3, song 4]
+      fmap (fmap (.playing) . walkTo) (album 4 `at` 1) `shouldBe` Just [song 2, song 3, song 4]
 
   describe "moving back" $ do
     it "goes to the previous song of the album" $
-      (backward (album 3 `at` 2)).playing `shouldBe` song 2
+      fmap ((.playing) . backward) (album 3 `at` 2) `shouldBe` Just (song 2)
 
     it "stays on the first song, which is where going back from it leads" $
-      (backward (album 3 `at` 0)).playing `shouldBe` song 1
+      fmap ((.playing) . backward) (album 3 `at` 0) `shouldBe` Just (song 1)
 
   describe "however it is moved" $ do
     it "never leaves the album, and never skips a place in it" $
-      property $ \(Positive count) (NonNegative offset) steps ->
-        let place = offset `mod` count
-            walked = walk steps (album count `at` place)
-         in walked.playing == song (1 + walkedTo count steps place)
+      property $ \(Positive count) steps ->
+        forAll (chooseInt (0, count - 1)) $ \place ->
+          fmap ((.playing) . walk steps) (album count `at` place)
+            === Just (song (1 + walkedTo count steps place))
 
     it "keeps the album it was made from" $
-      property $ \(Positive count) (NonNegative offset) steps ->
-        let place = offset `mod` count
-         in songs (walk steps (album count `at` place)) == album count
+      property $ \(Positive count) steps ->
+        forAll (chooseInt (0, count - 1)) $ \place ->
+          fmap (songs . walk steps) (album count `at` place) === Just (album count)
 
 -- | Every song the queue reaches by going forward until the album runs out,
 -- the one it is on first.
 walkTo :: Queue -> [Queue]
-walkTo queue = queue : maybe [] walkTo (forward queue)
+walkTo queue = queue : foldMap walkTo (forward queue)

@@ -47,7 +47,7 @@ spec = do
         Store.save account
         path <- Store.configFile
         status <- getFileStatus path
-        (fileMode status .&. 0o777) `shouldBe` 0o600
+        fileMode status .&. 0o777 `shouldBe` 0o600
 
     it "replaces credentials saved before" $
       withConfigHome $ \_ -> do
@@ -144,7 +144,7 @@ withConfigHome use =
 
 -- | Runs an action with one environment variable set, or unset, restoring
 -- whatever it held before.
-withEnvironment :: String -> Maybe String -> IO a -> IO a
+withEnvironment :: FilePath -> Maybe FilePath -> IO a -> IO a
 withEnvironment name value action =
   bracket (lookupEnv name <* apply value) apply (const action)
   where

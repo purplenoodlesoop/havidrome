@@ -6,7 +6,7 @@
 -- spec sees exactly what a run did and in what order — a logout among it.
 module HavidromeSpec (spec) where
 
-import Control.Exception (bracket, finally)
+import Control.Exception (bracket, bracket_, finally)
 import Control.Monad.Trans.State.Strict (State, execState, state)
 import Data.Text as T (Text)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
@@ -36,10 +36,9 @@ spec = do
       start (Present someone) `shouldBe` Browse someone
 
     it "stops when what is stored cannot be read as credentials" $
-      start (Unreadable (MissingField "password")) `shouldSatisfy` \started ->
-        case started of
-          Stop _ -> True
-          _ -> False
+      start (Unreadable (MissingField "password")) `shouldSatisfy` \case
+        Stop _ -> True
+        _ -> False
 
   describe "player" $ do
     it "browses the account a run starts with, asking for none" $
@@ -148,7 +147,7 @@ nowhere = "http://nowhere.example"
 withConfigHome :: IO a -> IO a
 withConfigHome action =
   withSystemTempDirectory "havidrome-config" $ \home ->
-    bracket (setEnv "XDG_CONFIG_HOME" home) (const (unsetEnv "XDG_CONFIG_HOME")) (const action)
+    bracket_ (setEnv "XDG_CONFIG_HOME" home) (unsetEnv "XDG_CONFIG_HOME") action
 
 -- | Runs something with its complaints sent nowhere, so that a spec about
 -- stopping does not print the reason among the results.

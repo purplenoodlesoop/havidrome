@@ -25,6 +25,7 @@ import Brick (AttrMap, Widget)
 import Brick.Main (renderWidget)
 import Data.Function (on)
 import Data.List (groupBy)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text as T (Text)
 import Data.Text qualified as T
@@ -63,7 +64,7 @@ terminal theme region widgets =
 -- | The same rows with the outermost row and column taken off every side:
 -- what is within a margin of one cell.
 inside :: [[Cell]] -> [[Cell]]
-inside = fmap (dropEnd 1 . drop 1) . dropEnd 1 . drop 1
+inside = fmap (dropEnd1 . drop1) . dropEnd1 . drop1
 
 -- | The cells along the edges of the same rows: the top and bottom rows, and
 -- the leftmost and rightmost cell of every row.
@@ -75,7 +76,7 @@ border rows = concat (ends rows) <> concatMap ends rows
 -- | Whether a cell shows nothing: a space, drawn as the terminal draws what it
 -- is given no look for, or not drawn at all.
 vacant :: Cell -> Bool
-vacant (look, character) = character == ' ' && maybe True (== defAttr) look
+vacant (look, character) = character == ' ' && all (== defAttr) look
 
 -- | Every row, with the blanks at the end of each row dropped so that a row
 -- reads as what was written on it.
@@ -101,7 +102,7 @@ inBold =
 runs :: [[Cell]] -> [[(Maybe Attr, Text)]]
 runs = fmap (fmap run . NonEmpty.groupBy ((==) `on` fst))
   where
-    run alike = (fst (NonEmpty.head alike), text (NonEmpty.toList alike))
+    run (first :| rest) = (fst first, text (first : rest))
 
 -- | Whether what is drawn so is in reverse video.
 reversed :: Maybe Attr -> Bool
@@ -114,6 +115,11 @@ drawnIn wanted = \case
 
 text :: [Cell] -> Text
 text = T.pack . fmap snd
+
+-- | Everything but the first of a list, and everything but its last.
+drop1, dropEnd1 :: [a] -> [a]
+drop1 = drop 1
+dropEnd1 = dropEnd 1
 
 dropEnd :: Int -> [a] -> [a]
 dropEnd count items = zipWith const items (drop count items)
