@@ -129,7 +129,12 @@ library client =
 -- | Draws a fresh salt. Sixteen characters from an alphabet that needs no
 -- escaping in a URL, comfortably over the six the API asks for.
 randomSalt :: IO Salt
-randomSalt = mkSalt . T.pack <$> traverse (const draw) [1 :: Int .. 16]
+randomSalt = mkSalt . mconcat <$> traverse (const draw) [1 :: Int .. 16]
   where
+    alphabet :: Text
     alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-    draw = (alphabet !!) <$> randomRIO (0, length alphabet - 1)
+    draw = character <$> randomRIO (0, T.length alphabet - 1)
+    -- The character at that place of the alphabet, as the one-character
+    -- text it is. A place the alphabet does not have would give an empty
+    -- one, and none outside it is ever drawn.
+    character place = T.take 1 (T.drop place alphabet)

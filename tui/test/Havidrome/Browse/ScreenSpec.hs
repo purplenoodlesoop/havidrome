@@ -1188,7 +1188,7 @@ onStrip screen = showing screen.strip
 -- give the first song of Drukqs a bar of 16 columns, one for every 6s of its
 -- 1:36.
 stripRow :: Screen -> Text
-stripRow = last . shown (46, 5)
+stripRow = mconcat . drop 4 . shown (46, 5)
 
 -- | Which of the strip's two symbols, the playing one and the paused one, are
 -- anywhere on a terminal wide and tall enough to show every column and the
@@ -1240,7 +1240,7 @@ rules count = T.intercalate "│" (fmap (`T.replicate` "─") (take count (40 : 
 -- | What that terminal has in this one of its columns, top row to bottom, and
 -- how each is drawn: the look of the rule between two columns, taken whole.
 downColumn :: Int -> Int -> Screen -> [Cell]
-downColumn height at = fmap (!! at) . within (120, height)
+downColumn height at = concatMap (take 1 . drop at) . within (120, height)
 
 -- | Where the keys are on that terminal: the row highlighted in its rightmost
 -- column.
