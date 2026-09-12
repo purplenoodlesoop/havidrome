@@ -3,7 +3,6 @@
 -- spec sees both what came back and what was asked for.
 module Havidrome.SubsonicSpec (spec) where
 
-import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Data.ByteString (ByteString)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Text (Text)
@@ -37,10 +36,10 @@ account =
 
 -- | One of the three lists of that account's library, fetched.
 listing ::
-  (Library (ExceptT SubsonicError IO) -> ExceptT SubsonicError IO a) ->
+  (Library IO -> IO (Either SubsonicError a)) ->
   Subsonic ->
   IO (Either SubsonicError a)
-listing fetch subsonic = runExceptT (fetch (subsonic.browses account))
+listing fetch subsonic = fetch (subsonic.browses account)
 
 spec :: Spec
 spec = do

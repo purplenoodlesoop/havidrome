@@ -1,6 +1,7 @@
 -- | Walking the three levels, over a library held in the tests.
 module Havidrome.BrowseTest (tests) where
 
+import Data.Functor.Identity (runIdentity)
 import Data.Text (Text)
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
@@ -12,8 +13,7 @@ import Havidrome.Browse
   , moveUp
   )
 import Havidrome.Browse.Fixtures
-  ( answered
-  , aphexAlbums
+  ( aphexAlbums
   , artists
   , drukqsSongs
   , library
@@ -116,7 +116,7 @@ opening = atArtists artists
 
 -- | One level down, as the stand-in library answers it.
 into :: Browse -> Either SubsonicError Browse
-into = answered . descend library
+into = runIdentity . descend library
 
 -- | How the level on screen reads, item by item.
 items :: Browse -> [Text]

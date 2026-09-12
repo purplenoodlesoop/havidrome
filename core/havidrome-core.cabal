@@ -91,9 +91,7 @@ library fixtures
         -- What the fixtures are fixtures of.
         havidrome-core,
         -- Text everywhere the player takes or gives one.
-        text,
-        -- The except transformer a stand-in library's failures travel in.
-        transformers
+        text
 
 test-suite havidrome-core-test
     import:         language
