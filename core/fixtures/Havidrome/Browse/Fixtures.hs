@@ -10,7 +10,11 @@ module Havidrome.Browse.Fixtures
   , artists
   , aphexAlbums
   , drukqsSongs
+  , btoumRoumada
+  , jynweythek
+  , vordhosbn
   , sketchesSongs
+  , untitled
   , artist
   , album
   , song
@@ -107,16 +111,23 @@ silence = song "s6" "Silence" 0 (Just 3)
 
 -- | An album of a single song, so that playing it through takes one ending.
 sketchesSongs :: [Song]
-sketchesSongs = [song "s0" "Untitled" 61 (Just 1)]
+sketchesSongs = [untitled]
+
+-- | The one song of Sketches.
+untitled :: Song
+untitled = song "s0" "Untitled" 61 (Just 1)
 
 -- | An album carrying a song the server gives no track number for, which the
 -- client puts first.
 drukqsSongs :: [Song]
-drukqsSongs =
-  [ unnumbered "s3" "Btoum Roumada" 96
-  , song "s4" "Jynweythek" 129 (Just 1)
-  , song "s5" "Vordhosbn" 293 (Just 2)
-  ]
+drukqsSongs = [btoumRoumada, jynweythek, vordhosbn]
+
+-- | The songs of Drukqs by name, in the order the client lists them: the one
+-- with no track number first, then the two the server numbers.
+btoumRoumada, jynweythek, vordhosbn :: Song
+btoumRoumada = unnumbered "s3" "Btoum Roumada" 96
+jynweythek = song "s4" "Jynweythek" 129 (Just 1)
+vordhosbn = song "s5" "Vordhosbn" 293 (Just 2)
 
 artist :: Text -> Text -> Artist
 artist identifier name = Artist {id = ArtistId identifier, name}
