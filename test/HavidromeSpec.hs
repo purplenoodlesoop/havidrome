@@ -142,10 +142,10 @@ ran :: [Maybe Credentials] -> [Ending] -> Maybe Credentials -> [Step]
 ran answered ended from =
   reverse (execState (player scripted from) (Script answered ended [])).taken
 
--- | An address nothing answers on, so that the artist list fails to arrive
--- the way it fails against a server that cannot be reached.
+-- | An invented address nothing answers on, so that the artist list fails to
+-- arrive the way it fails against a server that cannot be reached.
 nowhere :: Text
-nowhere = "http://127.0.0.1:1"
+nowhere = "http://nowhere.example"
 
 -- | An empty config directory of its own, so that the specs never read the
 -- credentials of whoever is running them.

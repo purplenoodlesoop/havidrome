@@ -80,7 +80,7 @@ import Havidrome.Subsonic
   , SubsonicError (NetworkFailure)
   )
 import Terminal (Cell, border, inBold, inside, reversed, runs, screenshot, terminal, vacant)
-import Test.Hspec (Spec, describe, it, shouldBe, shouldNotContain, shouldReturn, shouldSatisfy)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldReturn, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (NonNegative (NonNegative))
 

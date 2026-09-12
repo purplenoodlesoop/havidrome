@@ -30,7 +30,11 @@ common language
         FunctionalDependencies
         UndecidableInstances
 
-    ghc-options:        -Wall -Wcompat -Wredundant-constraints
+    ghc-options:
+        -Wall -Wcompat -Widentities -Wmissing-export-lists
+        -Wmissing-home-modules -Wmissing-deriving-strategies -Wpartial-fields
+        -Wredundant-constraints -Woperator-whitespace
+        -Wredundant-bang-patterns -Wunused-type-patterns -Wunused-packages
 
 library
     import:          language
@@ -55,26 +59,47 @@ library
         Havidrome.Subsonic.Types
 
     build-depends:
+        -- Decodes the Subsonic server's JSON responses.
         aeson,
-        base,
+        -- The standard library.
+        base >=4.17 && <5,
+        -- The TUI: widgets, the event loop, the list zipper.
         brick,
+        -- Bytes on the wire: request bodies, mpv's IPC lines.
         bytestring,
+        -- The MD5 that salts the Subsonic password token.
         crypton,
+        -- Finds and creates the XDG config directory.
         directory,
+        -- Builds the path of the config file inside it.
         filepath,
+        -- Performs the HTTP requests to the server.
         http-client,
+        -- Gives http-client TLS, so an https server works.
         http-client-tls,
+        -- Reads status codes and builds query strings.
         http-types,
+        -- The state monad the brick event handlers run in.
         mtl,
+        -- Opens the unix socket mpv is commanded over.
         network,
+        -- Reaches the fields nested inside a record.
         optics-core,
+        -- Starts mpv and holds on to the process.
         process,
+        -- Draws the salt for each password token.
         random,
+        -- Shares the playback state between the UI and the audio threads.
         stm,
+        -- Text everywhere a user reads or types one.
         text,
+        -- The except transformer the client's failures travel in.
         transformers,
+        -- Sets the config file's owner-only permissions.
         unix,
+        -- The vector brick's list widget holds its rows in.
         vector,
+        -- The terminal brick draws on: keys, attributes, images.
         vty
 
 executable havidrome
@@ -83,8 +108,12 @@ executable havidrome
     main-is:        Main.hs
 
     -- vty runs its input on threads of its own.
-    ghc-options:    -threaded
-    build-depends:  base, havidrome
+    ghc-options:    -threaded -rtsopts "-with-rtsopts=-N"
+    build-depends:
+        -- The standard library.
+        base,
+        -- The player itself; this executable only starts it.
+        havidrome
 
 test-suite havidrome-test
     import:         language
@@ -111,22 +140,41 @@ test-suite havidrome-test
         Terminal
 
     build-depends:
+        -- Generates the inputs of the property tests.
         QuickCheck,
+        -- Builds the JSON the stand-in server answers with.
         aeson,
+        -- The standard library.
         base,
+        -- Renders widgets the screen tests then read back.
         brick,
+        -- The bytes of those responses and of mpv's IPC lines.
         bytestring,
+        -- The maps the stand-in library is looked up in.
         containers,
+        -- Makes and removes the directories a config test needs.
         directory,
+        -- Builds the paths inside them.
         filepath,
+        -- The player under test.
         havidrome,
+        -- Runs the suite: specs, expectations, the test runner.
         hspec,
+        -- Builds the responses the transport stand-in returns.
         http-client,
+        -- The status codes those responses carry.
         http-types,
+        -- Records what the stand-in audio backend was told to do.
         stm,
+        -- Gives each config test a directory of its own.
         temporary,
+        -- Text everywhere the player takes or gives one.
         text,
+        -- The except transformer the client's failures travel in.
         transformers,
+        -- Reads back the config file's permissions.
         unix,
+        -- The vector a list widget's rows are read out of.
         vector,
+        -- Renders a picture to the cells a screen test asserts on.
         vty

@@ -41,9 +41,9 @@ walk steps queue = foldl move queue steps
 walkedTo :: Int -> [Bool] -> Int -> Int
 walkedTo count steps place = foldl move place steps
  where
-  move place forwards
-    | forwards = min (count - 1) (place + 1)
-    | otherwise = max 0 (place - 1)
+  move current forwards
+    | forwards = min (count - 1) (current + 1)
+    | otherwise = max 0 (current - 1)
 
 spec :: Spec
 spec = do
