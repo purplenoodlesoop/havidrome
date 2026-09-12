@@ -34,7 +34,7 @@ nix profile add github:purplenoodlesoop/havidrome
 
 ## Platforms
 
-Linux and macOS, each on x86_64 and aarch64.
+Linux on x86_64 and aarch64, and macOS on aarch64.
 
 ## Screenshots
 
