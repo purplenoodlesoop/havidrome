@@ -91,7 +91,7 @@ listening = describe "what the player says" $ do
 
   it "hears nothing in a line that is not JSON at all" $
     heard "mpv fell over" `shouldBe` Nothing
- where
+
 heard :: ByteString -> Maybe Notice
 heard = readNotice
 

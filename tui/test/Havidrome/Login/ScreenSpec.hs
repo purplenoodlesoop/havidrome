@@ -28,8 +28,8 @@ spec = do
 
     it "never shows a character of the password" $ do
       let screen = shown (40, 5) blank {password = "secret", focus = Password}
-      screen !! 4 `shouldBe` "Password    ••••••"
-      screen `shouldSatisfy` all (not . T.isInfixOf "secret")
+      drop 4 screen `shouldBe` ["Password    ••••••"]
+      screen `shouldSatisfy` (not . any (T.isInfixOf "secret"))
 
     it "marks the field being typed into, and no other" $ do
       marked (40, 7) blank {focus = ServerUrl} `shouldBe` ["Server URL"]
@@ -37,8 +37,8 @@ spec = do
       marked (40, 7) blank {focus = Password} `shouldBe` ["Password"]
 
     it "keeps what the server said in the strip along the bottom" $
-      last (shown (60, 7) refused)
-        `shouldBe` "The server refused these credentials: wrong password"
+      drop 6 (shown (60, 7) refused)
+        `shouldBe` ["The server refused these credentials: wrong password"]
 
   describe "the margin" $ do
     it "leaves the terminal's outer rows and columns blank, the title, fields and error inside" $ do
