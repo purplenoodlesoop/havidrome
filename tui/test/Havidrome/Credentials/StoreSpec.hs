@@ -19,106 +19,115 @@ import Test.Hspec (Spec, describe, it, shouldBe, shouldReturn, shouldSatisfy)
 
 spec :: Spec
 spec = do
-  describe "configFile" $ do
-    it "sits under XDG_CONFIG_HOME when it is set" $
-      withConfigHome $ \home ->
-        Store.configFile `shouldReturn` home </> "havidrome" </> "config"
+  whereItLives
+  saving
+  loading
+  discarding
 
-    it "falls back to ~/.config when XDG_CONFIG_HOME is unset" $
-      withSystemTempDirectory "havidrome-home" $ \home ->
-        withEnvironment "XDG_CONFIG_HOME" Nothing $
-          withEnvironment "HOME" (Just home) $ do
-            Store.save account
-            Store.configFile
-              `shouldReturn` home </> ".config" </> "havidrome" </> "config"
-            doesFileExist (home </> ".config" </> "havidrome" </> "config")
-              `shouldReturn` True
+whereItLives :: Spec
+whereItLives = describe "configFile" $ do
+  it "sits under XDG_CONFIG_HOME when it is set" $
+    withConfigHome $ \home ->
+      Store.configFile `shouldReturn` home </> "havidrome" </> "config"
 
-  describe "save" $ do
-    it "creates the config directory when it is missing" $
-      withSystemTempDirectory "havidrome-config" $ \parent ->
-        withEnvironment "XDG_CONFIG_HOME" (Just (parent </> "fresh")) $ do
+  it "falls back to ~/.config when XDG_CONFIG_HOME is unset" $
+    withSystemTempDirectory "havidrome-home" $ \home ->
+      withEnvironment "XDG_CONFIG_HOME" Nothing $
+        withEnvironment "HOME" (Just home) $ do
           Store.save account
-          path <- Store.configFile
-          doesFileExist path `shouldReturn` True
+          Store.configFile
+            `shouldReturn` home </> ".config" </> "havidrome" </> "config"
+          doesFileExist (home </> ".config" </> "havidrome" </> "config")
+            `shouldReturn` True
 
-    it "keeps the file to the user who owns it" $
-      withConfigHome $ \_ -> do
+saving :: Spec
+saving = describe "save" $ do
+  it "creates the config directory when it is missing" $
+    withSystemTempDirectory "havidrome-config" $ \parent ->
+      withEnvironment "XDG_CONFIG_HOME" (Just (parent </> "fresh")) $ do
         Store.save account
         path <- Store.configFile
-        status <- getFileStatus path
-        fileMode status .&. 0o777 `shouldBe` 0o600
+        doesFileExist path `shouldReturn` True
 
-    it "replaces credentials saved before" $
-      withConfigHome $ \_ -> do
-        Store.save account
-        Store.save other
-        Store.load `shouldReturn` Present other
+  it "keeps the file to the user who owns it" $
+    withConfigHome $ \_ -> do
+      Store.save account
+      path <- Store.configFile
+      status <- getFileStatus path
+      fileMode status .&. 0o777 `shouldBe` 0o600
 
-  describe "load" $ do
-    it "returns exactly what was saved" $
-      withConfigHome $ \_ -> do
-        Store.save account
-        Store.load `shouldReturn` Present account
+  it "replaces credentials saved before" $
+    withConfigHome $ \_ -> do
+      Store.save account
+      Store.save other
+      Store.load `shouldReturn` Present other
 
-    it "returns a password of punctuation and non-ASCII characters unchanged" $
-      withConfigHome $ \_ -> do
-        let awkward = account {password = "pä ss=wörd\\ 密码 \"#!\" \t "}
-        Store.save awkward
-        Store.load `shouldReturn` Present awkward
+loading :: Spec
+loading = describe "load" $ do
+  it "returns exactly what was saved" $
+    withConfigHome $ \_ -> do
+      Store.save account
+      Store.load `shouldReturn` Present account
 
-    it "returns a password of backslashes and newlines unchanged" $
-      withConfigHome $ \_ -> do
-        let awkward = account {password = "one\\ntwo\nthree\\\n"}
-        Store.save awkward
-        Store.load `shouldReturn` Present awkward
+  it "returns a password of punctuation and non-ASCII characters unchanged" $
+    withConfigHome $ \_ -> do
+      let awkward = account {password = "pä ss=wörd\\ 密码 \"#!\" \t "}
+      Store.save awkward
+      Store.load `shouldReturn` Present awkward
 
-    it "reports an escape the store never writes" $
-      withConfigHome $ \_ -> do
-        writeConfig "server=a\\qb\nusername=someone\npassword=hunter2\n"
-        Store.load `shouldReturn` Unreadable (BadLine "server=a\\qb")
+  it "returns a password of backslashes and newlines unchanged" $
+    withConfigHome $ \_ -> do
+      let awkward = account {password = "one\\ntwo\nthree\\\n"}
+      Store.save awkward
+      Store.load `shouldReturn` Present awkward
 
-    it "reports no stored credentials when no file exists" $
-      withConfigHome $ \_ ->
-        Store.load `shouldReturn` Absent
+  it "reports an escape the store never writes" $
+    withConfigHome $ \_ -> do
+      writeConfig "server=a\\qb\nusername=someone\npassword=hunter2\n"
+      Store.load `shouldReturn` Unreadable (BadLine "server=a\\qb")
 
-    it "reports a file that is not credentials at all" $
-      withConfigHome $ \_ -> do
-        writeConfig "just some prose\n"
-        Store.load `shouldReturn` Unreadable (BadLine "just some prose")
+  it "reports no stored credentials when no file exists" $
+    withConfigHome $ \_ ->
+      Store.load `shouldReturn` Absent
 
-    it "reports a field the file never sets" $
-      withConfigHome $ \_ -> do
-        writeConfig "server=https://music.example.com\nusername=someone\n"
-        Store.load `shouldReturn` Unreadable (MissingField "password")
+  it "reports a file that is not credentials at all" $
+    withConfigHome $ \_ -> do
+      writeConfig "just some prose\n"
+      Store.load `shouldReturn` Unreadable (BadLine "just some prose")
 
-    it "reports a field the file sets twice" $
-      withConfigHome $ \_ -> do
-        writeConfig
-          "server=https://music.example.com\nusername=someone\npassword=a\npassword=b\n"
-        Store.load `shouldReturn` Unreadable (RepeatedField "password")
+  it "reports a field the file never sets" $
+    withConfigHome $ \_ -> do
+      writeConfig "server=https://music.example.com\nusername=someone\n"
+      Store.load `shouldReturn` Unreadable (MissingField "password")
 
-    it "reports a file that is not UTF-8" $
-      withConfigHome $ \_ -> do
-        path <- Store.configFile
-        createDirectoryIfMissing True (takeDirectory path)
-        ByteString.writeFile path (ByteString.pack [0x73, 0x3d, 0xff, 0xfe])
-        stored <- Store.load
-        stored `shouldSatisfy` \case
-          Unreadable (NotAccessible _) -> True
-          _ -> False
+  it "reports a field the file sets twice" $
+    withConfigHome $ \_ -> do
+      writeConfig
+        "server=https://music.example.com\nusername=someone\npassword=a\npassword=b\n"
+      Store.load `shouldReturn` Unreadable (RepeatedField "password")
 
-  describe "discard" $ do
-    it "leaves no stored credentials behind" $
-      withConfigHome $ \_ -> do
-        Store.save account
-        Store.discard
-        Store.load `shouldReturn` Absent
+  it "reports a file that is not UTF-8" $
+    withConfigHome $ \_ -> do
+      path <- Store.configFile
+      createDirectoryIfMissing True (takeDirectory path)
+      ByteString.writeFile path (ByteString.pack [0x73, 0x3d, 0xff, 0xfe])
+      stored <- Store.load
+      stored `shouldSatisfy` \case
+        Unreadable (NotAccessible _) -> True
+        _ -> False
 
-    it "does nothing when nothing is stored" $
-      withConfigHome $ \_ -> do
-        Store.discard
-        Store.load `shouldReturn` Absent
+discarding :: Spec
+discarding = describe "discard" $ do
+  it "leaves no stored credentials behind" $
+    withConfigHome $ \_ -> do
+      Store.save account
+      Store.discard
+      Store.load `shouldReturn` Absent
+
+  it "does nothing when nothing is stored" $
+    withConfigHome $ \_ -> do
+      Store.discard
+      Store.load `shouldReturn` Absent
 
 account :: Credentials
 account =

@@ -26,109 +26,120 @@ credentialQuery = "u=someone&t=" <> testToken <> "&s=abc123&v=1.16.1&c=havidrome
 
 spec :: Spec
 spec = do
-  describe "request URLs" $ do
-    it "signs a ping with the salted password hash, never the password" $
-      url Ping
-        `shouldBe` "https://music.example.org/rest/ping?f=json&" <> credentialQuery
+  requestUrls
+  audioRequests
+  readingAnswers
+  classifying
+  orders
 
-    it "never carries the password itself" $
-      testCredentials.password `shouldSatisfy` \password ->
-        not (password `T.isInfixOf` url Ping)
+requestUrls :: Spec
+requestUrls = describe "request URLs" $ do
+  it "signs a ping with the salted password hash, never the password" $
+    url Ping
+      `shouldBe` "https://music.example.org/rest/ping?f=json&" <> credentialQuery
 
-    it "asks for one artist's albums by id" $
-      url (GetArtist (ArtistId "a1"))
-        `shouldBe` "https://music.example.org/rest/getArtist?id=a1&f=json&" <> credentialQuery
+  it "never carries the password itself" $
+    testCredentials.password `shouldSatisfy` \password ->
+      not (password `T.isInfixOf` url Ping)
 
-    it "asks for one album's songs by id" $
-      url (GetAlbum (AlbumId "b1"))
-        `shouldBe` "https://music.example.org/rest/getAlbum?id=b1&f=json&" <> credentialQuery
+  it "asks for one artist's albums by id" $
+    url (GetArtist (ArtistId "a1"))
+      `shouldBe` "https://music.example.org/rest/getArtist?id=a1&f=json&" <> credentialQuery
 
-    it "does not double a slash the server address already ends with" $
-      endpointUrl (Server "https://music.example.org/") testCredentials testSalt Ping
-        `shouldBe` url Ping
+  it "asks for one album's songs by id" $
+    url (GetAlbum (AlbumId "b1"))
+      `shouldBe` "https://music.example.org/rest/getAlbum?id=b1&f=json&" <> credentialQuery
 
-    it "escapes what a query string cannot carry literally" $
-      endpointUrl testServer (Credentials "some one&x" "hunter2") testSalt Ping
-        `shouldSatisfy` ("u=some%20one%26x&" `T.isInfixOf`)
+  it "does not double a slash the server address already ends with" $
+    endpointUrl (Server "https://music.example.org/") testCredentials testSalt Ping
+      `shouldBe` url Ping
 
-  describe "audio requests" $ do
-    it "asks for the file the server stores" $
-      audioUrl testServer testCredentials testSalt (SongId "s1")
-        `shouldBe` "https://music.example.org/rest/stream?id=s1&format=raw&" <> credentialQuery
+  it "escapes what a query string cannot carry literally" $
+    endpointUrl testServer (Credentials "some one&x" "hunter2") testSalt Ping
+      `shouldSatisfy` ("u=some%20one%26x&" `T.isInfixOf`)
 
-    it "names no format other than the stored one, and no bit rate" $
-      audioUrl testServer testCredentials testSalt (SongId "s1")
-        `shouldSatisfy` \request ->
-          length (T.breakOnAll "format=" request) == 1
-            && "format=raw" `T.isInfixOf` request
-            && not ("maxBitRate" `T.isInfixOf` request)
+audioRequests :: Spec
+audioRequests = describe "audio requests" $ do
+  it "asks for the file the server stores" $
+    audioUrl testServer testCredentials testSalt (SongId "s1")
+      `shouldBe` "https://music.example.org/rest/stream?id=s1&format=raw&" <> credentialQuery
 
-  describe "reading answers" $ do
-    it "reads a ping" $
-      decodePing pingAnswer `shouldBe` Right ()
+  it "names no format other than the stored one, and no bit rate" $
+    audioUrl testServer testCredentials testSalt (SongId "s1")
+      `shouldSatisfy` \request ->
+        length (T.breakOnAll "format=" request) == 1
+          && "format=raw" `T.isInfixOf` request
+          && not ("maxBitRate" `T.isInfixOf` request)
 
-    it "reads artists out of the server's index groups" $
-      fmap (fmap (.name)) (decodeArtists artistsAnswer)
-        `shouldBe` Right ["zebra", "Aphex Twin", "anohni"]
+readingAnswers :: Spec
+readingAnswers = describe "reading answers" $ do
+  it "reads a ping" $
+    decodePing pingAnswer `shouldBe` Right ()
 
-    it "reads albums, with the year the server gave or none" $
-      fmap (fmap (.year)) (decodeAlbums albumsAnswer)
-        `shouldBe` Right [Just 2001, Just 1992, Nothing]
+  it "reads artists out of the server's index groups" $
+    fmap (fmap (.name)) (decodeArtists artistsAnswer)
+      `shouldBe` Right ["zebra", "Aphex Twin", "anohni"]
 
-    it "reads songs with their track name and total time" $
-      fmap (fmap (\s -> (s.title, s.duration))) (decodeSongs songsAnswer)
-        `shouldBe` Right
-          [ ("Pulsewidth", Seconds 228)
-          , ("Xtal", Seconds 293)
-          , ("Tha", Seconds 543)
-          ]
+  it "reads albums, with the year the server gave or none" $
+    fmap (fmap (.year)) (decodeAlbums albumsAnswer)
+      `shouldBe` Right [Just 2001, Just 1992, Nothing]
 
-    it "gives a song the server timed at nothing a total time of zero" $
-      fmap (fmap (.duration)) (decodeSongs songWithoutDurationAnswer)
-        `shouldBe` Right [Seconds 0]
+  it "reads songs with their track name and total time" $
+    fmap (fmap (\s -> (s.title, s.duration))) (decodeSongs songsAnswer)
+      `shouldBe` Right
+        [ ("Pulsewidth", Seconds 228)
+        , ("Xtal", Seconds 293)
+        , ("Tha", Seconds 543)
+        ]
 
-    it "reads an album the server lists no songs for as empty" $
-      decodeSongs emptyAlbumAnswer `shouldBe` Right []
+  it "gives a song the server timed at nothing a total time of zero" $
+    fmap (fmap (.duration)) (decodeSongs songWithoutDurationAnswer)
+      `shouldBe` Right [Seconds 0]
 
-    it "refuses an answer that is not JSON" $
-      decodePing "<html>gateway</html>" `shouldSatisfy` isMalformed
+  it "reads an album the server lists no songs for as empty" $
+    decodeSongs emptyAlbumAnswer `shouldBe` Right []
 
-    it "refuses an answer missing the payload the call asked for" $
-      decodeArtists pingAnswer `shouldSatisfy` isMalformed
+  it "refuses an answer that is not JSON" $
+    decodePing "<html>gateway</html>" `shouldSatisfy` isMalformed
 
-  describe "classifying failures" $ do
-    it "tells a rejected password from anything else" $
-      decodePing wrongPasswordAnswer
-        `shouldBe` Left (AuthRejected "Wrong username or password")
+  it "refuses an answer missing the payload the call asked for" $
+    decodeArtists pingAnswer `shouldSatisfy` isMalformed
 
-    it "keeps a server's other complaints apart from rejected credentials" $
-      decodeSongs notFoundAnswer `shouldBe` Left (ServerFailure 70 "Album not found")
+classifying :: Spec
+classifying = describe "classifying failures" $ do
+  it "tells a rejected password from anything else" $
+    decodePing wrongPasswordAnswer
+      `shouldBe` Left (AuthRejected "Wrong username or password")
 
-    it "survives a failure the server gives no reason for" $
-      decodePing unexplainedFailureAnswer `shouldSatisfy` \answer -> case answer of
-        Left (ServerFailure _ _) -> True
-        _ -> False
+  it "keeps a server's other complaints apart from rejected credentials" $
+    decodeSongs notFoundAnswer `shouldBe` Left (ServerFailure 70 "Album not found")
 
-  describe "orders" $ do
-    it "puts artists in alphabetical order, whatever their capitals" $
-      fmap (fmap (.name) . byArtistName) (decodeArtists artistsAnswer)
-        `shouldBe` Right ["anohni", "Aphex Twin", "zebra"]
+  it "survives a failure the server gives no reason for" $
+    decodePing unexplainedFailureAnswer `shouldSatisfy` \case
+      Left (ServerFailure _ _) -> True
+      _ -> False
 
-    it "puts an artist's albums oldest year first" $
-      fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsAnswer)
-        `shouldBe` Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
+orders :: Spec
+orders = describe "orders" $ do
+  it "puts artists in alphabetical order, whatever their capitals" $
+    fmap (fmap (.name) . byArtistName) (decodeArtists artistsAnswer)
+      `shouldBe` Right ["anohni", "Aphex Twin", "zebra"]
 
-    it "puts an album's songs in album order, disc by disc" $
-      fmap (fmap (.title) . byTrackOrder) (decodeSongs songsAnswer)
-        `shouldBe` Right ["Xtal", "Tha", "Pulsewidth"]
+  it "puts an artist's albums oldest year first" $
+    fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsAnswer)
+      `shouldBe` Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
 
-    it "puts an album the server gave no year for above the oldest, by name" $
-      fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
-        `shouldBe` Right ["Demos", "Tapes", "Live"]
+  it "puts an album's songs in album order, disc by disc" $
+    fmap (fmap (.title) . byTrackOrder) (decodeSongs songsAnswer)
+      `shouldBe` Right ["Xtal", "Tha", "Pulsewidth"]
 
-    it "puts a song the server gave no track number for first, by name" $
-      fmap (fmap (.title) . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
-        `shouldBe` Right ["Loose end", "Sketch", "Opener"]
+  it "puts an album the server gave no year for above the oldest, by name" $
+    fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
+      `shouldBe` Right ["Demos", "Tapes", "Live"]
+
+  it "puts a song the server gave no track number for first, by name" $
+    fmap (fmap (.title) . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
+      `shouldBe` Right ["Loose end", "Sketch", "Opener"]
 
 isMalformed :: Either SubsonicError a -> Bool
 isMalformed answer = case answer of

@@ -32,121 +32,132 @@ import Test.Hspec (Spec, describe, it, shouldBe)
 
 spec :: Spec
 spec = do
-  describe "command" $ do
-    it "moves to the next field on Tab and on the down arrow" $ do
-      command (Character '\t') [] `shouldBe` Just Ahead
-      command DownArrow [] `shouldBe` Just Ahead
+  commands
+  theThreeFields
+  submitting
+  leaving
+  reading
 
-    it "moves to the field before on the up arrow" $
-      command UpArrow [] `shouldBe` Just Back
+commands :: Spec
+commands = describe "command" $ do
+  it "moves to the next field on Tab and on the down arrow" $ do
+    command (Character '\t') [] `shouldBe` Just Ahead
+    command DownArrow [] `shouldBe` Just Ahead
 
-    it "submits on Enter" $
-      command Enter [] `shouldBe` Just Submit
+  it "moves to the field before on the up arrow" $
+    command UpArrow [] `shouldBe` Just Back
 
-    it "leaves the player on Ctrl+C" $
-      command (Character 'c') [Ctrl] `shouldBe` Just Leave
+  it "submits on Enter" $
+    command Enter [] `shouldBe` Just Submit
 
-    it "types a printable character into the field" $ do
-      command (Character 'x') [] `shouldBe` Just (Type 'x')
-      command (Character ' ') [] `shouldBe` Just (Type ' ')
-      command (Character '!') [] `shouldBe` Just (Type '!')
+  it "leaves the player on Ctrl+C" $
+    command (Character 'c') [Ctrl] `shouldBe` Just Leave
 
-    it "types q like any other character, quitting from nowhere" $
-      command (Character 'q') [] `shouldBe` Just (Type 'q')
+  it "types a printable character into the field" $ do
+    command (Character 'x') [] `shouldBe` Just (Type 'x')
+    command (Character ' ') [] `shouldBe` Just (Type ' ')
+    command (Character '!') [] `shouldBe` Just (Type '!')
 
-    it "takes a character back on Backspace" $
-      command Backspace [] `shouldBe` Just Rub
+  it "types q like any other character, quitting from nowhere" $
+    command (Character 'q') [] `shouldBe` Just (Type 'q')
 
-    it "ignores every other key" $ do
-      command Escape [] `shouldBe` Nothing
-      command LeftArrow [] `shouldBe` Nothing
-      command (Character 'q') [Ctrl] `shouldBe` Nothing
+  it "takes a character back on Backspace" $
+    command Backspace [] `shouldBe` Just Rub
 
-  describe "the three fields" $ do
-    it "opens on the server URL, all three of them empty" $ do
-      blank.focus `shouldBe` ServerUrl
-      fmap (`value` blank) fields `shouldBe` ["", "", ""]
+  it "ignores every other key" $ do
+    command Escape [] `shouldBe` Nothing
+    command LeftArrow [] `shouldBe` Nothing
+    command (Character 'q') [Ctrl] `shouldBe` Nothing
 
-    it "moves through them in the order they are asked in" $ do
-      fmap ahead fields `shouldBe` [Username, Password, ServerUrl]
-      fmap back fields `shouldBe` [Password, ServerUrl, Username]
+theThreeFields :: Spec
+theThreeFields = describe "the three fields" $ do
+  it "opens on the server URL, all three of them empty" $ do
+    blank.focus `shouldBe` ServerUrl
+    fmap (`value` blank) fields `shouldBe` ["", "", ""]
 
-    it "lands on the server URL moving forward from the password" $
-      (.focus) <$> typing [Ahead, Ahead, Ahead] `shouldBe` Right ServerUrl
+  it "moves through them in the order they are asked in" $ do
+    fmap ahead fields `shouldBe` [Username, Password, ServerUrl]
+    fmap back fields `shouldBe` [Password, ServerUrl, Username]
 
-    it "lands on the password moving back from the server URL" $
-      (.focus) <$> typing [Back] `shouldBe` Right Password
+  it "lands on the server URL moving forward from the password" $
+    (.focus) <$> typing [Ahead, Ahead, Ahead] `shouldBe` Right ServerUrl
 
-    it "types into the focused field and no other" $
-      filledIn (typing (typed "me")) `shouldBe` Right ["me", "", ""]
+  it "lands on the password moving back from the server URL" $
+    (.focus) <$> typing [Back] `shouldBe` Right Password
 
-    it "types into whichever field was moved to" $
-      filledIn (typing (typedInto Username "me")) `shouldBe` Right ["", "me", ""]
+  it "types into the focused field and no other" $
+    filledIn (typing (typed "me")) `shouldBe` Right ["me", "", ""]
 
-    it "takes back the last character of the focused field" $
-      filledIn (typing (typed "mee" <> [Rub])) `shouldBe` Right ["me", "", ""]
+  it "types into whichever field was moved to" $
+    filledIn (typing (typedInto Username "me")) `shouldBe` Right ["", "me", ""]
 
-    it "takes nothing back from a field that is empty" $
-      filledIn (typing [Rub, Rub]) `shouldBe` Right ["", "", ""]
+  it "takes back the last character of the focused field" $
+    filledIn (typing (typed "mee" <> [Rub])) `shouldBe` Right ["me", "", ""]
 
-  describe "submitting" $ do
-    it "hands back the credentials a server took" $
-      fst (answering (Right ()) details) `shouldBe` Left (Entered someone)
+  it "takes nothing back from a field that is empty" $
+    filledIn (typing [Rub, Rub]) `shouldBe` Right ["", "", ""]
 
-    it "stores them, so that a later run has them" $
-      snd (answering (Right ()) details) `shouldBe` Log [someone] [someone]
+submitting :: Spec
+submitting = describe "submitting" $ do
+  it "hands back the credentials a server took" $
+    fst (answering (Right ()) details) `shouldBe` Left (Entered someone)
 
-    it "submits from any of the three fields" $
-      fst (answering (Right ()) (filled <> [Back, Submit]))
-        `shouldBe` Left (Entered someone)
+  it "stores them, so that a later run has them" $
+    snd (answering (Right ()) details) `shouldBe` Log [someone] [someone]
 
-    it "stays on the screen when the server refuses the credentials" $
-      (.trouble) <$> fst (answering refusal details)
-        `shouldBe` Right (Just "The server refused these credentials: wrong password")
+  it "submits from any of the three fields" $
+    fst (answering (Right ()) (filled <> [Back, Submit]))
+      `shouldBe` Left (Entered someone)
 
-    it "stays on the screen when the server cannot be reached" $
-      (.trouble) <$> fst (answering unreachable details)
-        `shouldBe` Right (Just "The server could not be reached: no route to host")
+  it "stays on the screen when the server refuses the credentials" $
+    (.trouble) <$> fst (answering refusal details)
+      `shouldBe` Right (Just "The server refused these credentials: wrong password")
 
-    it "stores nothing that was not accepted" $ do
-      (snd (answering refusal details)).kept `shouldBe` []
-      (snd (answering unreachable details)).kept `shouldBe` []
+  it "stays on the screen when the server cannot be reached" $
+    (.trouble) <$> fst (answering unreachable details)
+      `shouldBe` Right (Just "The server could not be reached: no route to host")
 
-    it "keeps what was typed, for it to be typed over" $ do
-      filledIn (fst (answering refusal details))
-        `shouldBe` Right ["https://music.example.org", "someone", "secret"]
-      filledIn (fst (answering refusal (details <> [Rub, Type 't'])))
-        `shouldBe` Right ["https://music.example.org", "someone", "secret"]
+  it "stores nothing that was not accepted" $ do
+    (snd (answering refusal details)).kept `shouldBe` []
+    (snd (answering unreachable details)).kept `shouldBe` []
 
-    it "asks the server once, and does nothing again of its own accord" $
-      asks (snd (answering refusal details)) `shouldBe` 1
+  it "keeps what was typed, for it to be typed over" $ do
+    filledIn (fst (answering refusal details))
+      `shouldBe` Right ["https://music.example.org", "someone", "secret"]
+    filledIn (fst (answering refusal (details <> [Rub, Type 't'])))
+      `shouldBe` Right ["https://music.example.org", "someone", "secret"]
 
-    it "asks it again only when it is submitted again" $
-      asks (snd (answering refusal (details <> [Submit]))) `shouldBe` 2
+  it "asks the server once, and does nothing again of its own accord" $
+    asks (snd (answering refusal details)) `shouldBe` 1
 
-    it "clears what it was told on the next key press" $
-      (.trouble) <$> fst (answering refusal (details <> [Type 'x']))
-        `shouldBe` Right Nothing
+  it "asks it again only when it is submitted again" $
+    asks (snd (answering refusal (details <> [Submit]))) `shouldBe` 2
 
-  describe "leaving" $ do
-    it "ends the screen on Ctrl+C" $
-      fst (answering (Right ()) [Leave]) `shouldBe` Left Abandoned
+  it "clears what it was told on the next key press" $
+    (.trouble) <$> fst (answering refusal (details <> [Type 'x']))
+      `shouldBe` Right Nothing
 
-    it "stores nothing on the way out" $
-      snd (answering (Right ()) (filled <> [Leave])) `shouldBe` Log [] []
+leaving :: Spec
+leaving = describe "leaving" $ do
+  it "ends the screen on Ctrl+C" $
+    fst (answering (Right ()) [Leave]) `shouldBe` Left Abandoned
 
-    it "leaves from any field, and with a server's refusal on screen" $ do
-      fst (answering (Right ()) [Ahead, Ahead, Leave]) `shouldBe` Left Abandoned
-      fst (answering refusal (details <> [Leave])) `shouldBe` Left Abandoned
+  it "stores nothing on the way out" $
+    snd (answering (Right ()) (filled <> [Leave])) `shouldBe` Log [] []
 
-  describe "what a field reads as" $ do
-    it "masks the password and nothing else" $ do
-      masked Password "secret" `shouldBe` "••••••"
-      masked ServerUrl "secret" `shouldBe` "secret"
-      masked Username "secret" `shouldBe` "secret"
+  it "leaves from any field, and with a server's refusal on screen" $ do
+    fst (answering (Right ()) [Ahead, Ahead, Leave]) `shouldBe` Left Abandoned
+    fst (answering refusal (details <> [Leave])) `shouldBe` Left Abandoned
 
-    it "lines the three labels up in a column of their own" $
-      fmap (T.length . labelled) fields `shouldBe` [12, 12, 12]
+reading :: Spec
+reading = describe "what a field reads as" $ do
+  it "masks the password and nothing else" $ do
+    masked Password "secret" `shouldBe` "••••••"
+    masked ServerUrl "secret" `shouldBe` "secret"
+    masked Username "secret" `shouldBe` "secret"
+
+  it "lines the three labels up in a column of their own" $
+    fmap (T.length . labelled) fields `shouldBe` [12, 12, 12]
 
 -- | The fields, in the order they are asked in.
 fields :: [Field]

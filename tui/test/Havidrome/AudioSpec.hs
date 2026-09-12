@@ -18,125 +18,140 @@ import Test.Hspec
 
 spec :: Spec
 spec = do
-  describe "telling the two failures apart" $ do
-    it "blames the file when the server still answers" $
-      failureOf True "unrecognized file format"
-        `shouldBe` Unplayable "the file will not play: unrecognized file format"
+  blaming
+  playing
+  sounding
+  pausing
+  seeking
+  stopping
+  breaking
 
-    it "blames the network when it does not" $
-      failureOf False "loading failed"
-        `shouldBe` Unreachable "the server could not be reached: loading failed"
+blaming :: Spec
+blaming = describe "telling the two failures apart" $ do
+  it "blames the file when the server still answers" $
+    failureOf True "unrecognized file format"
+      `shouldBe` Unplayable "the file will not play: unrecognized file format"
 
-  describe "playing" $ do
-    it "plays a track and reports it finished" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 4)
-        finished <- waitForEvent audio
-        finished `shouldBe` Just Finished
+  it "blames the network when it does not" $
+    failureOf False "loading failed"
+      `shouldBe` Unreachable "the server could not be reached: loading failed"
 
-    it "reports the position advancing while it plays" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 0)
-        moved <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
-        moved `shouldBe` True
+playing :: Spec
+playing = describe "playing" $ do
+  it "plays a track and reports it finished" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 4)
+      finished <- waitForEvent audio
+      finished `shouldBe` Just Finished
 
-    it "starts where it is told to, not at the beginning" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 3)
-        moved <- waitUntil (fmap (>= Just (Seconds 3)) (reached audio))
-        moved `shouldBe` True
+  it "reports the position advancing while it plays" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 0)
+      moved <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
+      moved `shouldBe` True
 
-  describe "the audio starting" $ do
-    it "is reported once the track has been opened" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 0)
-        started <- waitUntil (fmap (== Just Begun) (phase audio))
-        started `shouldBe` True
+  it "starts where it is told to, not at the beginning" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 3)
+      moved <- waitUntil (fmap (>= Just (Seconds 3)) (reached audio))
+      moved `shouldBe` True
 
-    it "is reported for a track held while it loads, which stays held at its start" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 0)
-        audio.pause
-        started <- waitUntil (fmap (== Just Begun) (phase audio))
-        started `shouldBe` True
-        threadDelay 1500000
-        reached audio `shouldReturn` Just (Seconds 0)
-        audio.resume
-        moved <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
-        moved `shouldBe` True
+sounding :: Spec
+sounding = describe "the audio starting" $ do
+  it "is reported once the track has been opened" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 0)
+      started <- waitUntil (fmap (== Just Begun) (phase audio))
+      started `shouldBe` True
 
-  describe "pausing" $
-    it "freezes the position, and resuming continues from it" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 0)
-        _ <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
-        audio.pause
-        settle
-        held <- reached audio
-        threadDelay 1500000
-        stillHeld <- reached audio
-        stillHeld `shouldBe` held
-        audio.resume
-        moved <- waitUntil (fmap (> held) (reached audio))
-        moved `shouldBe` True
+  it "is reported for a track held while it loads, which stays held at its start" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 0)
+      audio.pause
+      started <- waitUntil (fmap (== Just Begun) (phase audio))
+      started `shouldBe` True
+      threadDelay 1500000
+      reached audio `shouldReturn` Just (Seconds 0)
+      audio.resume
+      moved <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
+      moved `shouldBe` True
 
-  describe "seeking" $ do
-    it "moves the audio and the reported position by that amount" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 1)
-        audio.pause
-        settle
-        audio.seekBy 3
-        reached audio `shouldReturn` Just (Seconds 4)
+pausing :: Spec
+pausing = describe "pausing" $
+  it "freezes the position, and resuming continues from it" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 0)
+      _ <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
+      audio.pause
+      settle
+      held <- reached audio
+      threadDelay 1500000
+      stillHeld <- reached audio
+      stillHeld `shouldBe` held
+      audio.resume
+      moved <- waitUntil (fmap (> held) (reached audio))
+      moved `shouldBe` True
 
-    it "lands at the start rather than before it" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 1)
-        audio.pause
-        settle
-        audio.seekBy (-30)
-        reached audio `shouldReturn` Just (Seconds 0)
+seeking :: Spec
+seeking = describe "seeking" $ do
+  it "moves the audio and the reported position by that amount" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 1)
+      audio.pause
+      settle
+      audio.seekBy 3
+      reached audio `shouldReturn` Just (Seconds 4)
 
-    it "lands at the end rather than past it, and the track then finishes" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 1)
-        audio.pause
-        settle
-        audio.seekBy 300
-        reached audio `shouldReturn` Just track.duration
-        audio.resume
-        finished <- waitForEvent audio
-        finished `shouldBe` Just Finished
+  it "lands at the start rather than before it" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 1)
+      audio.pause
+      settle
+      audio.seekBy (-30)
+      reached audio `shouldReturn` Just (Seconds 0)
 
-  describe "stopping" $
-    it "plays nothing more, and does not call that finishing" $
-      withTone (answering True) $ \audio track -> do
-        audio.play track (Seconds 0)
-        _ <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
-        audio.stop
-        quiet <- timeout 1500000 audio.awaitEvent
-        quiet `shouldBe` Nothing
-        audio.nowPlaying `shouldReturn` Stopped
+  it "lands at the end rather than past it, and the track then finishes" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 1)
+      audio.pause
+      settle
+      audio.seekBy 300
+      reached audio `shouldReturn` Just track.duration
+      audio.resume
+      finished <- waitForEvent audio
+      finished `shouldBe` Just Finished
 
-  describe "failing" $ do
-    it "reports a file that will not play as a play failure" $
-      withGarbage (answering True) $ \audio track -> do
-        audio.play track (Seconds 0)
-        failed <- waitForEvent audio
-        failed `shouldSatisfy` failing (Unplayable "the file will not play: unrecognized file format")
+stopping :: Spec
+stopping = describe "stopping" $
+  it "plays nothing more, and does not call that finishing" $
+    withTone (answering True) $ \audio track -> do
+      audio.play track (Seconds 0)
+      _ <- waitUntil (fmap (>= Just (Seconds 1)) (reached audio))
+      audio.stop
+      quiet <- timeout 1500000 audio.awaitEvent
+      quiet `shouldBe` Nothing
+      audio.nowPlaying `shouldReturn` Stopped
 
-    it "reports a server it cannot reach as a network failure" $
-      withGarbage (answering False) $ \audio track -> do
-        audio.play track (Seconds 0)
-        failed <- waitForEvent audio
-        failed `shouldSatisfy` failing (Unreachable "the server could not be reached: unrecognized file format")
+breaking :: Spec
+breaking = describe "failing" $ do
+  it "reports a file that will not play as a play failure" $
+    withGarbage (answering True) $ \audio track -> do
+      audio.play track (Seconds 0)
+      failed <- waitForEvent audio
+      failed `shouldSatisfy` failing (Unplayable "the file will not play: unrecognized file format")
 
-    it "asks the server itself, and calls a server that answers nothing a network failure" $ do
-      reach <- httpReach
-      withPlayer reach $ \audio -> do
-        audio.play (Track nowhere (Seconds 60)) (Seconds 0)
-        failed <- waitForEvent audio
-        failed `shouldSatisfy` unreachable
+  it "reports a server it cannot reach as a network failure" $
+    withGarbage (answering False) $ \audio track -> do
+      audio.play track (Seconds 0)
+      failed <- waitForEvent audio
+      failed `shouldSatisfy` failing (Unreachable "the server could not be reached: unrecognized file format")
+
+  it "asks the server itself, and calls a server that answers nothing a network failure" $ do
+    reach <- httpReach
+    withPlayer reach $ \audio -> do
+      audio.play (Track nowhere (Seconds 60)) (Seconds 0)
+      failed <- waitForEvent audio
+      failed `shouldSatisfy` unreachable
 
 -- | An invented address nothing answers on, so that a track fetched from it
 -- fails the way a track fails against a server that cannot be reached.
