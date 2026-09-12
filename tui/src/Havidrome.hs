@@ -18,7 +18,7 @@ module Havidrome
   , player
   ) where
 
-import Control.Monad.Trans.Except (runExceptT)
+import Data.Functor.Compose (getCompose)
 import Data.Foldable (traverse_)
 import Data.Text as T (Text)
 import Data.Text qualified as T
@@ -67,8 +67,9 @@ start = \case
 -- none, the login screen asks for them, and a run left at that screen browses
 -- nothing at all.
 run :: IO ()
-run =
-  start <$> Store.load >>= \case
+run = do
+  loaded <- Store.load
+  case start loaded of
     Ask -> player havidrome Nothing
     Browse credentials -> player havidrome (Just credentials)
     Stop reason -> stop reason
@@ -127,7 +128,7 @@ browse credentials = do
       (Server credentials.server)
       (Credentials credentials.username credentials.password)
   let browsed = library client
-  runExceptT browsed.artists >>= \case
+  getCompose browsed.artists >>= \case
     Left failure -> stop (explain failure)
     Right artists -> withAudio $ \audio -> do
       session <- newSession audio (songAudioUrl client)

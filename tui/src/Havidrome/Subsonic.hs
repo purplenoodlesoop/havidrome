@@ -27,7 +27,7 @@ module Havidrome.Subsonic
   , mkSalt
   ) where
 
-import Control.Monad.Trans.Except (ExceptT (ExceptT))
+import Data.Functor.Compose (Compose (Compose))
 import Data.ByteString (ByteString)
 import Data.Text as T (Text)
 import Data.Text qualified as T
@@ -49,7 +49,8 @@ import Havidrome.Subsonic.Protocol
   )
 import Havidrome.Subsonic.Transport (Transport (..), newHttpTransport)
 import Havidrome.Subsonic.Types
-import Optics.Core (view, (%))
+import Optics.Core (view)
+import Optics.Core qualified as Optics
 import System.Random (randomRIO)
 
 -- | A server, the credentials to present to it, and the way out to the
@@ -86,7 +87,7 @@ call ::
   IO (Either SubsonicError a)
 call client endpoint decode = do
   answer <-
-    view (#transport % #fetch) client
+    view (#transport Optics.% #fetch) client
       (endpointUrl client.server client.credentials client.salt endpoint)
   pure (answer >>= decode)
 
@@ -116,13 +117,13 @@ songAudioUrl client =
 
 -- | The library a Navidrome server holds. Every call can fail, and a failure
 -- stops the fetch it was part of rather than yielding a half-list, which is
--- what the 'ExceptT' says.
-library :: Client -> Library (ExceptT SubsonicError IO)
+-- what composing the failure into the fetch says.
+library :: Client -> Library (Compose IO (Either SubsonicError))
 library client =
   Library
-    { artists = ExceptT (listArtists client)
-    , albums = ExceptT . listAlbums client
-    , songs = ExceptT . listSongs client
+    { artists = Compose (listArtists client)
+    , albums = Compose . listAlbums client
+    , songs = Compose . listSongs client
     }
 
 -- | Draws a fresh salt. Sixteen characters from an alphabet that needs no

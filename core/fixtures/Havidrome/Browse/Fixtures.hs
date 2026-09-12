@@ -21,7 +21,7 @@ module Havidrome.Browse.Fixtures
   , filledIn
   ) where
 
-import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import Data.Functor.Compose (Compose (Compose, getCompose))
 import Data.Functor.Identity (Identity, runIdentity)
 import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
@@ -42,11 +42,11 @@ import Havidrome.Subsonic.Types
 
 -- | What the stand-in library says: at once, and either an answer or the
 -- failure the specs asked it for.
-type Answer = ExceptT SubsonicError Identity
+type Answer = Compose Identity (Either SubsonicError)
 
 -- | What it said.
 answered :: Answer a -> Either SubsonicError a
-answered = runIdentity . runExceptT
+answered = runIdentity . getCompose
 
 -- | The whole stand-in library, which never fails. It answers wherever it is
 -- asked: the browsing specs ask it outside 'IO', the screen's specs ask it
@@ -60,13 +60,17 @@ library =
     }
 
 -- | A library the server never answers for.
-failing :: (Monad f) => SubsonicError -> Library (ExceptT SubsonicError f)
+failing :: (Applicative f) => SubsonicError -> Library (Compose f (Either SubsonicError))
 failing failure =
   Library
-    { Library.artists = throwE failure
-    , Library.albums = const (throwE failure)
-    , Library.songs = const (throwE failure)
+    { Library.artists = refusing failure
+    , Library.albums = const (refusing failure)
+    , Library.songs = const (refusing failure)
     }
+
+-- What every call of a failing library comes to.
+refusing :: (Applicative f) => SubsonicError -> Compose f (Either SubsonicError) a
+refusing = Compose . pure . Left
 
 artists :: [Artist]
 artists = [artist "a1" "anohni", artist "a2" "Aphex Twin", artist "a3" "zebra"]

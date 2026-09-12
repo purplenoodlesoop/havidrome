@@ -62,7 +62,8 @@ import Havidrome.Subsonic.Types (Seconds (..))
 import Network.HTTP.Client (HttpException, Manager, httpNoBody, method, parseRequest)
 import Network.HTTP.Client.TLS (newTlsManager)
 import Network.Socket (Family (AF_UNIX), Socket, SocketType (Stream), defaultProtocol, socketPair, socketToHandle)
-import Optics.Core (view, (%))
+import Optics.Core (view)
+import Optics.Core qualified as Optics
 import System.IO (BufferMode (LineBuffering), Handle, IOMode (ReadWriteMode), hClose, hFlush, hSetBuffering)
 import System.Process
   ( CreateProcess (std_err, std_in, std_out)
@@ -111,7 +112,7 @@ withAudio use = do
 -- | An audio backend over a named mpv, given extra options and a way to
 -- probe the server. The tests use it to run mpv on a null audio output,
 -- where there is no device to play to.
-withMpv :: FilePath -> [String] -> Reach -> (Audio -> IO a) -> IO a
+withMpv :: FilePath -> [Text] -> Reach -> (Audio -> IO a) -> IO a
 withMpv program options reach use = bracket (start program options reach) end (use . audio)
 
 -- | A mpv player: the state it is in, what it has to report, the line to
@@ -134,7 +135,7 @@ data Mpv = Mpv
 -- | How mpv is run: no window, no terminal, none of the user's own mpv
 -- configuration, and its IPC on the socket it is given as standard input. It
 -- stays idle between tracks instead of exiting.
-arguments :: [String]
+arguments :: [Text]
 arguments =
   [ "--no-config"
   , "--no-terminal"
@@ -143,7 +144,7 @@ arguments =
   , "--input-ipc-client=fd://0"
   ]
 
-start :: FilePath -> [String] -> Reach -> IO Mpv
+start :: FilePath -> [Text] -> Reach -> IO Mpv
 start program options reach = do
   (ours, theirs) <- socketPair AF_UNIX Stream defaultProtocol
   line <- socketToHandle ours ReadWriteMode
@@ -156,12 +157,12 @@ start program options reach = do
   reader <- forkIO (drain player)
   pure (Mpv player process reader)
 
-spawn :: FilePath -> [String] -> Socket -> IO ProcessHandle
+spawn :: FilePath -> [Text] -> Socket -> IO ProcessHandle
 spawn program options socket = do
   theirs <- socketToHandle socket ReadWriteMode
   (_, _, _, process) <-
     createProcess
-      (proc program options)
+      (proc program (fmap T.unpack options))
         { std_in = UseHandle theirs
         , std_out = NoStream
         , std_err = NoStream
@@ -172,7 +173,7 @@ end :: Mpv -> IO ()
 end mpv = do
   killThread mpv.reader
   send mpv.player quit
-  ignoringIO (hClose (view (#player % #line) mpv))
+  ignoringIO (hClose (view (#player Optics.% #line) mpv))
   terminateProcess mpv.process
   _ <- waitForProcess mpv.process
   pure ()
@@ -240,7 +241,7 @@ broke player detail = do
   case current of
     Stopped -> pure ()
     Loaded playback -> do
-      answered <- view (#reach % #answers) player (view (#track % #url) playback)
+      answered <- view (#reach Optics.% #answers) player (view (#track Optics.% #url) playback)
       perform player (Broke (failureOf answered detail))
 
 -- | A server that still answers means the file itself is at fault; a server
@@ -262,9 +263,7 @@ newtype Reach = Reach
 -- that no audio is fetched to answer the question. Any answer at all, refusal
 -- included, means the server was reached.
 httpReach :: IO Reach
-httpReach = do
-  manager <- newTlsManager
-  pure (Reach (probe manager))
+httpReach = Reach . probe <$> newTlsManager
 
 probe :: Manager -> Text -> IO Bool
 probe manager url = case parseRequest (T.unpack url) of

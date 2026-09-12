@@ -84,8 +84,6 @@ library
         stm,
         -- Text everywhere a user reads or types one.
         text,
-        -- The except transformer the client's failures travel in.
-        transformers,
         -- Sets the config file's owner-only permissions.
         unix,
         -- The vector brick's list widget holds its rows in.

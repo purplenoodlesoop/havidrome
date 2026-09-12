@@ -173,7 +173,7 @@ decodeArtists = decodeEnvelope $ \response -> do
   concat <$> traverse (\index -> traverse artist =<< index .:? "artist" .!= []) indexes
  where
   artist = withObject "artist" $ \o ->
-    Artist <$> (ArtistId <$> o .: "id") <*> o .: "name"
+    Artist . ArtistId <$> o .: "id" <*> o .: "name"
 
 -- | The albums @getArtist@ reports for the artist that was asked for.
 decodeAlbums :: ByteString -> Either SubsonicError [Album]
@@ -182,7 +182,7 @@ decodeAlbums = decodeEnvelope $ \response -> do
   traverse album =<< artist .:? "album" .!= []
  where
   album = withObject "album" $ \o ->
-    Album <$> (AlbumId <$> o .: "id") <*> o .: "name" <*> o .:? "year"
+    Album . AlbumId <$> o .: "id" <*> o .: "name" <*> o .:? "year"
 
 -- | The songs @getAlbum@ reports for the album that was asked for. A song the
 -- server gives no duration for is taken as zero rather than rejected, so one
@@ -194,7 +194,8 @@ decodeSongs = decodeEnvelope $ \response -> do
  where
   song = withObject "song" $ \o ->
     Song
-      <$> (SongId <$> o .: "id")
+      . SongId
+      <$> o .: "id"
       <*> o .: "title"
       <*> (Seconds <$> o .:? "duration" .!= 0)
       <*> o .:? "track"

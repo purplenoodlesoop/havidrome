@@ -159,7 +159,7 @@ step command state = case command of
   SeekBy delta -> onPlayback $ \playback ->
     let at = clampTo playback.track (shiftBy delta playback.elapsed)
      in (Loaded playback {elapsed = at}, [SeekTo at])
-  Stop -> onPlayback $ \_ -> (Stopped, [Unload])
+  Stop -> onPlayback $ const (Stopped, [Unload])
   Observed at -> onPlayback $ \playback ->
     (Loaded playback {elapsed = clampTo playback.track at}, [])
   Opened -> onPlayback $ \playback -> case playback.phase of
@@ -170,8 +170,8 @@ step command state = case command of
   Began -> onPlayback $ \playback -> case playback.phase of
     Opening -> (Loaded playback {phase = Begun}, [])
     _ -> (Loaded playback, [])
-  Ended -> onPlayback $ \_ -> (Stopped, [Announce Finished])
-  Broke failure -> onPlayback $ \_ -> (Stopped, [Announce (Failed failure)])
+  Ended -> onPlayback $ const (Stopped, [Announce Finished])
+  Broke failure -> onPlayback $ const (Stopped, [Announce (Failed failure)])
  where
   -- With no track loaded there is nothing to pause, seek, stop or report, so
   -- everything the player says late — after a stop, or about the track it was

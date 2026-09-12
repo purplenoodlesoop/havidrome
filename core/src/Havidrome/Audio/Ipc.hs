@@ -17,7 +17,7 @@ module Havidrome.Audio.Ipc
   , readNotice
   ) where
 
-import Data.Aeson (Value (Bool, Number, String), (.!=), (.:), (.:?))
+import Data.Aeson (Value (Bool, Number), (.!=), (.:), (.:?))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser, parseMaybe, withObject)
 import Data.ByteString (ByteString)
@@ -51,21 +51,25 @@ render effect = case effect of
   -- The @-1@ is where in the playlist the file goes; @replace@ makes that
   -- moot, but mpv wants the argument before the options it is given.
   Load url at ->
-    Just (command [String "loadfile", String url, String "replace", Number (-1), String (startAt at)])
-  SetPaused held -> Just (command [String "set_property", String "pause", Bool held])
+    Just (command [word "loadfile", word url, word "replace", Number (-1), word (startAt at)])
+  SetPaused held -> Just (command [word "set_property", word "pause", Bool held])
   SeekTo (Seconds at) ->
-    Just (command [String "seek", Number (fromIntegral at), String "absolute"])
-  Unload -> Just (command [String "stop"])
+    Just (command [word "seek", Number (fromIntegral at), word "absolute"])
+  Unload -> Just (command [word "stop"])
   Announce _ -> Nothing
 
 -- | Asks mpv to report the playing position as it changes, which is the only
 -- thing it is asked to volunteer.
 observePosition :: ByteString
-observePosition = command [String "observe_property", Number 1, String "time-pos"]
+observePosition = command [word "observe_property", Number 1, word "time-pos"]
 
 -- | Asks mpv to exit.
 quit :: ByteString
-quit = command [String "quit"]
+quit = command [word "quit"]
+
+-- A word of a command, as the JSON string mpv reads it as.
+word :: Text -> Value
+word = Aeson.toJSON
 
 command :: [Value] -> ByteString
 command arguments =

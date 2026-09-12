@@ -52,6 +52,7 @@ import Havidrome.Login
   , Form (..)
   , blank
   , command
+  , fields
   , labelled
   , masked
   , step
@@ -135,7 +136,7 @@ draw form =
       [ withAttr titleAttribute (line "havidrome")
       , line " "
       ]
-        <> fmap field [minBound .. maxBound]
+        <> fmap field fields
         <> [ fill ' '
            , maybe emptyWidget (withAttr troubleAttribute . line) form.trouble
            ]

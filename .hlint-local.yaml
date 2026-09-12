@@ -1,0 +1,10 @@
+# Relaxations of the shared ruleset, each naming the modules it covers and why
+# they are let off. The shared config is never edited; this file is passed
+# after it, and a later --hint wins.
+
+# `div`, `mod` and `divMod` are partial in their divisor, and Havidrome.Divide
+# is what gives the rest of the tree a total answer for them. It cannot do
+# that without using them once, and it does nothing else.
+- ignore:
+    name: Avoid partial function
+    within: [Havidrome.Divide]

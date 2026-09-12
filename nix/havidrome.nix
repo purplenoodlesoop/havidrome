@@ -85,7 +85,6 @@ let
         crypton
         http-types
         text
-        transformers
       ];
 
       testHaskellDepends = [
@@ -153,7 +152,6 @@ let
         random
         stm
         text
-        transformers
         unix
         vector
         vty

@@ -53,7 +53,8 @@ import Havidrome.Audio
 import Havidrome.Playback.Playing
 import Havidrome.Playback.Queue
 import Havidrome.Subsonic.Types (Seconds (..), Song (..), SongId)
-import Optics.Core (view, (%))
+import Optics.Core (view)
+import Optics.Core qualified as Optics
 
 -- | An album being played through one audio backend. It holds the album, the
 -- place in it and how the session came to that place; how far into a song the
@@ -109,11 +110,11 @@ stop session = onPlace session $ \_ -> do
 
 -- | Halt the audio where it is.
 pause :: Session -> IO ()
-pause = view (#audio % #pause)
+pause = view (#audio Optics.% #pause)
 
 -- | Let the audio run again from where it was held.
 resume :: Session -> IO ()
-resume = view (#audio % #resume)
+resume = view (#audio Optics.% #resume)
 
 -- | Halt the audio if it is running, and let it run again if it is held.
 -- One key does both, so which of the two it is is asked of the backend rather
@@ -121,7 +122,7 @@ resume = view (#audio % #resume)
 -- nothing happens.
 togglePause :: Session -> IO ()
 togglePause session = do
-  state <- view (#audio % #nowPlaying) session
+  state <- view (#audio Optics.% #nowPlaying) session
   case state of
     Stopped -> pure ()
     Loaded playback -> case playback.motion of
@@ -131,20 +132,20 @@ togglePause session = do
 -- | Move this many seconds through the song being played, forwards or back.
 -- The backend clamps it to that song, so a seek never reaches another one.
 seekBy :: Session -> Int -> IO ()
-seekBy = view (#audio % #seekBy)
+seekBy = view (#audio Optics.% #seekBy)
 
 -- | The song being played, or nothing when the album has run out, a song was
 -- picked out of an unreachable server, or nothing has been picked yet.
 nowPlaying :: Session -> IO (Maybe Playing)
 nowPlaying session = do
   current <- readMVar session.place
-  state <- view (#audio % #nowPlaying) session
+  state <- view (#audio Optics.% #nowPlaying) session
   pure (playingAt state <$> current)
 
 playingAt :: State -> Place -> Playing
 playingAt state place =
   Playing
-    { song = view (#queue % #playing) place
+    { song = view (#queue Optics.% #playing) place
     , elapsed = elapsedIn state
     , arrival = place.arrival
     , sound = soundIn state
@@ -162,7 +163,7 @@ attend :: Session -> IO [Failure]
 attend session = modifyMVar session.place (heed [])
  where
   heed shown current = do
-    heard <- view (#audio % #nextEvent) session
+    heard <- view (#audio Optics.% #nextEvent) session
     case heard of
       Nothing -> pure (current, reverse shown)
       Just Finished -> advance current >>= heed shown
@@ -177,9 +178,9 @@ attend session = modifyMVar session.place (heed [])
 settle :: Session -> Maybe Place -> IO (Maybe Place)
 settle session place = do
   case place of
-    Nothing -> view (#audio % #stop) session
+    Nothing -> view (#audio Optics.% #stop) session
     Just at ->
-      view (#audio % #play) session (trackOf session (view (#queue % #playing) at)) (Seconds 0)
+      view (#audio Optics.% #play) session (trackOf session (view (#queue Optics.% #playing) at)) (Seconds 0)
   pure place
 
 -- | An album position the session was moved to from another of its songs.
@@ -198,15 +199,15 @@ trackOf session song =
 -- comes after.
 discard :: Session -> IO ()
 discard session = do
-  heard <- view (#audio % #nextEvent) session
+  heard <- view (#audio Optics.% #nextEvent) session
   case heard of
     Nothing -> pure ()
     Just _ -> discard session
 
 onPlace :: Session -> (Maybe Place -> IO (Maybe Place)) -> IO ()
-onPlace session act = modifyMVar_ session.place act
+onPlace session = modifyMVar_ session.place
 
 -- | With no album in hand there is nothing to move through, so a control that
 -- would move within one does nothing at all.
 withPlace :: (Place -> IO (Maybe Place)) -> Maybe Place -> IO (Maybe Place)
-withPlace act = maybe (pure Nothing) act
+withPlace = maybe (pure Nothing)

@@ -37,10 +37,12 @@ module Havidrome.Browse.Strip
   ) where
 
 import Data.Char (toUpper)
+import Data.Maybe (fromMaybe)
 import Data.Ord (clamp)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Havidrome.Audio.State (Failure (Unplayable, Unreachable), Motion (Paused, Running))
+import Havidrome.Divide (quotient, quotientRemainder, remainder)
 import Havidrome.Playback.Playing
   ( Arrival (Picked)
   , Playing (..)
@@ -151,10 +153,10 @@ symbol = \case
 -- | The loading indicator at a moment: a dot running round a braille cell, a
 -- step every tenth of a second, which is as often as a beat comes.
 spinner :: Moment -> Text
-spinner (Moment at) = T.take 1 (T.drop turn turns)
+spinner (Moment at) = maybe "" frame (remainder (floor (at * 10)) (T.length turns))
   where
     turns = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    turn = floor (at * 10) `mod` T.length turns
+    frame turn = T.take 1 (T.drop turn turns)
 
 -- | A bar this many columns wide, filled for the part of the total that has
 -- elapsed. Only whole columns fill, so the bar is empty until a column's worth
@@ -165,9 +167,9 @@ progress width (Seconds elapsed) (Seconds total) =
   T.replicate filled "█" <> T.replicate (columns - filled) "░"
   where
     columns = max 0 width
-    filled
-      | total <= 0 = 0
-      | otherwise = clamp (0, columns) (columns * elapsed `div` total)
+    -- A total of nothing has nothing to divide into, and neither has one of
+    -- less than nothing.
+    filled = maybe 0 (clamp (0, columns)) (quotient (columns * elapsed) (max 0 total))
 
 -- | A length of time as a clock reads it: minutes and seconds, and hours as
 -- well once there are any.
@@ -176,8 +178,8 @@ clock (Seconds total) = case hours of
   0 -> number minutes <> ":" <> pad seconds
   _ -> number hours <> ":" <> pad minutes <> ":" <> pad seconds
   where
-    (hours, rest) = max 0 total `divMod` 3600
-    (minutes, seconds) = rest `divMod` 60
+    (hours, rest) = fromMaybe (0, 0) (quotientRemainder (max 0 total) 3600)
+    (minutes, seconds) = fromMaybe (0, 0) (quotientRemainder rest 60)
     number = T.pack . show
     pad = T.justifyRight 2 '0' . number
 
@@ -192,9 +194,9 @@ beat :: Moment -> Maybe Playing -> [Failure] -> Strip -> Strip
 beat at playing failures strip =
   Strip
     { playing
-    , said = case failures of
+    , said = case reverse failures of
         [] -> strip.said >>= lasting at
-        _ -> Just (saidOf at (last failures))
+        latest : _ -> Just (saidOf at latest)
     , at
     }
 

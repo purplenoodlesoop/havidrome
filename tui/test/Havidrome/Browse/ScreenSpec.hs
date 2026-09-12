@@ -9,7 +9,7 @@
 module Havidrome.Browse.ScreenSpec (spec) where
 
 import Control.Monad (foldM, forM_)
-import Control.Monad.Trans.Except (ExceptT)
+import Data.Functor.Compose (Compose)
 import Data.Either (fromRight)
 import Data.List (nub, transpose)
 import Data.Maybe (catMaybes)
@@ -1026,12 +1026,12 @@ resuming session already next = do
   screen <- after session already
   pressing session screen next
 
-walking :: Library (ExceptT SubsonicError IO) -> Session -> [Command] -> IO Screen
+walking :: Library (Compose IO (Either SubsonicError)) -> Session -> [Command] -> IO Screen
 walking held session = foldM (taking held session) start
 
 -- | The screen one key press leaves behind. A key that ends browsing leaves
 -- none, and for that the screen it was pressed on stands.
-taking :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> Command -> IO Screen
+taking :: Library (Compose IO (Either SubsonicError)) -> Session -> Screen -> Command -> IO Screen
 taking held session screen instruction =
   fromRight screen <$> step held session instruction screen
 

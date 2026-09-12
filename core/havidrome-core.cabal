@@ -46,6 +46,7 @@ library
         Havidrome.Browse.Row
         Havidrome.Browse.Strip
         Havidrome.Credentials
+        Havidrome.Divide
         Havidrome.Key
         Havidrome.Library
         Havidrome.Login
@@ -91,9 +92,7 @@ library fixtures
         -- What the fixtures are fixtures of.
         havidrome-core,
         -- Text everywhere the player takes or gives one.
-        text,
-        -- The except transformer a stand-in library's failures travel in.
-        transformers
+        text
 
 test-suite havidrome-core-test
     import:         language

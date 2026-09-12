@@ -10,6 +10,7 @@ module Havidrome.Login
   ( -- * The form
     Form (..)
   , Field (..)
+  , fields
   , blank
   , value
   , ahead
@@ -30,6 +31,7 @@ module Havidrome.Login
   ) where
 
 import Data.Char (isPrint)
+import Data.Maybe (fromMaybe)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Havidrome.Credentials qualified as Credentials
@@ -96,13 +98,27 @@ alter field change form = case field of
   Username -> form {username = change form.username}
   Password -> form {password = change form.password}
 
+-- | Every field, in the order the form asks for them.
+fields :: [Field]
+fields = [minBound ..]
+
 -- | The field after this one, round from the last back to the first.
 ahead :: Field -> Field
-ahead field = if field == maxBound then minBound else succ field
+ahead = following fields
 
 -- | The field before this one, round from the first back to the last.
 back :: Field -> Field
-back field = if field == minBound then maxBound else pred field
+back = following (reverse fields)
+
+-- The field each one of an order is followed by, the last followed by the
+-- first. An order that names every field answers for every field, so the
+-- field asked about is never the one given back.
+following :: [Field] -> Field -> Field
+following order field = fromMaybe field (lookup field (zip order rotated))
+  where
+    rotated = case order of
+      [] -> []
+      first : rest -> rest <> [first]
 
 -- | What a key press means. Nothing else on the login screen does anything.
 data Command

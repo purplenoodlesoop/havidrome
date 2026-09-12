@@ -69,7 +69,8 @@ import Control.Exception (bracket)
 import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get, put)
-import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Data.Functor.Compose (Compose, getCompose)
+import Data.Bool (bool)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Text as T (Text)
@@ -86,6 +87,7 @@ import Havidrome.Browse qualified as Browse
 import Havidrome.Browse.Row (Row (row), marking)
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Overlay, Wrong), Strip)
 import Havidrome.Browse.Strip qualified as Strip
+import Havidrome.Divide (quotientRemainder)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Key.Vty (pressed)
 import Havidrome.Library (Library)
@@ -94,7 +96,8 @@ import Havidrome.Playback (Playing (..), Session, startingAt)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Subsonic (Artist, Song (..), SongId, SubsonicError, explain)
 import Havidrome.Width qualified as Width
-import Optics.Core (view, (%))
+import Optics.Core (view)
+import Optics.Core qualified as Optics
 
 -- | The name brick knows a level's list by. One name per level, so no level
 -- inherits another's scroll position.
@@ -217,7 +220,7 @@ data Ending
 -- song it is on, so the mark is on a picked song from the key press that
 -- picked it — while it is still loading — and follows @n@ and @p@ at once.
 step ::
-  Library (ExceptT SubsonicError IO) ->
+  Library (Compose IO (Either SubsonicError)) ->
   Session ->
   Command ->
   Screen ->
@@ -237,7 +240,7 @@ step library session instruction screen = case instruction of
       traverse_ (Playback.start session) (startingAt album song.id)
       stays taken
     Nothing -> do
-      descended <- runExceptT (Browse.descend library screen.browse)
+      descended <- getCompose (Browse.descend library screen.browse)
       stays $ case descended of
         Left failure -> taken {strip = Strip.wrong (explain failure) taken.strip}
         Right level -> taken {browse = level}
@@ -278,12 +281,12 @@ onBeat session at screen = do
 
 -- | The song that carries the mark: the one being played, if any is.
 markOf :: Maybe Playing -> Maybe SongId
-markOf = fmap (view (#song % #id))
+markOf = fmap (view (#song Optics.% #id))
 
 -- | Hands the terminal to the browsing screen, takes it back when browsing
 -- ends, and says how it ended. The beat runs for exactly as long as the screen
 -- is up.
-browsing :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> IO Ending
+browsing :: Library (Compose IO (Either SubsonicError)) -> Session -> Screen -> IO Ending
 browsing library session screen = do
   beats <- newBChan 1
   bracket (forkIO (beating beats)) killThread $ \_ -> do
@@ -317,7 +320,7 @@ interval = 100_000
 
 -- | The player, browsing the library it is given until it is left, over the
 -- session that plays what is picked in it.
-application :: Library (ExceptT SubsonicError IO) -> Session -> App Screen Beat Name
+application :: Library (Compose IO (Either SubsonicError)) -> Session -> App Screen Beat Name
 application library session =
   App
     { appDraw = draw
@@ -328,7 +331,7 @@ application library session =
     }
 
 handle ::
-  Library (ExceptT SubsonicError IO) ->
+  Library (Compose IO (Either SubsonicError)) ->
   Session ->
   BrickEvent Name Beat ->
   EventM Name Screen ()
@@ -442,9 +445,11 @@ depth = 3
 -- columns at the right taking what does not divide.
 shares :: Int -> Int -> [Int]
 shares count width =
-  [base + fromEnum (at >= count - over) | at <- [0 .. count - 1]]
+  [base + bool 0 1 (at >= count - over) | at <- [0 .. count - 1]]
   where
-    (base, over) = max 0 width `divMod` count
+    -- No columns to share between is no width each, and the comprehension
+    -- above asks for none of it.
+    (base, over) = fromMaybe (0, 0) (quotientRemainder (max 0 width) count)
 
 -- | A row of text across the full width it is given, so that highlighting one
 -- covers the line and not just its letters, and shortened to that width when
