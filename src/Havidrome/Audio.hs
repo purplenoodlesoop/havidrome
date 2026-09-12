@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The layer that actually produces sound: one song's audio, and the
 -- controls over it. It knows a track's address and its length and nothing
 -- else — not what album the track belongs to, not what plays next.
@@ -45,6 +43,7 @@ import Data.ByteString.Char8 qualified as Char8
 import Data.Foldable (traverse_)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import GHC.Generics (Generic)
 import Havidrome.Audio.Ipc (Notice (..), observePosition, quit, readNotice, render)
 import Havidrome.Audio.State
   ( Command (..)
@@ -63,6 +62,7 @@ import Havidrome.Subsonic.Types (Seconds (..))
 import Network.HTTP.Client (HttpException, Manager, httpNoBody, method, parseRequest)
 import Network.HTTP.Client.TLS (newTlsManager)
 import Network.Socket (Family (AF_UNIX), Socket, SocketType (Stream), defaultProtocol, socketPair, socketToHandle)
+import Optics.Core (view, (%))
 import System.IO (BufferMode (LineBuffering), Handle, IOMode (ReadWriteMode), hClose, hFlush, hSetBuffering)
 import System.Process
   ( CreateProcess (std_err, std_in, std_out)
@@ -99,6 +99,7 @@ data Audio = Audio
   , -- | The next thing the backend has to report, waiting for it.
     awaitEvent :: IO Event
   }
+  deriving stock (Generic)
 
 -- | An audio backend over the mpv on @PATH@, which the Nix build supplies.
 -- The player is started when the action begins and gone when it ends.
@@ -116,17 +117,19 @@ withMpv program options reach use = bracket (start program options reach) end (u
 -- | A mpv player: the state it is in, what it has to report, the line to
 -- it, and the process and reader thread behind it.
 data Player = Player
-  { playerState :: MVar State
-  , playerEvents :: TChan Event
-  , playerLine :: Handle
-  , playerReach :: Reach
+  { state :: MVar State
+  , events :: TChan Event
+  , line :: Handle
+  , reach :: Reach
   }
+  deriving stock (Generic)
 
 data Mpv = Mpv
-  { mpvPlayer :: Player
-  , mpvProcess :: ProcessHandle
-  , mpvReader :: ThreadId
+  { player :: Player
+  , process :: ProcessHandle
+  , reader :: ThreadId
   }
+  deriving stock (Generic)
 
 -- | How mpv is run: no window, no terminal, none of the user's own mpv
 -- configuration, and its IPC on the socket it is given as standard input. It
@@ -167,11 +170,11 @@ spawn program options socket = do
 
 end :: Mpv -> IO ()
 end mpv = do
-  killThread (mpvReader mpv)
-  send (mpvPlayer mpv) quit
-  ignoringIO (hClose (playerLine (mpvPlayer mpv)))
-  terminateProcess (mpvProcess mpv)
-  _ <- waitForProcess (mpvProcess mpv)
+  killThread mpv.reader
+  send mpv.player quit
+  ignoringIO (hClose (view (#player % #line) mpv))
+  terminateProcess mpv.process
+  _ <- waitForProcess mpv.process
   pure ()
 
 audio :: Mpv -> Audio
@@ -182,39 +185,39 @@ audio mpv =
     , resume = perform player Resume
     , seekBy = perform player . SeekBy
     , stop = perform player Stop
-    , nowPlaying = readMVar (playerState player)
-    , nextEvent = atomically (tryReadTChan (playerEvents player))
-    , awaitEvent = atomically (readTChan (playerEvents player))
+    , nowPlaying = readMVar player.state
+    , nextEvent = atomically (tryReadTChan player.events)
+    , awaitEvent = atomically (readTChan player.events)
     }
  where
-  player = mpvPlayer mpv
+  player = mpv.player
 
 -- | Moves the state on, and does what the step asks for. Holding the state
 -- while the player is told keeps the orders in the order the state took them.
 perform :: Player -> Command -> IO ()
 perform player command =
-  modifyMVar_ (playerState player) $ \current -> do
+  modifyMVar_ player.state $ \current -> do
     let (next, effects) = step command current
     traverse_ (apply player) effects
     pure next
 
 apply :: Player -> Effect -> IO ()
 apply player effect = case effect of
-  Announce event -> atomically (writeTChan (playerEvents player) event)
+  Announce event -> atomically (writeTChan player.events event)
   _ -> traverse_ (send player) (render effect)
 
 -- | A player that has died can no longer be told anything, and says so
 -- through the reader instead of here.
 send :: Player -> ByteString -> IO ()
 send player line =
-  ignoringIO (ByteString.hPut (playerLine player) line >> hFlush (playerLine player))
+  ignoringIO (ByteString.hPut player.line line >> hFlush player.line)
 
 -- | Reads what mpv says for as long as it says anything. The end of the
 -- stream is the player itself dying, which for a loaded track is a failure to
 -- play it.
 drain :: Player -> IO ()
 drain player = do
-  line <- try (Char8.hGetLine (playerLine player))
+  line <- try (Char8.hGetLine player.line)
   case line of
     Left (_ :: IOException) -> broke player "the player stopped"
     Right said -> do
@@ -233,11 +236,11 @@ react player heard = case heard of
 -- whether it is still there.
 broke :: Player -> Text -> IO ()
 broke player detail = do
-  current <- readMVar (playerState player)
+  current <- readMVar player.state
   case current of
     Stopped -> pure ()
     Loaded playback -> do
-      answered <- reach (playerReach player) (trackUrl (playbackTrack playback))
+      answered <- view (#reach % #answers) player (view (#track % #url) playback)
       perform player (Broke (failureOf answered detail))
 
 -- | A server that still answers means the file itself is at fault; a server
@@ -251,8 +254,9 @@ failureOf answered detail
 -- the player has failed, to tell the spec's network failure from its play
 -- failure.
 newtype Reach = Reach
-  { reach :: Text -> IO Bool
+  { answers :: Text -> IO Bool
   }
+  deriving stock (Generic)
 
 -- | A probe that asks the server for the track's headers and nothing else, so
 -- that no audio is fetched to answer the question. Any answer at all, refusal
@@ -260,10 +264,10 @@ newtype Reach = Reach
 httpReach :: IO Reach
 httpReach = do
   manager <- newTlsManager
-  pure (Reach (answers manager))
+  pure (Reach (probe manager))
 
-answers :: Manager -> Text -> IO Bool
-answers manager url = case parseRequest (Text.unpack url) of
+probe :: Manager -> Text -> IO Bool
+probe manager url = case parseRequest (Text.unpack url) of
   Nothing -> pure False
   Just request -> do
     attempt <- try (httpNoBody request {method = "HEAD"} manager)

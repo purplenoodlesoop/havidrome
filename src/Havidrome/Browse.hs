@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 -- | Where browsing stands: artists, then an artist's albums, then an album's
 -- songs, the deepest of them the level being browsed.
 --
@@ -30,9 +28,8 @@ module Havidrome.Browse
 
 import Brick.Widgets.List (List, list, listElements, listMoveBy, listSelectedElement)
 import Data.Vector qualified as Vector
-import Havidrome.Library (Library)
-import Havidrome.Library qualified as Library
-import Havidrome.Subsonic (Album (albumId), Artist (artistId), Song)
+import Havidrome.Library (Library (..))
+import Havidrome.Subsonic (Album (..), Artist (..), Song)
 
 -- | The name brick knows a level's list by. One name per level, so no level
 -- inherits another's scroll position.
@@ -105,12 +102,12 @@ descend library = \case
     case selected artists of
       Nothing -> pure (AtArtists artists)
       Just artist ->
-        AtAlbums artists . rows AlbumList <$> Library.albums library (artistId artist)
+        AtAlbums artists . rows AlbumList <$> library.albums artist.id
   AtAlbums artists albums ->
     case selected albums of
       Nothing -> pure (AtAlbums artists albums)
       Just album ->
-        AtSongs artists albums . rows SongList <$> Library.songs library (albumId album)
+        AtSongs artists albums . rows SongList <$> library.songs album.id
   AtSongs artists albums songs -> pure (AtSongs artists albums songs)
 
 -- | One level up, to the list it was descended from, still selecting the item

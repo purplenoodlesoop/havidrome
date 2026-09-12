@@ -1,7 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Rendering a widget the way brick renders it to a terminal, without a
 -- terminal: what the screen would say, which of its rows stand out, and what
 -- is at its edges.

@@ -9,9 +9,8 @@
 -- Nothing here performs I\/O, so all of it is exercised on its own.
 module Havidrome.Playback.Queue
   ( -- * The album, and the place in it
-    Queue
+    Queue (playing)
   , startingAt
-  , playing
   , songs
 
     -- * Moving through it
@@ -19,16 +18,17 @@ module Havidrome.Playback.Queue
   , backward
   ) where
 
+import GHC.Generics (Generic)
 import Havidrome.Subsonic.Types (Song (..), SongId)
 
 -- | An album's songs with one of them playing: those before it, nearest
 -- first, and those after it, in album order.
 data Queue = Queue
-  { queueBefore :: [Song]
-  , queuePlaying :: Song
-  , queueAfter :: [Song]
+  { before :: [Song]
+  , playing :: Song
+  , after :: [Song]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | The queue over an album that starts at one of its songs, or nothing when
 -- that song is not one of the album's. The songs are taken in the order they
@@ -38,38 +38,34 @@ startingAt album wanted = go [] album
  where
   go _ [] = Nothing
   go before (song : after)
-    | songId song == wanted = Just (Queue before song after)
+    | song.id == wanted = Just (Queue before song after)
     | otherwise = go (song : before) after
-
--- | The song the queue is on.
-playing :: Queue -> Song
-playing = queuePlaying
 
 -- | The whole album, in album order. It never changes as the queue moves.
 songs :: Queue -> [Song]
-songs queue = reverse (queueBefore queue) <> (queuePlaying queue : queueAfter queue)
+songs queue = reverse queue.before <> (queue.playing : queue.after)
 
 -- | The next song of the album, or nothing on the last song — where the
 -- album, and with it the playing, runs out.
 forward :: Queue -> Maybe Queue
-forward queue = case queueAfter queue of
+forward queue = case queue.after of
   [] -> Nothing
   song : rest ->
     Just
       Queue
-        { queueBefore = queuePlaying queue : queueBefore queue
-        , queuePlaying = song
-        , queueAfter = rest
+        { before = queue.playing : queue.before
+        , playing = song
+        , after = rest
         }
 
 -- | The previous song of the album; on the first song, that same song, so
 -- that going back there is going back to its beginning.
 backward :: Queue -> Queue
-backward queue = case queueBefore queue of
+backward queue = case queue.before of
   [] -> queue
   song : rest ->
     Queue
-      { queueBefore = rest
-      , queuePlaying = song
-      , queueAfter = queuePlaying queue : queueAfter queue
+      { before = rest
+      , playing = song
+      , after = queue.playing : queue.after
       }

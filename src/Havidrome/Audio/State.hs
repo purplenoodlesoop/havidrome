@@ -31,16 +31,17 @@ module Havidrome.Audio.State
   ) where
 
 import Data.Text (Text)
+import GHC.Generics (Generic)
 import Havidrome.Subsonic.Types (Seconds (..))
 
 -- | One song's audio: where it is, and how long it runs. The duration is the
 -- server's, the same one the overlay shows, and it is what a seek clamps
 -- against.
 data Track = Track
-  { trackUrl :: Text
-  , trackDuration :: Seconds
+  { url :: Text
+  , duration :: Seconds
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Whether a loaded track is moving or held where it is.
 data Motion = Running | Paused
@@ -70,12 +71,12 @@ data Phase
 -- | A loaded track, how it is moving, how far into it the audio has come, and
 -- whether that audio has started yet.
 data Playback = Playback
-  { playbackTrack :: Track
-  , playbackMotion :: Motion
-  , playbackElapsed :: Seconds
-  , playbackPhase :: Phase
+  { track :: Track
+  , motion :: Motion
+  , elapsed :: Seconds
+  , phase :: Phase
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Either a track is loaded or nothing is. Nothing is loaded before the
 -- first song, and after one is stopped, finishes, or fails.
@@ -148,26 +149,26 @@ step :: Command -> State -> (State, [Effect])
 step command state = case command of
   Start track from ->
     let at = clampTo track from
-     in (Loaded (Playback track Running at Requested), [Load (trackUrl track) at, SetPaused False])
-  Pause -> onPlayback $ \playback -> case playbackMotion playback of
-    Running -> (Loaded playback {playbackMotion = Paused}, [SetPaused True])
+     in (Loaded (Playback track Running at Requested), [Load track.url at, SetPaused False])
+  Pause -> onPlayback $ \playback -> case playback.motion of
+    Running -> (Loaded playback {motion = Paused}, [SetPaused True])
     Paused -> (Loaded playback, [])
-  Resume -> onPlayback $ \playback -> case playbackMotion playback of
-    Paused -> (Loaded playback {playbackMotion = Running}, [SetPaused False])
+  Resume -> onPlayback $ \playback -> case playback.motion of
+    Paused -> (Loaded playback {motion = Running}, [SetPaused False])
     Running -> (Loaded playback, [])
   SeekBy delta -> onPlayback $ \playback ->
-    let at = clampTo (playbackTrack playback) (shiftBy delta (playbackElapsed playback))
-     in (Loaded playback {playbackElapsed = at}, [SeekTo at])
+    let at = clampTo playback.track (shiftBy delta playback.elapsed)
+     in (Loaded playback {elapsed = at}, [SeekTo at])
   Stop -> onPlayback $ \_ -> (Stopped, [Unload])
   Observed at -> onPlayback $ \playback ->
-    (Loaded playback {playbackElapsed = clampTo (playbackTrack playback) at}, [])
-  Opened -> onPlayback $ \playback -> case playbackPhase playback of
-    Requested -> (Loaded playback {playbackPhase = Opening}, [])
+    (Loaded playback {elapsed = clampTo playback.track at}, [])
+  Opened -> onPlayback $ \playback -> case playback.phase of
+    Requested -> (Loaded playback {phase = Opening}, [])
     _ -> (Loaded playback, [])
   -- Held or running, a track whose audio starts has begun: a track held
   -- while it loads finishes loading held.
-  Began -> onPlayback $ \playback -> case playbackPhase playback of
-    Opening -> (Loaded playback {playbackPhase = Begun}, [])
+  Began -> onPlayback $ \playback -> case playback.phase of
+    Opening -> (Loaded playback {phase = Begun}, [])
     _ -> (Loaded playback, [])
   Ended -> onPlayback $ \_ -> (Stopped, [Announce Finished])
   Broke failure -> onPlayback $ \_ -> (Stopped, [Announce (Failed failure)])
@@ -185,7 +186,7 @@ step command state = case command of
 clampTo :: Track -> Seconds -> Seconds
 clampTo track (Seconds wanted) = Seconds (max 0 (min end wanted))
  where
-  Seconds end = trackDuration track
+  Seconds end = track.duration
 
 shiftBy :: Int -> Seconds -> Seconds
 shiftBy delta (Seconds at) = Seconds (at + delta)

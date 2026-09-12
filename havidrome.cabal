@@ -6,7 +6,30 @@ build-type:      Simple
 
 common language
     default-language:   GHC2021
-    default-extensions: DerivingStrategies
+    default-extensions:
+        DerivingStrategies
+        DerivingVia
+        DeriveAnyClass
+        GeneralizedNewtypeDeriving
+        LambdaCase
+        MultiWayIf
+        BlockArguments
+        ViewPatterns
+        PatternSynonyms
+        QuasiQuotes
+        ApplicativeDo
+        OverloadedStrings
+        OverloadedLabels
+        OverloadedRecordDot
+        DuplicateRecordFields
+        NoFieldSelectors
+        RecordWildCards
+        NamedFieldPuns
+        TypeFamilies
+        DataKinds
+        FunctionalDependencies
+        UndecidableInstances
+
     ghc-options:
         -Wall -Wcompat -Widentities -Wmissing-export-lists
         -Wmissing-home-modules -Wmissing-deriving-strategies -Wpartial-fields
@@ -56,12 +79,12 @@ library
         http-client-tls,
         -- Reads status codes and builds query strings.
         http-types,
-        -- The lenses brick's list widget is driven through.
-        microlens,
         -- The state monad the brick event handlers run in.
         mtl,
         -- Opens the unix socket mpv is commanded over.
         network,
+        -- Reaches the fields nested inside a record.
+        optics-core,
         -- Starts mpv and holds on to the process.
         process,
         -- Draws the salt for each password token.

@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The vocabulary of the Subsonic client: what it is pointed at, what it
 -- hands back, and the ways it can fail.
 module Havidrome.Subsonic.Types
@@ -24,17 +21,18 @@ module Havidrome.Subsonic.Types
 
 import Data.Text (Text)
 import Data.Text qualified as Text
+import GHC.Generics (Generic)
 
 -- | The base address of a Navidrome server, as typed at the login screen —
 -- @https:\/\/music.example.org@, with or without a trailing slash. Nothing is
 -- hardcoded to a particular server.
-newtype Server = Server {serverUrl :: Text}
+newtype Server = Server {url :: Text}
   deriving stock (Eq, Show)
 
 -- | A username and password to present to a server.
 data Credentials = Credentials
-  { credentialsUser :: Text
-  , credentialsPassword :: Text
+  { user :: Text
+  , password :: Text
   }
   deriving stock (Eq)
 
@@ -43,9 +41,9 @@ data Credentials = Credentials
 instance Show Credentials where
   showsPrec d credentials =
     showParen (d > 10) $
-      showString "Credentials {credentialsUser = "
-        . shows (credentialsUser credentials)
-        . showString ", credentialsPassword = <hidden>}"
+      showString "Credentials {user = "
+        . shows credentials.user
+        . showString ", password = <hidden>}"
 
 newtype ArtistId = ArtistId Text
   deriving stock (Eq, Ord, Show)
@@ -57,35 +55,35 @@ newtype SongId = SongId Text
   deriving stock (Eq, Ord, Show)
 
 -- | A whole number of seconds.
-newtype Seconds = Seconds {unSeconds :: Int}
+newtype Seconds = Seconds Int
   deriving stock (Eq, Ord, Show)
 
 data Artist = Artist
-  { artistId :: ArtistId
-  , artistName :: Text
+  { id :: ArtistId
+  , name :: Text
   }
   deriving stock (Eq, Show)
 
 data Album = Album
-  { albumId :: AlbumId
-  , albumName :: Text
+  { id :: AlbumId
+  , name :: Text
   , -- | Absent when the server records no year for the album.
-    albumYear :: Maybe Int
+    year :: Maybe Int
   }
   deriving stock (Eq, Show)
 
 data Song = Song
-  { songId :: SongId
+  { id :: SongId
   , -- | The track name the now-playing overlay shows.
-    songTitle :: Text
+    title :: Text
   , -- | The track's total time, the other half of the overlay.
-    songDuration :: Seconds
+    duration :: Seconds
   , -- | Absent when the server records no track number.
-    songTrack :: Maybe Int
+    track :: Maybe Int
   , -- | Absent on single-disc albums, and when the server records no disc.
-    songDisc :: Maybe Int
+    disc :: Maybe Int
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Why a call did not produce an answer. The player responds differently to
 -- each: a network failure and rejected credentials both keep the login screen

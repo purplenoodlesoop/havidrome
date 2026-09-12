@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The login screen: the three details an account on a Navidrome server is
 -- reached by, the keys that fill them in, and what submitting them does.
 --
@@ -104,13 +101,13 @@ instance Show Form where
   showsPrec d form =
     showParen (d > 10) $
       showString "Form "
-        . showsPrec 11 (serverUrl form)
+        . showsPrec 11 form.serverUrl
         . showString " "
-        . showsPrec 11 (username form)
+        . showsPrec 11 form.username
         . showString " <password> "
-        . showsPrec 11 (focus form)
+        . showsPrec 11 form.focus
         . showString " "
-        . showsPrec 11 (trouble form)
+        . showsPrec 11 form.trouble
 
 -- | The form the screen opens on: three empty fields, the typing in the first
 -- of them, nothing wrong yet.
@@ -126,17 +123,17 @@ blank =
 
 -- | What stands in one field.
 value :: Field -> Form -> Text
-value = \case
-  ServerUrl -> serverUrl
-  Username -> username
-  Password -> password
+value field form = case field of
+  ServerUrl -> form.serverUrl
+  Username -> form.username
+  Password -> form.password
 
 -- | The same field with its contents changed.
 alter :: Field -> (Text -> Text) -> Form -> Form
 alter field change form = case field of
-  ServerUrl -> form {serverUrl = change (serverUrl form)}
-  Username -> form {username = change (username form)}
-  Password -> form {password = change (password form)}
+  ServerUrl -> form {serverUrl = change form.serverUrl}
+  Username -> form {username = change form.username}
+  Password -> form {password = change form.password}
 
 -- | The field after this one, round from the last back to the first.
 ahead :: Field -> Field
@@ -199,8 +196,8 @@ navidrome =
     { accepts = \credentials -> do
         client <-
           newClient
-            (Server (Credentials.server credentials))
-            (Credentials (Credentials.username credentials) (Credentials.password credentials))
+            (Server credentials.server)
+            (Credentials credentials.username credentials.password)
         checkCredentials client
     , keeps = Credentials.save
     }
@@ -223,13 +220,13 @@ data Ending
 step :: (Monad f) => Entry f -> Command -> Form -> f (Either Ending Form)
 step entry instruction form = case instruction of
   Leave -> pure (Left Abandoned)
-  Ahead -> stay quiet {focus = ahead (focus form)}
-  Back -> stay quiet {focus = back (focus form)}
-  Type character -> stay (alter (focus form) (<> Text.singleton character) quiet)
-  Rub -> stay (alter (focus form) dropLast quiet)
+  Ahead -> stay quiet {focus = ahead form.focus}
+  Back -> stay quiet {focus = back form.focus}
+  Type character -> stay (alter form.focus (<> Text.singleton character) quiet)
+  Rub -> stay (alter form.focus dropLast quiet)
   Submit ->
-    accepts entry filled >>= \case
-      Right () -> keeps entry filled >> pure (Left (Entered filled))
+    entry.accepts filled >>= \case
+      Right () -> entry.keeps filled >> pure (Left (Entered filled))
       Left failure -> stay quiet {trouble = Just (explain failure)}
   where
     -- Whatever a key press does, it first clears what the last one was told.
@@ -237,9 +234,9 @@ step entry instruction form = case instruction of
     stay = pure . Right
     filled =
       Credentials.Credentials
-        { Credentials.server = serverUrl form
-        , Credentials.username = username form
-        , Credentials.password = password form
+        { Credentials.server = form.serverUrl
+        , Credentials.username = form.username
+        , Credentials.password = form.password
         }
 
 dropLast :: Text -> Text
@@ -263,7 +260,7 @@ data Screen = Screen
 login :: Entry IO -> IO (Maybe Credentials.Credentials)
 login entry = do
   final <- defaultMain (application entry) (Screen blank Nothing)
-  pure $ case ending final of
+  pure $ case final.ending of
     Just (Entered credentials) -> Just credentials
     Just Abandoned -> Nothing
     Nothing -> Nothing
@@ -272,7 +269,7 @@ login entry = do
 application :: Entry IO -> App Screen e Name
 application entry =
   App
-    { appDraw = draw . form
+    { appDraw = draw . (.form)
     , appChooseCursor = neverShowCursor
     , appHandleEvent = handle entry
     , appStartEvent = pure ()
@@ -286,7 +283,7 @@ handle entry = \case
       Nothing -> pure ()
       Just instruction -> do
         screen <- get
-        stepped <- liftIO (step entry instruction (form screen))
+        stepped <- liftIO (step entry instruction screen.form)
         case stepped of
           Left ended -> put screen {ending = Just ended} >> halt
           Right typed -> put screen {form = typed}
@@ -303,13 +300,13 @@ draw form =
       ]
         <> map field [minBound .. maxBound]
         <> [ fill ' '
-           , maybe emptyWidget (withAttr troubleAttribute . line) (trouble form)
+           , maybe emptyWidget (withAttr troubleAttribute . line) form.trouble
            ]
   ]
   where
     field which =
       standOut which (line (labelled which <> masked which (value which form)))
-    standOut which = if focus form == which then withAttr focusedAttribute else id
+    standOut which = if form.focus == which then withAttr focusedAttribute else id
 
 -- | A row of text across the full width, so that marking one covers the line
 -- and not just its letters.
