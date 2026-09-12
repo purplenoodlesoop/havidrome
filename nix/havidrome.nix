@@ -6,11 +6,9 @@
 let
   inherit (pkgs) haskellPackages mpv-unwrapped;
   inherit (pkgs.haskell.lib.compose)
-    addTestToolDepends
     disableOptimization
     enableDWARFDebugging
     dontStrip
-    doCheck
     overrideCabal
     ;
   inherit (lib.fileset)
@@ -29,6 +27,106 @@ let
     ];
   };
 
+  # The package as `cabal2nix` would have written it, by hand: the Haskell
+  # dependencies arrive as arguments, which is what lets `overrideCabal` --
+  # and so the wrapper, the debug build and the check built on it -- rewrite
+  # the Cabal arguments afterwards.
+  #
+  # The three lists below and the `build-depends` of havidrome.cabal are the
+  # same lists written twice, and nothing checks that they agree: whatever
+  # goes into one goes into the other. The `havidrome` that the cabal's
+  # executable and test suite depend on is this package's own library, built
+  # here beside them, so it appears in neither list.
+  package =
+    {
+      mkDerivation,
+      QuickCheck,
+      aeson,
+      base,
+      brick,
+      bytestring,
+      containers,
+      crypton,
+      directory,
+      filepath,
+      hspec,
+      http-client,
+      http-client-tls,
+      http-types,
+      microlens,
+      mtl,
+      network,
+      process,
+      random,
+      stm,
+      temporary,
+      text,
+      transformers,
+      unix,
+      vector,
+      vty,
+    }:
+    mkDerivation {
+      pname = "havidrome";
+      version = "1.0.0.0";
+      src = source;
+
+      isLibrary = true;
+      isExecutable = true;
+
+      libraryHaskellDepends = [
+        aeson
+        base
+        brick
+        bytestring
+        crypton
+        directory
+        filepath
+        http-client
+        http-client-tls
+        http-types
+        microlens
+        mtl
+        network
+        process
+        random
+        stm
+        text
+        transformers
+        unix
+        vector
+        vty
+      ];
+
+      executableHaskellDepends = [
+        base
+      ];
+
+      testHaskellDepends = [
+        QuickCheck
+        aeson
+        base
+        brick
+        bytestring
+        containers
+        directory
+        filepath
+        hspec
+        http-client
+        http-types
+        stm
+        temporary
+        text
+        transformers
+        unix
+        vector
+        vty
+      ];
+
+      license = lib.licenses.mit;
+      mainProgram = "havidrome";
+    };
+
   # The audio comes out of mpv, and the build is what supplies it: the
   # installed player carries its own on its PATH, so a machine with no mpv
   # installed still plays.
@@ -39,7 +137,7 @@ let
     '';
   });
 
-  release = withPlayer (haskellPackages.callCabal2nix "havidrome" source { });
+  release = withPlayer (haskellPackages.callPackage package { });
 
   # The debug build is unoptimised and keeps its DWARF symbols, so a debugger
   # can follow it and `file` tells the two builds apart.
@@ -48,10 +146,6 @@ let
     enableDWARFDebugging
     dontStrip
   ];
-
-  # A GHC that already carries the package's dependencies, so `cabal` in the
-  # dev shell never reaches for Hackage.
-  ghc = haskellPackages.ghcWithPackages (_: release.getBuildInputs.haskellBuildInputs);
 in
 {
   flake = {
@@ -62,21 +156,5 @@ in
     };
 
     apps.havidrome = release;
-
-    shell = [
-      ghc
-      haskellPackages.cabal-install
-      # The same player the built executable carries, so `cabal run` and
-      # `cabal test` in the shell make sound the same way.
-      mpv-unwrapped
-    ];
-
-    # `nix flake check` builds the package with its test suite enabled. The
-    # tests that drive a real player need one to drive, on a null audio
-    # output: no device, but no stand-in either.
-    output.checks.havidrome-test = lib.pipe release [
-      (addTestToolDepends [ mpv-unwrapped ])
-      doCheck
-    ];
   };
 }

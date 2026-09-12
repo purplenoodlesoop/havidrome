@@ -12,6 +12,10 @@
   outputs =
     { core-flake, ... }:
     core-flake.lib.evalFlake {
-      perSystem = ./nix/havidrome.nix;
+      perSystem.imports = [
+        ./nix/havidrome.nix
+        ./nix/shell.nix
+        ./nix/checks.nix
+      ];
     };
 }
