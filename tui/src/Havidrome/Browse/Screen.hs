@@ -67,10 +67,8 @@ import Brick.Widgets.List (GenericList, list, listMoveTo, listSelectedAttr, rend
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (bracket)
 import Control.Monad (forever)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (get, put)
+import Control.Monad.State (get, liftIO, put)
 import Data.Functor.Compose (Compose, getCompose)
-import Data.Bool (bool)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Text as T (Text)
@@ -92,11 +90,9 @@ import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Key.Vty (pressed)
 import Havidrome.Library (Library)
 import Havidrome.Margin (margined)
-import Havidrome.Playback (Playing (..), Session, startingAt)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Subsonic (Artist, Song (..), SongId, SubsonicError, explain)
 import Havidrome.Width qualified as Width
-import Optics.Core (view)
 import Optics.Core qualified as Optics
 
 -- | The name brick knows a level's list by. One name per level, so no level
@@ -221,7 +217,7 @@ data Ending
 -- picked it — while it is still loading — and follows @n@ and @p@ at once.
 step ::
   Library (Compose IO (Either SubsonicError)) ->
-  Session ->
+  Playback.Session ->
   Command ->
   Screen ->
   IO (Either Ending Screen)
@@ -237,7 +233,7 @@ step library session instruction screen = case instruction of
   Seek by -> toAudio (Playback.seekBy session by)
   Descend -> case picked screen.browse of
     Just (album, song) -> do
-      traverse_ (Playback.start session) (startingAt album song.id)
+      traverse_ (Playback.start session) (Playback.startingAt album song.id)
       stays taken
     Nothing -> do
       descended <- getCompose (Browse.descend library screen.browse)
@@ -269,7 +265,7 @@ newtype Beat = Beat Moment
 -- audio reports lands on the strip in place of the overlay's contents. The mark
 -- moves with the audio too — onto the song an album moved on to or a skip
 -- landed on, and off every song once the playing has ended.
-onBeat :: Session -> Moment -> Screen -> IO Screen
+onBeat :: Playback.Session -> Moment -> Screen -> IO Screen
 onBeat session at screen = do
   failures <- Playback.attend session
   playing <- Playback.nowPlaying session
@@ -280,13 +276,13 @@ onBeat session at screen = do
       }
 
 -- | The song that carries the mark: the one being played, if any is.
-markOf :: Maybe Playing -> Maybe SongId
-markOf = fmap (view (#song Optics.% #id))
+markOf :: Maybe Playback.Playing -> Maybe SongId
+markOf = fmap (Optics.view (#song Optics.% #id))
 
 -- | Hands the terminal to the browsing screen, takes it back when browsing
 -- ends, and says how it ended. The beat runs for exactly as long as the screen
 -- is up.
-browsing :: Library (Compose IO (Either SubsonicError)) -> Session -> Screen -> IO Ending
+browsing :: Library (Compose IO (Either SubsonicError)) -> Playback.Session -> Screen -> IO Ending
 browsing library session screen = do
   beats <- newBChan 1
   bracket (forkIO (beating beats)) killThread $ \_ -> do
@@ -320,7 +316,7 @@ interval = 100_000
 
 -- | The player, browsing the library it is given until it is left, over the
 -- session that plays what is picked in it.
-application :: Library (Compose IO (Either SubsonicError)) -> Session -> App Screen Beat Name
+application :: Library (Compose IO (Either SubsonicError)) -> Playback.Session -> App Screen Beat Name
 application library session =
   App
     { appDraw = draw
@@ -332,7 +328,7 @@ application library session =
 
 handle ::
   Library (Compose IO (Either SubsonicError)) ->
-  Session ->
+  Playback.Session ->
   BrickEvent Name Beat ->
   EventM Name Screen ()
 handle library session = \case
@@ -445,8 +441,9 @@ depth = 3
 -- columns at the right taking what does not divide.
 shares :: Int -> Int -> [Int]
 shares count width =
-  [base + bool 0 1 (at >= count - over) | at <- [0 .. count - 1]]
+  [base + extra at | at <- [0 .. count - 1]]
   where
+    extra at = if at >= count - over then 1 else 0
     -- No columns to share between is no width each, and the comprehension
     -- above asks for none of it.
     (base, over) = fromMaybe (0, 0) (quotientRemainder (max 0 width) count)

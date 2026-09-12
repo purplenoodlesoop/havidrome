@@ -8,3 +8,10 @@
 - ignore:
     name: Avoid partial function
     within: [Havidrome.Divide]
+
+# Havidrome.Width.marks is the Unicode table of zero-width ranges, one entry
+# to a line. The long-function smell counts lines in a declaration, and a
+# table is not a function that has grown past reading.
+- ignore:
+    name: Long function
+    within: [Havidrome.Width.marks]

@@ -28,8 +28,8 @@ import Havidrome.Subsonic.Types (Credentials (..), Server (..))
 
 -- | Reads a fixture written with @'@ where JSON wants @"@, so the fixtures
 -- stay legible as Haskell string literals.
-json :: String -> ByteString
-json = T.encodeUtf8 . T.pack . fmap (\c -> if c == '\'' then '"' else c)
+json :: Text -> ByteString
+json = T.encodeUtf8 . T.map (\c -> if c == '\'' then '"' else c)
 
 testServer :: Server
 testServer = Server "https://music.example.org"
