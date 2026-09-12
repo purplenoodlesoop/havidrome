@@ -11,6 +11,7 @@ import Data.ByteString.Lazy qualified as LazyByteString
 import Data.Foldable (traverse_)
 import Data.Text as T (Text)
 import Data.Text qualified as T
+import Data.Word (Word8)
 import Havidrome.Audio.Ipc
   ( Notice (Broken, Fetching, RanOut, Reached, Underway)
   , observePosition
@@ -72,7 +73,7 @@ orders =
     )
   ,
     ( "every command ends in a newline, which is what separates them"
-    , example (fmap ByteString.last (render Unload) === Just 10)
+    , example ((render Unload >>= ending) === Just 10)
     )
   ,
     ( "the player is asked for the playing position to be reported"
@@ -227,12 +228,16 @@ sent effect = render effect >>= Aeson.decodeStrict
 heard :: ByteString -> Maybe Notice
 heard = readNotice
 
+-- | The byte a line ends with, or nothing where there is no line to end.
+ending :: ByteString -> Maybe Word8
+ending = fmap snd . ByteString.unsnoc
+
 -- | Whether a line the player is sent is one line: it ends the line it is,
 -- and it is all of it.
 oneLine :: ByteString -> PropertyT IO ()
 oneLine line = do
   ByteString.count newline line === 1
-  ByteString.last line === newline
+  ending line === Just newline
   where
     newline = 10
 
