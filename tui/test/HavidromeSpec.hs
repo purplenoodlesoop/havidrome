@@ -24,7 +24,7 @@ import System.Environment (setEnv, unsetEnv)
 import System.Exit (ExitCode (ExitFailure))
 import System.IO (IOMode (WriteMode), hClose, stderr, withFile)
 import System.IO.Temp (withSystemTempDirectory)
-import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, shouldThrow)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldThrow)
 
 spec :: Spec
 spec = do
@@ -36,9 +36,8 @@ spec = do
       start (Present someone) `shouldBe` Browse someone
 
     it "stops when what is stored cannot be read as credentials" $
-      start (Unreadable (MissingField "password")) `shouldSatisfy` \case
-        Stop _ -> True
-        _ -> False
+      start (Unreadable (MissingField "password"))
+        `shouldBe` Stop "the stored credentials could not be read: MissingField \"password\""
 
   describe "player" $ do
     it "browses the account a run starts with, asking for none" $

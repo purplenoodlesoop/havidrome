@@ -9,7 +9,6 @@
 module Havidrome.Browse.ScreenSpec (spec) where
 
 import Control.Monad (foldM, forM_)
-import Data.Functor.Compose (Compose)
 import Data.Either (fromRight)
 import Data.List (transpose)
 import Data.Maybe (catMaybes)
@@ -927,16 +926,16 @@ howColumnsScrollOn = do
   it "scroll each on its own" $ withStandin $ \_ session -> do
     let crowded =
           Library
-            { Library.artists = pure []
+            { Library.artists = pure (Right [])
             , Library.albums =
-                const . pure $
+                const . pure . Right $
                   [ album "First" "First" (Just 2001)
                   , album "Second" "Second" (Just 2002)
                   , album "Third" "Third" (Just 2003)
                   , album "Fourth" "Fourth" (Just 2004)
                   , album "Fifth" "Fifth" (Just 2005)
                   ]
-            , Library.songs = const (pure [])
+            , Library.songs = const (pure (Right []))
             }
         crowding = foldM (taking crowded session)
         many = opening (fmap (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
@@ -1121,12 +1120,12 @@ resuming session already next = do
   screen <- after session already
   pressing session screen next
 
-walking :: Library (Compose IO (Either SubsonicError)) -> Session -> [Command] -> IO Screen
+walking :: Library IO -> Session -> [Command] -> IO Screen
 walking held session = foldM (taking held session) start
 
 -- | The screen one key press leaves behind. A key that ends browsing leaves
 -- none, and for that the screen it was pressed on stands.
-taking :: Library (Compose IO (Either SubsonicError)) -> Session -> Screen -> Command -> IO Screen
+taking :: Library IO -> Session -> Screen -> Command -> IO Screen
 taking held session screen instruction =
   fromRight screen <$> step held session instruction screen
 

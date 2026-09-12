@@ -20,7 +20,6 @@ module Havidrome.Subsonic
   ) where
 
 import Data.ByteString (ByteString)
-import Data.Functor.Compose (Compose (Compose))
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
@@ -53,7 +52,7 @@ data Subsonic = Subsonic
   -- ^ Whether the server this account names accepts it. @Right ()@ is
   -- acceptance; a refusal and an unreachable server are both 'Left', and are
   -- told apart by which 'SubsonicError' it is.
-  , browses :: Credentials.Credentials -> Library (Compose IO (Either SubsonicError))
+  , browses :: Credentials.Credentials -> Library IO
   -- ^ The library that account can walk.
   , addresses :: Credentials.Credentials -> SongId -> Text
   -- ^ Where a song's audio is, for that account: a plain GET, asking for the
@@ -111,17 +110,16 @@ call client endpoint decode = do
 ping :: Client -> IO (Either SubsonicError ())
 ping client = call client Ping decodePing
 
--- | The library a Navidrome server holds. Every call can fail, and a failure
--- stops the fetch it was part of rather than yielding a half-list, which is
--- what composing the failure into the fetch says.
-libraryOf :: Client -> Library (Compose IO (Either SubsonicError))
+-- | The library a Navidrome server holds. Every call can fail, and hands back
+-- the 'SubsonicError' it failed with in place of its list, never a half-list.
+libraryOf :: Client -> Library IO
 libraryOf client =
   Library
-    { artists = Compose (fmap byArtistName <$> call client GetArtists decodeArtists)
+    { artists = fmap byArtistName <$> call client GetArtists decodeArtists
     , albums = \artist ->
-        Compose (fmap byAlbumYear <$> call client (GetArtist artist) decodeAlbums)
+        fmap byAlbumYear <$> call client (GetArtist artist) decodeAlbums
     , songs = \album ->
-        Compose (fmap byTrackOrder <$> call client (GetAlbum album) decodeSongs)
+        fmap byTrackOrder <$> call client (GetAlbum album) decodeSongs
     }
 
 audioFor :: Client -> SongId -> Text

@@ -3,9 +3,7 @@
 -- the client would have put them in, and asking for an artist or an album the
 -- library does not hold yields nothing.
 module Havidrome.Browse.Fixtures
-  ( Answer
-  , answered
-  , library
+  ( library
   , failing
   , artists
   , aphexAlbums
@@ -25,8 +23,6 @@ module Havidrome.Browse.Fixtures
   , filledIn
   ) where
 
-import Data.Functor.Compose (Compose (Compose, getCompose))
-import Data.Functor.Identity (Identity, runIdentity)
 import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text as T (Text)
@@ -44,37 +40,26 @@ import Havidrome.Subsonic.Types
   , SubsonicError
   )
 
--- | What the stand-in library says: at once, and either an answer or the
--- failure the specs asked it for.
-type Answer = Compose Identity (Either SubsonicError)
-
--- | What it said.
-answered :: Answer a -> Either SubsonicError a
-answered = runIdentity . getCompose
-
 -- | The whole stand-in library, which never fails. It answers wherever it is
 -- asked: the browsing specs ask it outside 'IO', the screen's specs ask it
 -- alongside a playback session, which is in 'IO'.
 library :: (Applicative f) => Library f
 library =
   Library
-    { Library.artists = pure artists
-    , Library.albums = \wanted -> pure (Map.findWithDefault [] wanted albumsByArtist)
-    , Library.songs = \wanted -> pure (Map.findWithDefault [] wanted songsByAlbum)
+    { Library.artists = pure (Right artists)
+    , Library.albums = \wanted -> pure (Right (Map.findWithDefault [] wanted albumsByArtist))
+    , Library.songs = \wanted -> pure (Right (Map.findWithDefault [] wanted songsByAlbum))
     }
 
--- | A library the server never answers for.
-failing :: (Applicative f) => SubsonicError -> Library (Compose f (Either SubsonicError))
+-- | A library the server never answers for: every one of the three comes back
+-- as the failure asked for here, and never as a list.
+failing :: (Applicative f) => SubsonicError -> Library f
 failing failure =
   Library
-    { Library.artists = refusing failure
-    , Library.albums = const (refusing failure)
-    , Library.songs = const (refusing failure)
+    { Library.artists = pure (Left failure)
+    , Library.albums = const (pure (Left failure))
+    , Library.songs = const (pure (Left failure))
     }
-
--- What every call of a failing library comes to.
-refusing :: (Applicative f) => SubsonicError -> Compose f (Either SubsonicError) a
-refusing = Compose . pure . Left
 
 artists :: [Artist]
 artists = [artist "a1" "anohni", artist "a2" "Aphex Twin", artist "a3" "zebra"]

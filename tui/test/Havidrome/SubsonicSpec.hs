@@ -4,7 +4,6 @@
 module Havidrome.SubsonicSpec (spec) where
 
 import Data.ByteString (ByteString)
-import Data.Functor.Compose (Compose, getCompose)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Text as T (Text)
 import Data.Text qualified as T
@@ -37,10 +36,10 @@ account =
 
 -- | One of the three lists of that account's library, fetched.
 listing ::
-  (Library (Compose IO (Either SubsonicError)) -> Compose IO (Either SubsonicError) a) ->
+  (Library IO -> IO (Either SubsonicError a)) ->
   Subsonic ->
   IO (Either SubsonicError a)
-listing fetch subsonic = getCompose (fetch (subsonic.browses account))
+listing fetch subsonic = fetch (subsonic.browses account)
 
 spec :: Spec
 spec = do
