@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The browsing screen: every level browsed into as a column of its own, side
 -- by side, the strip along the bottom, the keys that move through the
 -- rightmost column, and the brick application that puts them together.
@@ -45,13 +42,13 @@ import Brick
   , AttrMap
   , AttrName
   , BrickEvent (AppEvent, VtyEvent)
+  , Context (availWidth)
   , EventM
   , Padding (Max, Pad)
   , Size (Fixed, Greedy)
   , Widget (Widget)
   , attrMap
   , attrName
-  , availWidthL
   , customMainWithDefaultVty
   , emptyWidget
   , getContext
@@ -94,17 +91,17 @@ import Havidrome.Browse.Strip (Moment, Showing (Overlay, Wrong), Strip)
 import Havidrome.Browse.Strip qualified as Strip
 import Havidrome.Library (Library)
 import Havidrome.Margin (margined)
-import Havidrome.Playback (Playing (playingSong), Session, startingAt)
+import Havidrome.Playback (Playing (..), Session, startingAt)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Subsonic
-  ( Album (albumName, albumYear)
-  , Artist (artistName)
-  , Song (songId, songTitle, songTrack)
+  ( Album (..)
+  , Artist (..)
+  , Song (..)
   , SongId
   , SubsonicError
   , explain
   )
-import Lens.Micro ((^.))
+import Optics.Core (view, (%))
 
 -- | Everything on screen: the level being browsed, the strip along the bottom
 -- that says what the audio is doing and what last went wrong, the song the
@@ -234,22 +231,22 @@ step library session instruction screen = case instruction of
   NextSong -> toAudio (Playback.next session)
   PreviousSong -> toAudio (Playback.previous session)
   Seek by -> toAudio (Playback.seekBy session by)
-  Descend -> case picked (browse screen) of
+  Descend -> case picked screen.browse of
     Just (album, song) -> do
-      traverse_ (Playback.start session) (startingAt album (songId song))
+      traverse_ (Playback.start session) (startingAt album song.id)
       stays taken
     Nothing -> do
-      descended <- runExceptT (Browse.descend library (browse screen))
+      descended <- runExceptT (Browse.descend library screen.browse)
       stays $ case descended of
-        Left failure -> taken {strip = Strip.wrong (explain failure) (strip taken)}
+        Left failure -> taken {strip = Strip.wrong (explain failure) taken.strip}
         Right level -> taken {browse = level}
   where
     -- Whatever a key press does, the strip hears about it first.
-    taken = screen {strip = Strip.pressed (strip screen)}
+    taken = screen {strip = Strip.pressed screen.strip}
     stays next = do
       on <- Playback.nowPlaying session
       pure (Right next {marked = markOf on})
-    here move = stays taken {browse = move (browse screen)}
+    here move = stays taken {browse = move screen.browse}
     toAudio act = act >> stays taken
     ends ended = Playback.stop session >> pure (Left ended)
 
@@ -274,13 +271,13 @@ onBeat session at screen = do
   playing <- Playback.nowPlaying session
   pure
     screen
-      { strip = Strip.beat at playing failures (strip screen)
+      { strip = Strip.beat at playing failures screen.strip
       , marked = markOf playing
       }
 
 -- | The song that carries the mark: the one being played, if any is.
 markOf :: Maybe Playing -> Maybe SongId
-markOf = fmap (songId . playingSong)
+markOf = fmap (view (#song % #id))
 
 -- | Hands the terminal to the browsing screen, takes it back when browsing
 -- ends, and says how it ended. The beat runs for exactly as long as the screen
@@ -298,7 +295,7 @@ browsing library session screen = do
     -- Only the two commands that end browsing take the screen down, and each
     -- writes down which of them it was; a screen that is gone for any other
     -- reason is one the player was left at.
-    pure (fromMaybe Quit (ending final))
+    pure (fromMaybe Quit final.ending)
 
 -- | A beat, then the next, for as long as it is left running.
 beating :: BChan Beat -> IO ()
@@ -351,8 +348,8 @@ draw :: Screen -> [Widget Name]
 draw screen =
   [ margined $
       vBox
-        [ levels (marked screen) (browse screen)
-        , maybe emptyWidget (padTop (Pad 1) . bottom) (Strip.showing (strip screen))
+        [ levels screen.marked screen.browse
+        , maybe emptyWidget (padTop (Pad 1) . bottom) (Strip.showing screen.strip)
         ]
   ]
   where
@@ -365,7 +362,7 @@ draw screen =
 -- that runs past the edge is cut there by the terminal.
 across :: (Int -> Text) -> Widget Name
 across laidOut = Widget Greedy Fixed $ do
-  width <- (^. availWidthL) <$> getContext
+  width <- (.availWidth) <$> getContext
   render (padRight Max (txt (laidOut width)))
 
 -- | Every level as a column of its own, the artists at the left and each level
@@ -413,7 +410,7 @@ column beingBrowsed heading reading items =
 -- brick joins borders only where it is asked to, and nothing here asks.
 columns :: [Widget Name] -> Widget Name
 columns shown = Widget Greedy Greedy $ do
-  width <- (^. availWidthL) <$> getContext
+  width <- (.availWidth) <$> getContext
   render (hBox (zipWith3 place [0 :: Int ..] (shares depth width) shown))
   where
     place at width widget
@@ -437,7 +434,7 @@ shares count width =
 -- it runs longer.
 line :: Text -> Widget Name
 line said = Widget Greedy Fixed $ do
-  width <- (^. availWidthL) <$> getContext
+  width <- (.availWidth) <$> getContext
   render (padRight Max (txt (shorten width said)))
 
 -- | Text on one line of at most this many terminal columns. What does not fit
@@ -465,10 +462,10 @@ class Row a where
   row :: a -> Text
 
 instance Row Artist where
-  row = artistName
+  row artist = artist.name
 
 instance Row Album where
-  row album = figure 4 (albumYear album) <> "  " <> albumName album
+  row album = figure 4 album.year <> "  " <> album.name
 
 instance Row Song where
   row = marking Nothing
@@ -481,10 +478,10 @@ instance Row Song where
 -- Only a song has this: an album or an artist is never marked for the song
 -- playing out of it.
 marking :: Maybe SongId -> Song -> Text
-marking on song = figure 3 (songTrack song) <> " " <> marker <> " " <> songTitle song
+marking on song = figure 3 song.track <> " " <> marker <> " " <> song.title
   where
     marker
-      | on == Just (songId song) = mark
+      | on == Just song.id = mark
       | otherwise = " "
 
 -- | The mark on the song playback is on.

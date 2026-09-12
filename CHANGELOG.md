@@ -9,4 +9,4 @@ First release: a terminal player for a Navidrome server.
 - Play an album from any of its songs, streamed as the original file, with
   pause, next, previous and seeking.
 
-Runs on Linux and macOS, each on x86_64 and aarch64.
+Runs on Linux (x86_64, aarch64) and macOS (aarch64).

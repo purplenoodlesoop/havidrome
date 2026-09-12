@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The credential store, exercised against a throwaway config directory so
 -- that nothing here can touch the real one.
 module CredentialsSpec (spec) where

@@ -26,6 +26,7 @@ module Havidrome.Subsonic
 
 import Data.ByteString (ByteString)
 import Data.Text (Text)
+import GHC.Generics (Generic)
 import Havidrome.Subsonic.Protocol
   ( Endpoint (..)
   , Salt
@@ -43,15 +44,17 @@ import Havidrome.Subsonic.Protocol
   )
 import Havidrome.Subsonic.Transport (Transport (..), newHttpTransport)
 import Havidrome.Subsonic.Types
+import Optics.Core (view, (%))
 
 -- | A server, the credentials to present to it, and the way out to the
 -- network.
 data Client = Client
-  { clientServer :: Server
-  , clientCredentials :: Credentials
-  , clientSalt :: Salt
-  , clientTransport :: Transport
+  { server :: Server
+  , credentials :: Credentials
+  , salt :: Salt
+  , transport :: Transport
   }
+  deriving stock (Generic)
 
 -- | A client that speaks HTTP, with a salt drawn for this session.
 newClient :: Server -> Credentials -> IO Client
@@ -64,10 +67,10 @@ newClient server credentials = do
 clientOver :: Transport -> Salt -> Server -> Credentials -> Client
 clientOver transport salt server credentials =
   Client
-    { clientServer = server
-    , clientCredentials = credentials
-    , clientSalt = salt
-    , clientTransport = transport
+    { server
+    , credentials
+    , salt
+    , transport
     }
 
 call ::
@@ -77,9 +80,8 @@ call ::
   IO (Either SubsonicError a)
 call client endpoint decode = do
   answer <-
-    fetch
-      (clientTransport client)
-      (endpointUrl (clientServer client) (clientCredentials client) (clientSalt client) endpoint)
+    view (#transport % #fetch) client
+      (endpointUrl client.server client.credentials client.salt endpoint)
   pure (answer >>= decode)
 
 -- | Whether the server accepts the client's credentials. @Right ()@ is
@@ -104,4 +106,4 @@ listSongs client album = fmap (fmap byTrackOrder) (call client (GetAlbum album) 
 -- stores and never for a transcode of it.
 songAudioUrl :: Client -> SongId -> Text
 songAudioUrl client =
-  audioUrl (clientServer client) (clientCredentials client) (clientSalt client)
+  audioUrl client.server client.credentials client.salt

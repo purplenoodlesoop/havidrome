@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The browsing screen: what the keys do, what the terminal shows, what
 -- picking a song does to the audio under it, and what the strip along the
 -- bottom says about that audio.
@@ -62,7 +60,7 @@ import Havidrome.Browse.Screen
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Wrong), showing)
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
-import Havidrome.Playback (Playing (playingElapsed, playingSong), Session, nowPlaying)
+import Havidrome.Playback (Playing (..), Session, nowPlaying)
 import Havidrome.Playback qualified as Playback
 import Havidrome.Playback.Standin
   ( Standin
@@ -77,12 +75,12 @@ import Havidrome.Playback.Standin
   )
 import Havidrome.Subsonic
   ( Seconds (Seconds)
-  , Song (songId)
+  , Song (..)
   , SongId (SongId)
   , SubsonicError (NetworkFailure)
   )
 import Terminal (Cell, border, inBold, inside, reversed, runs, screenshot, terminal, vacant)
-import Test.Hspec (Spec, describe, it, shouldBe, shouldNotContain, shouldReturn, shouldSatisfy)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldReturn, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (NonNegative (NonNegative))
 
@@ -161,12 +159,12 @@ spec = do
 
     it "says in the strip why the library did not answer" $ withStandin $ \_ session -> do
       screen <- stumbling session [Descend]
-      showing (strip screen) `shouldBe` Just (Wrong "The server could not be reached: down")
+      showing screen.strip `shouldBe` Just (Wrong "The server could not be reached: down")
 
     it "clears the strip on the next key press" $ withStandin $ \_ session -> do
       screen <- stumbling session [Descend]
       cleared <- taking library session screen MoveDown
-      showing (strip cleared) `shouldBe` Nothing
+      showing cleared.strip `shouldBe` Nothing
 
   describe "picking a song" $ do
     it "plays the song the selection is on" $ withStandin $ \standin session -> do
@@ -1104,11 +1102,11 @@ ends session instruction path = do
 
 -- | The song the session is playing, if it is playing one.
 playing :: Session -> IO (Maybe Song)
-playing = fmap (fmap playingSong) . nowPlaying
+playing = fmap (fmap (.song)) . nowPlaying
 
 -- | How far into that song the audio has come.
 elapsed :: Session -> IO (Maybe Seconds)
-elapsed = fmap (fmap playingElapsed) . nowPlaying
+elapsed = fmap (fmap (.elapsed)) . nowPlaying
 
 -- | The audio runs out, so many times, with nothing pressed: only the beat the
 -- screen takes it in on. This is the whole of \"playback continues through the
@@ -1146,7 +1144,7 @@ breaking session standin failure = do
 
 -- | What the strip along the bottom has on it.
 onStrip :: Screen -> Maybe Showing
-onStrip = showing . strip
+onStrip screen = showing screen.strip
 
 -- | The strip's row as a terminal 46 columns wide shows it: wide enough to
 -- give the first song of Drukqs a bar of 16 columns, one for every 6s of its
@@ -1162,7 +1160,7 @@ standing screen = filter (\symbol -> any (Text.isInfixOf symbol) (wide 8 screen)
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
-from picked = (address (songId picked), Seconds 0)
+from picked = (address picked.id, Seconds 0)
 
 -- | Every cell of a terminal of this size.
 whole :: (Int, Int) -> Screen -> [[Cell]]
@@ -1275,6 +1273,6 @@ unmarked = map (Text.replace mark " ")
 -- | The artist and the album whose songs are the column being browsed, as
 -- their rows read, when songs are what is being browsed.
 songsOf :: Screen -> Maybe (Text, Text)
-songsOf screen = case browse screen of
+songsOf screen = case screen.browse of
   AtSongs names records _ -> (,) <$> (row <$> selected names) <*> (row <$> selected records)
   _ -> Nothing

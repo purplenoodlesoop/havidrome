@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Walking the three levels, over a library held in the specs.
 module Havidrome.BrowseSpec (spec) where
 
@@ -22,7 +19,7 @@ import Havidrome.Browse.Fixtures
   , drukqsSongs
   , library
   )
-import Havidrome.Subsonic (Album (albumName), Artist (artistName), Song (songTitle), SubsonicError)
+import Havidrome.Subsonic (Album (..), Artist (..), Song (..), SubsonicError)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Positive (Positive))
@@ -31,7 +28,7 @@ spec :: Spec
 spec = do
   describe "atArtists" $ do
     it "opens on the artist list, as the library gave it" $
-      items opening `shouldBe` map artistName artists
+      items opening `shouldBe` map (.name) artists
 
     it "starts with the first artist selected" $
       cursor opening `shouldBe` Just 0
@@ -52,11 +49,11 @@ spec = do
 
   describe "descend" $ do
     it "shows exactly the selected artist's albums, in the library's order" $
-      fmap items (into (moveDown opening)) `shouldBe` Right (map albumName aphexAlbums)
+      fmap items (into (moveDown opening)) `shouldBe` Right (map (.name) aphexAlbums)
 
     it "shows exactly the selected album's songs, in the library's order" $
       fmap items (into (moveDown opening) >>= into . moveDown . moveDown)
-        `shouldBe` Right (map songTitle drukqsSongs)
+        `shouldBe` Right (map (.title) drukqsSongs)
 
     it "selects the first item of the level it opens" $
       fmap cursor (into (moveDown opening)) `shouldBe` Right (Just 0)
@@ -97,9 +94,9 @@ into = answered . descend library
 -- | How the level on screen reads, item by item.
 items :: Browse -> [Text]
 items = \case
-  AtArtists artists' -> map artistName (toList artists')
-  AtAlbums _ albums -> map albumName (toList albums)
-  AtSongs _ _ songs -> map songTitle (toList songs)
+  AtArtists artists' -> map (.name) (toList artists')
+  AtAlbums _ albums -> map (.name) (toList albums)
+  AtSongs _ _ songs -> map (.title) (toList songs)
 
 -- | Which row of the level on screen is selected.
 cursor :: Browse -> Maybe Int

@@ -58,9 +58,9 @@ let
       http-client,
       http-client-tls,
       http-types,
-      microlens,
       mtl,
       network,
+      optics-core,
       process,
       random,
       stm,
@@ -90,9 +90,9 @@ let
         http-client
         http-client-tls
         http-types
-        microlens
         mtl
         network
+        optics-core
         process
         random
         stm

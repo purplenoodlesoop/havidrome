@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The whole of a playback session, driven against a stand-in backend: no
 -- audio device, no server, and nothing of the terminal.
 module Havidrome.PlaybackSpec (spec) where
@@ -21,11 +19,11 @@ album name count = map song [1 .. count]
  where
   song n =
     Song
-      { songId = SongId (name <> Text.pack (show n))
-      , songTitle = name <> Text.pack (" track " <> show n)
-      , songDuration = Seconds 180
-      , songTrack = Just n
-      , songDisc = Nothing
+      { id = SongId (name <> Text.pack (show n))
+      , title = name <> Text.pack (" track " <> show n)
+      , duration = Seconds 180
+      , track = Just n
+      , disc = Nothing
       }
 
 -- | The queue over an album that starts at the song in this place, counting
@@ -33,11 +31,11 @@ album name count = map song [1 .. count]
 at :: [Song] -> Int -> Queue
 at tracks place =
   fromMaybe (error "the album has no song in that place") $
-    startingAt tracks (songId (tracks !! place))
+    startingAt tracks (tracks !! place).id
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
-from song = (address (songId song), Seconds 0)
+from song = (address song.id, Seconds 0)
 
 -- | Nothing is asked of the session: the audio simply runs out, so many
 -- times, and the session is handed what the backend says about it. This is
@@ -50,7 +48,7 @@ runOut standin session times =
 
 -- | The song a session is playing, if it is playing one.
 current :: Session -> IO (Maybe Song)
-current = fmap (fmap playingSong) . nowPlaying
+current = fmap (fmap (.song)) . nowPlaying
 
 spec :: Spec
 spec = do
@@ -114,7 +112,7 @@ spec = do
         start session (tracks `at` 1)
         breakWith standin (Unplayable "the file will not play: unrecognized file format")
         _ <- attend session
-        fmap playingArrival <$> nowPlaying session `shouldReturn` Just Followed
+        fmap (.arrival) <$> nowPlaying session `shouldReturn` Just Followed
 
     it "leaves a picked song held while it loads held at its start once loaded" $
       withStandin $ \standin session -> do

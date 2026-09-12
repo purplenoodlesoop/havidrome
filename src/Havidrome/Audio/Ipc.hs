@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The half of the mpv conversation that is pure: the JSON line each
 -- 'Effect' is sent as, and the reading of the lines mpv sends back. Speaking
 -- to a real player is the only thing left over, so what the player is told
@@ -55,7 +53,8 @@ render effect = case effect of
   Load url at ->
     Just (command [String "loadfile", String url, String "replace", Number (-1), String (startAt at)])
   SetPaused held -> Just (command [String "set_property", String "pause", Bool held])
-  SeekTo at -> Just (command [String "seek", Number (fromIntegral (unSeconds at)), String "absolute"])
+  SeekTo (Seconds at) ->
+    Just (command [String "seek", Number (fromIntegral at), String "absolute"])
   Unload -> Just (command [String "stop"])
   Announce _ -> Nothing
 

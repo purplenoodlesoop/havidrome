@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The player as a whole: where a run starts, the accounts it goes through
 -- one after another, and the points where it has nowhere to browse.
 --
@@ -124,30 +122,30 @@ scripted =
 -- | What the login screen answers this time; with the answers used up, it is
 -- left instead.
 nextAnswer :: State Script (Maybe Credentials)
-nextAnswer = state $ \script -> case answers script of
+nextAnswer = state $ \script -> case script.answers of
   [] -> (Nothing, script)
   (answer : rest) -> (answer, script {answers = rest})
 
 -- | How browsing ends this time; with the endings used up, the player is left.
 nextEnding :: State Script Ending
-nextEnding = state $ \script -> case endings script of
+nextEnding = state $ \script -> case script.endings of
   [] -> (Quit, script)
   (ended : rest) -> (ended, script {endings = rest})
 
 note :: Step -> State Script ()
-note doing = state (\script -> ((), script {taken = doing : taken script}))
+note doing = state (\script -> ((), script {taken = doing : script.taken}))
 
 -- | Everything a run did, in the order it did it: from the credentials it
 -- started with, against a login screen that answers so and browsing that ends
 -- so.
 ran :: [Maybe Credentials] -> [Ending] -> Maybe Credentials -> [Step]
 ran answered ended from =
-  reverse (taken (execState (player scripted from) (Script answered ended [])))
+  reverse (execState (player scripted from) (Script answered ended [])).taken
 
--- | An address nothing answers on, so that the artist list fails to arrive
--- the way it fails against a server that cannot be reached.
+-- | An invented address nothing answers on, so that the artist list fails to
+-- arrive the way it fails against a server that cannot be reached.
 nowhere :: Text
-nowhere = "http://127.0.0.1:1"
+nowhere = "http://nowhere.example"
 
 -- | An empty config directory of its own, so that the specs never read the
 -- credentials of whoever is running them.

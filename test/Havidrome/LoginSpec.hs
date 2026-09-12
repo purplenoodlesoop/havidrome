@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The login screen: what the keys do, what a submit does with what was
 -- typed, and what the terminal shows.
 --
@@ -69,7 +67,7 @@ spec = do
 
   describe "the three fields" $ do
     it "opens on the server URL, all three of them empty" $ do
-      focus blank `shouldBe` ServerUrl
+      blank.focus `shouldBe` ServerUrl
       map (`value` blank) fields `shouldBe` ["", "", ""]
 
     it "moves through them in the order they are asked in" $ do
@@ -77,10 +75,10 @@ spec = do
       map back fields `shouldBe` [Password, ServerUrl, Username]
 
     it "lands on the server URL moving forward from the password" $
-      focus <$> typing [Ahead, Ahead, Ahead] `shouldBe` Right ServerUrl
+      (.focus) <$> typing [Ahead, Ahead, Ahead] `shouldBe` Right ServerUrl
 
     it "lands on the password moving back from the server URL" $
-      focus <$> typing [Back] `shouldBe` Right Password
+      (.focus) <$> typing [Back] `shouldBe` Right Password
 
     it "types into the focused field and no other" $
       filledIn (typing (typed "me")) `shouldBe` Right ["me", "", ""]
@@ -106,16 +104,16 @@ spec = do
         `shouldBe` Left (Entered someone)
 
     it "stays on the screen when the server refuses the credentials" $
-      trouble <$> fst (answering refusal details)
+      (.trouble) <$> fst (answering refusal details)
         `shouldBe` Right (Just "The server refused these credentials: wrong password")
 
     it "stays on the screen when the server cannot be reached" $
-      trouble <$> fst (answering unreachable details)
+      (.trouble) <$> fst (answering unreachable details)
         `shouldBe` Right (Just "The server could not be reached: no route to host")
 
     it "stores nothing that was not accepted" $ do
-      kept (snd (answering refusal details)) `shouldBe` []
-      kept (snd (answering unreachable details)) `shouldBe` []
+      (snd (answering refusal details)).kept `shouldBe` []
+      (snd (answering unreachable details)).kept `shouldBe` []
 
     it "keeps what was typed, for it to be typed over" $ do
       filledIn (fst (answering refusal details))
@@ -130,7 +128,7 @@ spec = do
       asks (snd (answering refusal (details <> [Submit]))) `shouldBe` 2
 
     it "clears what it was told on the next key press" $
-      trouble <$> fst (answering refusal (details <> [Type 'x']))
+      (.trouble) <$> fst (answering refusal (details <> [Type 'x']))
         `shouldBe` Right Nothing
 
   describe "leaving" $ do
@@ -214,7 +212,7 @@ data Log = Log
 
 -- | How many times it was asked anything.
 asks :: Log -> Int
-asks = length . asked
+asks seen = length seen.asked
 
 -- | A stand-in for a server and the config file: it gives the same answer to
 -- every check, and writes down everything that passes through it.
@@ -222,9 +220,9 @@ standin :: Either SubsonicError () -> Entry (State Log)
 standin answer =
   Entry
     { accepts = \credentials -> do
-        modify' (\seen -> seen {asked = asked seen <> [credentials]})
+        modify' (\seen -> seen {asked = seen.asked <> [credentials]})
         pure answer
-    , keeps = \credentials -> modify' (\seen -> seen {kept = kept seen <> [credentials]})
+    , keeps = \credentials -> modify' (\seen -> seen {kept = seen.kept <> [credentials]})
     }
 
 -- | What these commands leave behind over a server giving that answer, and

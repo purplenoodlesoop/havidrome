@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The player itself: the credentials a run starts with, the server they
 -- reach, the browsing screen over its library, and the audio a song picked in
 -- it plays through.
@@ -108,11 +105,11 @@ havidrome =
 player :: (Monad f) => Account f -> Maybe Credentials.Credentials -> f ()
 player account = maybe asked entered
   where
-    asked = asks account >>= traverse_ entered
+    asked = account.asks >>= traverse_ entered
     entered credentials =
-      browses account credentials >>= \case
+      account.browses credentials >>= \case
         Quit -> pure ()
-        LoggedOut -> forgets account >> asked
+        LoggedOut -> account.forgets >> asked
 
 -- | Opens the artist list of the server these credentials reach, hands the
 -- terminal over to it, and says how browsing it ended.
@@ -125,10 +122,10 @@ browse :: Credentials.Credentials -> IO Ending
 browse credentials = do
   client <-
     newClient
-      (Server (Credentials.server credentials))
-      (Credentials (Credentials.username credentials) (Credentials.password credentials))
+      (Server credentials.server)
+      (Credentials credentials.username credentials.password)
   let library = Library.subsonic client
-  runExceptT (Library.artists library) >>= \case
+  runExceptT library.artists >>= \case
     Left failure -> stop (explain failure)
     Right artists -> withAudio $ \audio -> do
       session <- newSession audio (songAudioUrl client)
