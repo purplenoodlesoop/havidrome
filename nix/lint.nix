@@ -70,15 +70,14 @@ let
   # Passing --hint at all is what turns off hlint's search for a `.hlint.yaml`
   # beside the sources, so the shared ruleset and the local file are the only
   # ones that apply. The local one comes second because later files win.
-  arguments =
-    lib.concatStringsSep " " (
-      [
-        "--hint=${hlint-config}"
-        "--hint=${local}"
-      ]
-      ++ language
-      ++ directories
-    );
+  arguments = lib.concatStringsSep " " (
+    [
+      "--hint=${hlint-config}"
+      "--hint=${local}"
+    ]
+    ++ language
+    ++ directories
+  );
 
   # hlint quotes the code it complains about, and the code is not all ASCII;
   # without a UTF-8 locale it dies on the first such character it prints.

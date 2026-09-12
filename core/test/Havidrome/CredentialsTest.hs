@@ -1,5 +1,6 @@
--- | What the config file holds: one field per line, and every line read back
--- as it was written.
+{- | What the config file holds: one field per line, and every line read back
+as it was written.
+-}
 module Havidrome.CredentialsTest (tests) where
 
 import Data.Text as T (Text)
@@ -54,14 +55,15 @@ account =
     , password = "hunter2"
     }
 
--- | An account of any three strings at all, the newlines and backslashes the
--- file has to hide among them.
+{- | An account of any three strings at all, the newlines and backslashes the
+file has to hide among them.
+-}
 anyCredentials :: Gen Credentials
 anyCredentials = do
   server <- field
   username <- field
   password <- field
-  pure Credentials {server, username, password}
-  where
-    field :: Gen Text
-    field = Gen.text (Range.linear 0 20) Gen.unicode
+  pure Credentials{server, username, password}
+ where
+  field :: Gen Text
+  field = Gen.text (Range.linear 0 20) Gen.unicode

@@ -1,12 +1,13 @@
--- | The shell's suite: every group it holds, run one after another. The exit
--- status is hedgehog's own — non-zero the moment a group has a failing
--- property in it.
---
--- The groups that reach outside the process are run one property at a time:
--- the config file and the journal are found through the environment, which is
--- the whole process's, and the audio tests time a real player, which two of
--- them at once would throw off. The rest share nothing and are free to run
--- together.
+{- | The shell's suite: every group it holds, run one after another. The exit
+status is hedgehog's own — non-zero the moment a group has a failing
+property in it.
+
+The groups that reach outside the process are run one property at a time:
+the config file and the journal are found through the environment, which is
+the whole process's, and the audio tests time a real player, which two of
+them at once would throw off. The rest share nothing and are free to run
+together.
+-}
 module Main (main) where
 
 import Havidrome.AudioTest qualified as AudioTest

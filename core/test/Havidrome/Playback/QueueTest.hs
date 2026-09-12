@@ -1,5 +1,6 @@
--- | The album a session plays and the place in it that is playing: what it is
--- made from, and what it does at either end of the album.
+{- | The album a session plays and the place in it that is playing: what it is
+made from, and what it does at either end of the album.
+-}
 module Havidrome.Playback.QueueTest (tests) where
 
 import Data.Maybe (fromMaybe, listToMaybe)
@@ -95,12 +96,12 @@ wherever =
         songs (walk steps queue) === album count
     )
   ]
-  where
-    walking = do
-      count <- Gen.int (Range.linear 1 8)
-      place <- Gen.int (Range.constant 0 (count - 1))
-      steps <- Gen.list (Range.linear 0 30) Gen.bool
-      pure (count, place, steps)
+ where
+  walking = do
+    count <- Gen.int (Range.linear 1 8)
+    place <- Gen.int (Range.constant 0 (count - 1))
+    steps <- Gen.list (Range.linear 0 30) Gen.bool
+    pure (count, place, steps)
 
 -- | An album of so many songs, in album order.
 album :: Int -> [Song]
@@ -116,32 +117,35 @@ song n =
     , disc = Nothing
     }
 
--- | The queue over an album that starts at the song in this place, counting
--- from nothing. An album with no song in that place is the test's own mistake,
--- and fails it where it is made rather than later.
+{- | The queue over an album that starts at the song in this place, counting
+from nothing. An album with no song in that place is the test's own mistake,
+and fails it where it is made rather than later.
+-}
 at :: [Song] -> Int -> PropertyT IO Queue
 at album' place = do
   song' <- evalMaybe (listToMaybe (drop place album'))
   evalMaybe (startingAt album' song'.id)
 
--- | Moving the queue as a run of steps: forward where it can go forward,
--- backward otherwise.
+{- | Moving the queue as a run of steps: forward where it can go forward,
+backward otherwise.
+-}
 walk :: [Bool] -> Queue -> Queue
 walk steps queue = foldl' move queue steps
-  where
-    move current forwards
-      | forwards = fromMaybe current (forward current)
-      | otherwise = backward current
+ where
+  move current forwards
+    | forwards = fromMaybe current (forward current)
+    | otherwise = backward current
 
 -- | Where those same steps land, counted in places rather than songs.
 walkedTo :: Int -> [Bool] -> Int -> Int
 walkedTo count steps place = foldl' move place steps
-  where
-    move current forwards
-      | forwards = min (count - 1) (current + 1)
-      | otherwise = max 0 (current - 1)
+ where
+  move current forwards
+    | forwards = min (count - 1) (current + 1)
+    | otherwise = max 0 (current - 1)
 
--- | Every song the queue reaches by going forward until the album runs out,
--- the one it is on first.
+{- | Every song the queue reaches by going forward until the album runs out,
+the one it is on first.
+-}
 walkTo :: Queue -> [Queue]
 walkTo queue = queue : foldMap walkTo (forward queue)

@@ -31,8 +31,6 @@ in
   flake.output.checks = lib.optionalAttrs (config.flake.packages ? havidrome) {
     havidrome-core-test = tested config.flake.packages.havidrome-core;
 
-    havidrome-tui-test = tested (
-      addTestToolDepends [ mpv-unwrapped ] config.flake.packages.havidrome
-    );
+    havidrome-tui-test = tested (addTestToolDepends [ mpv-unwrapped ] config.flake.packages.havidrome);
   };
 }

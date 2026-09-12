@@ -1,14 +1,15 @@
--- | The credentials the player needs to reach a Navidrome server, and the
--- shape of the plain config file they live in between runs.
---
--- The file holds one @field=value@ line per credential, the password among
--- them in the clear — no keyring, no encryption. Only two characters are ever
--- written differently from how they were given: a backslash and a newline,
--- escaped as @\\\\@ and @\\n@, so that any password whatsoever survives the
--- round trip through a line-oriented file.
---
--- Where that file is, and reading and writing it, is the shell's; what stands
--- in it is here.
+{- | The credentials the player needs to reach a Navidrome server, and the
+shape of the plain config file they live in between runs.
+
+The file holds one @field=value@ line per credential, the password among
+them in the clear — no keyring, no encryption. Only two characters are ever
+written differently from how they were given: a backslash and a newline,
+escaped as @\\\\@ and @\\n@, so that any password whatsoever survives the
+round trip through a line-oriented file.
+
+Where that file is, and reading and writing it, is the shell's; what stands
+in it is here.
+-}
 module Havidrome.Credentials
   ( -- * Credentials
     Credentials (..)
@@ -34,9 +35,10 @@ data Credentials = Credentials
   }
   deriving stock (Eq)
 
--- | Shows the server and the username, and never the password: a credential
--- record that ends up in an error message must not carry the password with
--- it, however plainly the file itself stores it.
+{- | Shows the server and the username, and never the password: a credential
+record that ends up in an error message must not carry the password with
+it, however plainly the file itself stores it.
+-}
 instance Show Credentials where
   showsPrec d credentials =
     showParen (d > 10) $
@@ -48,8 +50,9 @@ instance Show Credentials where
 
 -- | Why a config file could not be read as credentials.
 data Fault
-  = -- | The file is there but could not be read at all: no permission, not
-    -- UTF-8, and so on. Carries the reason as reported.
+  = {- | The file is there but could not be read at all: no permission, not
+    UTF-8, and so on. Carries the reason as reported.
+    -}
     NotAccessible Text
   | -- | A line that is not @field=value@ for a field of t'Credentials'.
     BadLine Text
@@ -59,10 +62,11 @@ data Fault
     RepeatedField Text
   deriving stock (Eq, Show)
 
--- | Why the credentials that were stored cannot be used, in the line the
--- player says before it stops. The fault stands in that line as it is
--- written here, which is what the player has always said; this is the only
--- place a 'Fault' becomes text.
+{- | Why the credentials that were stored cannot be used, in the line the
+player says before it stops. The fault stands in that line as it is
+written here, which is what the player has always said; this is the only
+place a 'Fault' becomes text.
+-}
 explain :: Fault -> Text
 explain fault =
   "the stored credentials could not be read: " <> T.pack (show fault)
@@ -75,8 +79,9 @@ render credentials =
     | (field, value) <- fields
     ]
 
--- | Reads the contents of a config file back. Every way a file can fail to
--- be credentials is a 'Fault', never an exception.
+{- | Reads the contents of a config file back. Every way a file can fail to
+be credentials is a 'Fault', never an exception.
+-}
 parse :: Text -> Either Fault Credentials
 parse text = do
   assigned <- traverse assignment (filter (not . T.null) (T.lines text))
@@ -113,15 +118,16 @@ escape = T.concatMap $ \character -> case character of
   '\n' -> "\\n"
   _ -> T.singleton character
 
--- | The inverse of 'escape'; 'Nothing' for an escape that 'escape'
--- never writes.
+{- | The inverse of 'escape'; 'Nothing' for an escape that 'escape'
+never writes.
+-}
 unescape :: Text -> Maybe Text
 unescape = fmap T.pack . go . T.unpack
-  where
-    go [] = Just []
-    go ('\\' : character : rest) = case character of
-      '\\' -> ('\\' :) <$> go rest
-      'n' -> ('\n' :) <$> go rest
-      _ -> Nothing
-    go ['\\'] = Nothing
-    go (character : rest) = (character :) <$> go rest
+ where
+  go [] = Just []
+  go ('\\' : character : rest) = case character of
+    '\\' -> ('\\' :) <$> go rest
+    'n' -> ('\n' :) <$> go rest
+    _ -> Nothing
+  go ['\\'] = Nothing
+  go (character : rest) = (character :) <$> go rest

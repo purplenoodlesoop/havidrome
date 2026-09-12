@@ -7,9 +7,10 @@
       url = "github:purplenoodlesoop/core-flake";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # The shared hlint ruleset, and the hlint that reads it. Both come from
-    # here so that neither the rules nor the linter's version is whatever the
-    # machine happens to have.
+    # The shared hlint ruleset and the shared fourmolu configuration, with the
+    # hlint and the fourmolu that read them. All four come from here so that
+    # neither the rules nor the tools' versions are whatever the machine
+    # happens to have.
     ai-haskell-linter = {
       url = "github:purplenoodlesoop/ai_haskell_linter";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -28,14 +29,15 @@
 
       perSystem.imports = [
         # Every operation this repository has is a declared task, and this
-        # module is what turns the declarations in `nix/tasks.nix` into apps
-        # and into commands on the dev shell's PATH.
+        # module is what turns those declarations into apps and into commands
+        # on the dev shell's PATH.
         core-flake.nixosModules.tasks
         ./nix/havidrome.nix
         ./nix/shell.nix
         ./nix/checks.nix
         ./nix/tasks.nix
         ./nix/lint.nix
+        ./nix/fmt.nix
       ];
     };
 }

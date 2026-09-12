@@ -1,11 +1,12 @@
--- | The config file the credentials live in between runs: where it is, and
--- reading, writing and throwing it away.
---
--- It is @$XDG_CONFIG_HOME/havidrome/config@, and what stands in it is the
--- shape 'Havidrome.Credentials' settles. Nothing here fails with an exception
--- a caller has to catch: a file that is not credentials comes back as a
--- 'Havidrome.Credentials.Fault', and the exception that made it unreadable
--- goes to the journal on the way.
+{- | The config file the credentials live in between runs: where it is, and
+reading, writing and throwing it away.
+
+It is @$XDG_CONFIG_HOME/havidrome/config@, and what stands in it is the
+shape 'Havidrome.Credentials' settles. Nothing here fails with an exception
+a caller has to catch: a file that is not credentials comes back as a
+'Havidrome.Credentials.Fault', and the exception that made it unreadable
+goes to the journal on the way.
+-}
 module Havidrome.Credentials.Store
   ( -- * The config file
     Store (..)
@@ -37,17 +38,20 @@ import System.Posix.Types (FileMode)
 -- | The one file the player keeps, and everything it does with it.
 data Store = Store
   { file :: IO FilePath
-  -- ^ Where the credentials live: @$XDG_CONFIG_HOME/havidrome/config@, and
-  -- @~\/.config\/havidrome\/config@ when @XDG_CONFIG_HOME@ is unset.
+  {- ^ Where the credentials live: @$XDG_CONFIG_HOME/havidrome/config@, and
+  @~\/.config\/havidrome\/config@ when @XDG_CONFIG_HOME@ is unset.
+  -}
   , load :: IO Stored
   -- ^ Reads the stored credentials, if there are any to read.
   , save :: Credentials -> IO ()
-  -- ^ Stores a set of credentials, replacing whatever was stored before and
-  -- creating the config directory if it is missing. The file is the user's
-  -- own: it holds a password in the clear, so nobody else is let near it.
+  {- ^ Stores a set of credentials, replacing whatever was stored before and
+  creating the config directory if it is missing. The file is the user's
+  own: it holds a password in the clear, so nobody else is let near it.
+  -}
   , discard :: IO ()
-  -- ^ Throws away the stored credentials, leaving nothing behind for a later
-  -- load to find. Discarding when nothing is stored does nothing.
+  {- ^ Throws away the stored credentials, leaving nothing behind for a later
+  load to find. Discarding when nothing is stored does nothing.
+  -}
   }
 
 class HasStore env where
@@ -63,9 +67,10 @@ data Stored
     Present Credentials
   deriving stock (Eq, Show)
 
--- | The config file under the XDG directory the run is given. It opens
--- nothing and holds nothing open, so it is not in 'IO'; each operation finds
--- the file for itself.
+{- | The config file under the XDG directory the run is given. It opens
+nothing and holds nothing open, so it is not in 'IO'; each operation finds
+the file for itself.
+-}
 mkStore :: (HasJournal env) => env -> Store
 mkStore env =
   Store
@@ -85,17 +90,17 @@ loading env = do
   if not exists
     then pure Absent
     else try (ByteString.readFile path) >>= either (unreachable path) (pure . readable)
-  where
-    unreachable :: FilePath -> IOException -> IO Stored
-    unreachable path fault = do
-      let said = T.pack (displayException fault)
-      (getJournal env).writes
-        ("the config file " <> T.pack path <> " could not be read: " <> said)
-      pure (Unreadable (NotAccessible said))
+ where
+  unreachable :: FilePath -> IOException -> IO Stored
+  unreachable path fault = do
+    let said = T.pack (displayException fault)
+    (getJournal env).writes
+      ("the config file " <> T.pack path <> " could not be read: " <> said)
+    pure (Unreadable (NotAccessible said))
 
-    readable bytes = case decodeUtf8' bytes of
-      Left _ -> Unreadable (NotAccessible "the file is not valid UTF-8")
-      Right text -> either Unreadable Present (parse text)
+  readable bytes = case decodeUtf8' bytes of
+    Left _ -> Unreadable (NotAccessible "the file is not valid UTF-8")
+    Right text -> either Unreadable Present (parse text)
 
 saving :: Credentials -> IO ()
 saving credentials = do

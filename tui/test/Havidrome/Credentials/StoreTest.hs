@@ -1,11 +1,12 @@
--- | The credential store, exercised against a throwaway config directory so
--- that nothing here can touch the real one.
+{- | The credential store, exercised against a throwaway config directory so
+that nothing here can touch the real one.
+-}
 module Havidrome.Credentials.StoreTest (tests) where
 
 import Control.Exception (bracket)
 import Data.Bits ((.&.))
-import Data.Foldable (traverse_)
 import Data.ByteString qualified as ByteString
+import Data.Foldable (traverse_)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as Text.IO
@@ -103,14 +104,14 @@ loaded =
   ,
     ( "load returns a password of punctuation and non-ASCII characters unchanged"
     , example do
-        let awkward = account {password = "pä ss=wörd\\ 密码 \"#!\" \t "}
+        let awkward = account{password = "pä ss=wörd\\ 密码 \"#!\" \t "}
         stored <- evalIO (withConfigHome (\_ -> store.save awkward >> store.load))
         stored === Present awkward
     )
   ,
     ( "load returns a password of backslashes and newlines unchanged"
     , example do
-        let awkward = account {password = "one\\ntwo\nthree\\\n"}
+        let awkward = account{password = "one\\ntwo\nthree\\\n"}
         stored <- evalIO (withConfigHome (\_ -> store.save awkward >> store.load))
         stored === Present awkward
     )
@@ -226,9 +227,10 @@ anySave =
     )
   ]
 
--- | The store as the player builds it, over a journal that keeps nothing. It
--- finds the config file for itself, so this one value serves every throwaway
--- directory below.
+{- | The store as the player builds it, over a journal that keeps nothing. It
+finds the config file for itself, so this one value serves every throwaway
+directory below.
+-}
 store :: Store
 store = mkStore silent
 
@@ -248,14 +250,15 @@ other =
     , password = "correct horse"
     }
 
--- | Credentials of every shape a user can type: any characters at all in the
--- password, the ones the file has to escape among them.
+{- | Credentials of every shape a user can type: any characters at all in the
+password, the ones the file has to escape among them.
+-}
 anAccount :: Gen Credentials
 anAccount = do
   server <- Gen.text (Range.linear 1 40) (Gen.element address)
   username <- Gen.text (Range.linear 0 20) Gen.unicode
   password <- Gen.text (Range.linear 0 40) (Gen.frequency [(3, Gen.unicode), (1, Gen.element awkward)])
-  pure Credentials {server = "https://" <> server, username, password}
+  pure Credentials{server = "https://" <> server, username, password}
  where
   address = T.unpack "abcdefghijklmnopqrstuvwxyz.:/-0123456789"
   awkward = T.unpack "\\\n=\t \""
@@ -266,8 +269,9 @@ withConfigHome use =
   withSystemTempDirectory "havidrome-config" $ \home ->
     withEnvironment "XDG_CONFIG_HOME" (Just home) (use home)
 
--- | Runs an action with one environment variable set, or unset, restoring
--- whatever it held before.
+{- | Runs an action with one environment variable set, or unset, restoring
+whatever it held before.
+-}
 withEnvironment :: Text -> Maybe FilePath -> IO a -> IO a
 withEnvironment name value action =
   bracket (lookupEnv named <* apply value) apply (const action)
@@ -275,8 +279,9 @@ withEnvironment name value action =
   named = T.unpack name
   apply = maybe (unsetEnv named) (setEnv named)
 
--- | What the store makes of a config file holding exactly this, which no save
--- would have written.
+{- | What the store makes of a config file holding exactly this, which no save
+would have written.
+-}
 loading :: Text -> IO Stored
 loading contents = withConfigHome $ \_ -> do
   path <- store.file

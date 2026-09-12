@@ -1,9 +1,10 @@
--- | The strip along the bottom: the now-playing line it carries, and the
--- reasons that take it over and how long each of them holds it.
---
--- Nothing here plays anything: a strip is told what is playing and what has
--- failed, so the few seconds a skipped track's reason lasts are checked
--- against a clock the test winds itself, with nothing waited for.
+{- | The strip along the bottom: the now-playing line it carries, and the
+reasons that take it over and how long each of them holds it.
+
+Nothing here plays anything: a strip is told what is playing and what has
+failed, so the few seconds a skipped track's reason lasts are checked
+against a clock the test winds itself, with nothing waited for.
+-}
 module Havidrome.Browse.StripTest (tests) where
 
 import Data.Text as T (Text)
@@ -325,8 +326,9 @@ spareWidth = Gen.int (Range.linear 0 60)
 intoBtoum :: Gen Int
 intoBtoum = Gen.int (Range.linear 0 96)
 
--- | The strip a beat leaves behind at the start of the clock, with nothing
--- having failed since the last one.
+{- | The strip a beat leaves behind at the start of the clock, with nothing
+having failed since the last one.
+-}
 played :: Maybe Playing -> Strip -> Strip
 played playing' = beat (Moment 0) playing' []
 
@@ -334,13 +336,15 @@ played playing' = beat (Moment 0) playing' []
 playing :: Playing -> Strip
 playing = flip played quiet . Just
 
--- | The strip a beat leaves behind when the track it has just moved on from
--- would not play, at the start of the clock.
+{- | The strip a beat leaves behind when the track it has just moved on from
+would not play, at the start of the clock.
+-}
 skipped :: Strip -> Strip
 skipped = beat (Moment 0) (Just (jynweythek 0)) [broken]
 
--- | The same for a server that could not be reached, after which nothing is
--- playing at all.
+{- | The same for a server that could not be reached, after which nothing is
+playing at all.
+-}
 unreachable :: Strip -> Strip
 unreachable = beat (Moment 0) Nothing [offline]
 
@@ -348,15 +352,17 @@ broken, offline :: Failure
 broken = Unplayable "the file will not play: it is broken"
 offline = Unreachable "the server could not be reached: it is down"
 
--- | How each of those reads on the strip: the backend's reason as a sentence
--- of its own.
+{- | How each of those reads on the strip: the backend's reason as a sentence
+of its own.
+-}
 brokenly, offlinely :: Text
 brokenly = "The file will not play: it is broken"
 offlinely = "The server could not be reached: it is down"
 
--- | The first song of Drukqs, 1:36 long, picked and its audio running, this
--- far into it. Its symbol, name and times take 30 columns with the gaps
--- between them, so each column past those is one of the bar's.
+{- | The first song of Drukqs, 1:36 long, picked and its audio running, this
+far into it. Its symbol, name and times take 30 columns with the gaps
+between them, so each column past those is one of the bar's.
+-}
 btoum :: Int -> Playing
 btoum at = Playing Fixtures.btoumRoumada (Seconds at) Picked (Sounding Running)
 
@@ -372,8 +378,9 @@ pickingBtoum = Playing Fixtures.btoumRoumada (Seconds 0) Picked Loading
 followingBtoum :: Playing
 followingBtoum = Playing Fixtures.btoumRoumada (Seconds 0) Followed Loading
 
--- | The third song of Drukqs, 4:53 long, picked and its audio running, this
--- far into it.
+{- | The third song of Drukqs, 4:53 long, picked and its audio running, this
+far into it.
+-}
 vordhosbn :: Int -> Playing
 vordhosbn at = Playing Fixtures.vordhosbn (Seconds at) Picked (Sounding Running)
 
@@ -381,7 +388,8 @@ vordhosbn at = Playing Fixtures.vordhosbn (Seconds at) Picked (Sounding Running)
 jynweythek :: Int -> Playing
 jynweythek at = Playing Fixtures.jynweythek (Seconds at) Picked (Sounding Running)
 
--- | A song the server gives no length for, picked and its audio running, this
--- far into it.
+{- | A song the server gives no length for, picked and its audio running, this
+far into it.
+-}
 silence :: Int -> Playing
 silence at = Playing (unnumbered "s9" "Silence" 0) (Seconds at) Picked (Sounding Running)

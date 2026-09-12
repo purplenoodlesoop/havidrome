@@ -1,6 +1,7 @@
--- | What the terminal reports, as the screens read it: every key the player
--- binds arrives as itself, every modifier it looks at survives the way in,
--- and anything else arrives as nothing at all.
+{- | What the terminal reports, as the screens read it: every key the player
+binds arrives as itself, every modifier it looks at survives the way in,
+and anything else arrives as nothing at all.
+-}
 module Havidrome.Key.VtyTest (tests) where
 
 import Graphics.Vty qualified as Vty

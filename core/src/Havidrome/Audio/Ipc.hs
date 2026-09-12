@@ -1,11 +1,12 @@
--- | The half of the mpv conversation that is pure: the JSON line each
--- 'Effect' is sent as, and the reading of the lines mpv sends back. Speaking
--- to a real player is the only thing left over, so what the player is told
--- and what it is understood to have said are both testable on their own.
---
--- mpv's IPC is one JSON object per line in each direction. Everything it says
--- that this player has no use for — replies to its own commands, the file
--- being loaded, the playlist going idle — reads as 'Nothing'.
+{- | The half of the mpv conversation that is pure: the JSON line each
+'Effect' is sent as, and the reading of the lines mpv sends back. Speaking
+to a real player is the only thing left over, so what the player is told
+and what it is understood to have said are both testable on their own.
+
+mpv's IPC is one JSON object per line in each direction. Everything it says
+that this player has no use for — replies to its own commands, the file
+being loaded, the playlist going idle — reads as 'Nothing'.
+-}
 module Havidrome.Audio.Ipc
   ( -- * Speaking
     render
@@ -31,12 +32,14 @@ import Havidrome.Subsonic.Types (Seconds (..))
 data Notice
   = -- | The audio has reached this position, in whole seconds.
     Reached Seconds
-  | -- | mpv has started on the file it was last told to play: it is fetching
-    -- and opening it, and no audio has come of it yet.
+  | {- | mpv has started on the file it was last told to play: it is fetching
+    and opening it, and no audio has come of it yet.
+    -}
     Fetching
-  | -- | The audio is underway: the file has been opened and its audio has
-    -- started, or a seek has landed. mpv says so even for a file held while
-    -- it loads, once it is ready to play.
+  | {- | The audio is underway: the file has been opened and its audio has
+    started, or a seek has landed. mpv says so even for a file held while
+    it loads, once it is ready to play.
+    -}
     Underway
   | -- | The track ran out on its own.
     RanOut
@@ -44,8 +47,9 @@ data Notice
     Broken Text
   deriving stock (Eq, Show)
 
--- | The line that sends an effect, or 'Nothing' for an effect that is not
--- mpv's business.
+{- | The line that sends an effect, or 'Nothing' for an effect that is not
+mpv's business.
+-}
 render :: Effect -> Maybe ByteString
 render effect = case effect of
   -- The @-1@ is where in the playlist the file goes; @replace@ makes that
@@ -58,8 +62,9 @@ render effect = case effect of
   Unload -> Just (command [word "stop"])
   Announce _ -> Nothing
 
--- | Asks mpv to report the playing position as it changes, which is the only
--- thing it is asked to volunteer.
+{- | Asks mpv to report the playing position as it changes, which is the only
+thing it is asked to volunteer.
+-}
 observePosition :: ByteString
 observePosition = command [word "observe_property", Number 1, word "time-pos"]
 
@@ -106,7 +111,8 @@ notice = withObject "mpv event" $ \event -> do
         _ -> fail "an ending this player asked for"
     _ -> fail "an event this player has no use for"
 
--- | mpv counts in fractions of a second; the player counts in whole ones, and
--- a position is the second the audio is inside.
+{- | mpv counts in fractions of a second; the player counts in whole ones, and
+a position is the second the audio is inside.
+-}
 position :: Double -> Seconds
 position = Seconds . floor

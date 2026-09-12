@@ -1,5 +1,6 @@
--- | Answers copied from the shape Navidrome really sends, and the pieces of a
--- client the specs point at a stand-in server.
+{- | Answers copied from the shape Navidrome really sends, and the pieces of a
+client the specs point at a stand-in server.
+-}
 module Havidrome.Subsonic.Fixtures
   ( json
   , testServer
@@ -26,8 +27,9 @@ import Data.Text.Encoding qualified as T
 import Havidrome.Subsonic.Protocol (Salt, mkSalt)
 import Havidrome.Subsonic.Types (Credentials (..), Server (..))
 
--- | Reads a fixture written with @'@ where JSON wants @"@, so the fixtures
--- stay legible as Haskell string literals.
+{- | Reads a fixture written with @'@ where JSON wants @"@, so the fixtures
+stay legible as Haskell string literals.
+-}
 json :: Text -> ByteString
 json = T.encodeUtf8 . T.map (\c -> if c == '\'' then '"' else c)
 
@@ -35,13 +37,14 @@ testServer :: Server
 testServer = Server "https://music.example.org"
 
 testCredentials :: Credentials
-testCredentials = Credentials {user = "someone", password = "hunter2"}
+testCredentials = Credentials{user = "someone", password = "hunter2"}
 
 testSalt :: Salt
 testSalt = mkSalt "abc123"
 
--- | @md5("hunter2" <> "abc123")@, hex-encoded — what the server compares
--- against, pinned here so the auth scheme cannot drift unnoticed.
+{- | @md5("hunter2" <> "abc123")@, hex-encoded — what the server compares
+against, pinned here so the auth scheme cannot drift unnoticed.
+-}
 testToken :: Text
 testToken = "c402b3eac5900b52527b1f83f2fc94b3"
 

@@ -1,5 +1,6 @@
--- | The measure every line is laid out against: what a character takes on a
--- terminal, what a line of them takes, and what is left of a line cut to fit.
+{- | The measure every line is laid out against: what a character takes on a
+terminal, what a line of them takes, and what is left of a line cut to fit.
+-}
 module Havidrome.WidthTest (tests) where
 
 import Data.Char (isControl)
@@ -101,7 +102,8 @@ shortening =
     )
   ]
 
--- | Any line whatsoever: the control characters a terminal would obey among
--- them, and the wide characters that take two columns rather than one.
+{- | Any line whatsoever: the control characters a terminal would obey among
+them, and the wide characters that take two columns rather than one.
+-}
 line :: Gen Text
 line = Gen.text (Range.linear 0 30) Gen.unicode

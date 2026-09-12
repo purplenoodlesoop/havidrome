@@ -1,10 +1,11 @@
--- | Rendering a widget the way brick renders it to a terminal, without a
--- terminal: what the screen would say, which of its rows stand out, and what
--- is at its edges.
---
--- A screen is taken in as its cells, one to a character, which keeps them in
--- line with the terminal's columns for as long as no character on it is a
--- wide one.
+{- | Rendering a widget the way brick renders it to a terminal, without a
+terminal: what the screen would say, which of its rows stand out, and what
+is at its edges.
+
+A screen is taken in as its cells, one to a character, which keeps them in
+line with the terminal's columns for as long as no character on it is a
+wide one.
+-}
 module Terminal
   ( -- * The cells of a screen
     Cell
@@ -45,42 +46,48 @@ import Graphics.Vty.PictureToSpans (displayOpsForPic)
 import Graphics.Vty.Span (SpanOp (RowEnd, Skip, TextSpan), textSpanAttr, textSpanText)
 import Lists (drop1, dropEnd1, takeEnd)
 
--- | One cell of a screen: how it is drawn — nothing where nothing was — and
--- the character in it.
+{- | One cell of a screen: how it is drawn — nothing where nothing was — and
+the character in it.
+-}
 type Cell = (Maybe Attr, Char)
 
--- | Every row of a screen of this size, top row first, as the cells along it,
--- left to right.
+{- | Every row of a screen of this size, top row first, as the cells along it,
+left to right.
+-}
 terminal :: (Ord name) => AttrMap -> DisplayRegion -> [Widget name] -> [[Cell]]
 terminal theme region widgets =
   fmap (concatMap cells . Vector.toList) (Vector.toList (displayOpsForPic picture region))
-  where
-    picture = renderWidget (Just theme) widgets region
-    cells = \case
-      TextSpan {textSpanAttr, textSpanText} -> fmap (Just textSpanAttr,) (Lazy.unpack textSpanText)
-      Skip columns -> replicate columns nothing
-      RowEnd columns -> replicate columns nothing
-    nothing = (Nothing, ' ')
+ where
+  picture = renderWidget (Just theme) widgets region
+  cells = \case
+    TextSpan{textSpanAttr, textSpanText} -> fmap (Just textSpanAttr,) (Lazy.unpack textSpanText)
+    Skip columns -> replicate columns nothing
+    RowEnd columns -> replicate columns nothing
+  nothing = (Nothing, ' ')
 
--- | The same rows with the outermost row and column taken off every side:
--- what is within a margin of one cell.
+{- | The same rows with the outermost row and column taken off every side:
+what is within a margin of one cell.
+-}
 inside :: [[Cell]] -> [[Cell]]
 inside = fmap (dropEnd1 . drop1) . dropEnd1 . drop1
 
--- | The cells along the edges of the same rows: the top and bottom rows, and
--- the leftmost and rightmost cell of every row.
+{- | The cells along the edges of the same rows: the top and bottom rows, and
+the leftmost and rightmost cell of every row.
+-}
 border :: [[Cell]] -> [Cell]
 border rows = concat (ends rows) <> concatMap ends rows
-  where
-    ends line = take 1 line <> takeEnd 1 line
+ where
+  ends line = take 1 line <> takeEnd 1 line
 
--- | Whether a cell shows nothing: a space, drawn as the terminal draws what it
--- is given no look for, or not drawn at all.
+{- | Whether a cell shows nothing: a space, drawn as the terminal draws what it
+is given no look for, or not drawn at all.
+-}
 vacant :: Cell -> Bool
 vacant (look, character) = character == ' ' && all (== defAttr) look
 
--- | Every row, with the blanks at the end of each row dropped so that a row
--- reads as what was written on it.
+{- | Every row, with the blanks at the end of each row dropped so that a row
+reads as what was written on it.
+-}
 screenshot :: [[Cell]] -> [Text]
 screenshot = fmap (T.stripEnd . text)
 
@@ -88,22 +95,24 @@ screenshot = fmap (T.stripEnd . text)
 highlighted :: [[Cell]] -> [Text]
 highlighted = screenshot . filter (any (reversed . fst))
 
--- | Each stretch drawn in bold, top row first and left to right along a row:
--- where a row has several things side by side, only the one in bold.
+{- | Each stretch drawn in bold, top row first and left to right along a row:
+where a row has several things side by side, only the one in bold.
+-}
 inBold :: [[Cell]] -> [Text]
 inBold =
   filter (not . T.null)
     . fmap (T.stripEnd . text)
     . concatMap (filter (all emboldened) . groupBy ((==) `on` emboldened))
-  where
-    emboldened = drawnIn bold . fst
+ where
+  emboldened = drawnIn bold . fst
 
--- | Every row as the runs along it that are drawn alike, left to right: how
--- each run is drawn and what it says, blanks included.
+{- | Every row as the runs along it that are drawn alike, left to right: how
+each run is drawn and what it says, blanks included.
+-}
 runs :: [[Cell]] -> [[(Maybe Attr, Text)]]
 runs = fmap (fmap run . NonEmpty.groupBy ((==) `on` fst))
-  where
-    run (first :| rest) = (fst first, text (first : rest))
+ where
+  run (first :| rest) = (fst first, text (first : rest))
 
 -- | Whether what is drawn so is in reverse video.
 reversed :: Maybe Attr -> Bool
@@ -116,4 +125,3 @@ drawnIn wanted = \case
 
 text :: [Cell] -> Text
 text = T.pack . fmap snd
-
