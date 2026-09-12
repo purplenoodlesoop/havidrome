@@ -57,13 +57,12 @@ let
   corePackage =
     {
       mkDerivation,
-      QuickCheck,
       aeson,
       base,
       bytestring,
       containers,
       crypton,
-      hspec,
+      hedgehog,
       http-types,
       text,
       transformers,
@@ -89,11 +88,10 @@ let
       ];
 
       testHaskellDepends = [
-        QuickCheck
         aeson
         base
         bytestring
-        hspec
+        hedgehog
         text
         transformers
       ];
