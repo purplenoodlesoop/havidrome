@@ -22,38 +22,95 @@ let
   buildable = pkgs.stdenv.hostPlatform.system != "x86_64-darwin";
 
   # Only what the compiler reads, so that touching a note does not rebuild.
-  source = toSource {
-    root = ../.;
+  # Each package is its own source tree, rooted at its own directory, so
+  # neither is rebuilt when the other changes.
+  coreSource = toSource {
+    root = ../core;
     fileset = unions [
-      ../havidrome.cabal
-      ../src
-      ../app
-      ../test
+      ../core/havidrome-core.cabal
+      ../core/src
+      ../core/fixtures
+      ../core/test
     ];
   };
 
-  # The package as `cabal2nix` would have written it, by hand: the Haskell
+  tuiSource = toSource {
+    root = ../tui;
+    fileset = unions [
+      ../tui/havidrome-tui.cabal
+      ../tui/src
+      ../tui/app
+      ../tui/test
+    ];
+  };
+
+  # The packages as `cabal2nix` would have written them, by hand: the Haskell
   # dependencies arrive as arguments, which is what lets `overrideCabal` --
-  # and so the wrapper, the debug build and the check built on it -- rewrite
-  # the Cabal arguments afterwards.
+  # and so the wrapper, the debug build and the checks built on them --
+  # rewrite the Cabal arguments afterwards.
   #
-  # The three lists below and the `build-depends` of havidrome.cabal are the
+  # The lists below and the `build-depends` of the two `.cabal` files are the
   # same lists written twice, and nothing checks that they agree: whatever
-  # goes into one goes into the other. The `havidrome` that the cabal's
-  # executable and test suite depend on is this package's own library, built
-  # here beside them, so it appears in neither list.
-  package =
+  # goes into one goes into the other. A package's own library, which its
+  # other components depend on, is built here beside them and appears in no
+  # list.
+  corePackage =
     {
       mkDerivation,
       QuickCheck,
       aeson,
       base,
-      brick,
       bytestring,
       containers,
       crypton,
+      hspec,
+      http-types,
+      text,
+      transformers,
+    }:
+    mkDerivation {
+      pname = "havidrome-core";
+      version = "1.0.0.0";
+      src = coreSource;
+
+      isLibrary = true;
+
+      # The fixtures are a sub-library of this package, so what they take is
+      # among what the libraries take.
+      libraryHaskellDepends = [
+        aeson
+        base
+        bytestring
+        containers
+        crypton
+        http-types
+        text
+        transformers
+      ];
+
+      testHaskellDepends = [
+        QuickCheck
+        aeson
+        base
+        bytestring
+        hspec
+        text
+        transformers
+      ];
+
+      license = lib.licenses.mit;
+    };
+
+  tuiPackage =
+    {
+      mkDerivation,
+      QuickCheck,
+      base,
+      brick,
+      bytestring,
       directory,
       filepath,
+      havidrome-core,
       hspec,
       http-client,
       http-client-tls,
@@ -72,21 +129,20 @@ let
       vty,
     }:
     mkDerivation {
-      pname = "havidrome";
+      pname = "havidrome-tui";
       version = "1.0.0.0";
-      src = source;
+      src = tuiSource;
 
       isLibrary = true;
       isExecutable = true;
 
       libraryHaskellDepends = [
-        aeson
         base
         brick
         bytestring
-        crypton
         directory
         filepath
+        havidrome-core
         http-client
         http-client-tls
         http-types
@@ -109,13 +165,12 @@ let
 
       testHaskellDepends = [
         QuickCheck
-        aeson
         base
         brick
         bytestring
-        containers
         directory
         filepath
+        havidrome-core
         hspec
         http-client
         http-types
@@ -142,7 +197,9 @@ let
     '';
   });
 
-  release = withPlayer (haskellPackages.callPackage package { });
+  core = haskellPackages.callPackage corePackage { };
+
+  release = withPlayer (haskellPackages.callPackage tuiPackage { havidrome-core = core; });
 
   # The debug build is unoptimised and keeps its DWARF symbols, so a debugger
   # can follow it and `file` tells the two builds apart.
@@ -157,6 +214,7 @@ in
     packages = {
       default = release;
       havidrome = release;
+      havidrome-core = core;
       havidrome-debug = debug;
     };
 
