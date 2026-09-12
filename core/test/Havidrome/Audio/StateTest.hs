@@ -1,0 +1,438 @@
+-- | The audio state machine: what each command does to what is playing, and
+-- what the player is told about it.
+module Havidrome.Audio.StateTest (tests) where
+
+import Data.Text qualified as T
+import Havidrome.Audio.State
+  ( Command (Began, Broke, Ended, Observed, Opened, Pause, Resume, SeekBy, Start, Stop)
+  , Effect (Announce, Load, SeekTo, SetPaused, Unload)
+  , Event (Failed, Finished)
+  , Failure (Unplayable, Unreachable)
+  , Motion (Paused, Running)
+  , Phase (Begun, Opening, Requested)
+  , Playback (Playback, elapsed, phase, track)
+  , State (Loaded, Stopped)
+  , Track (Track, duration, url)
+  , clampTo
+  , initial
+  , step
+  )
+import Havidrome.Check (Checks, example)
+import Havidrome.Subsonic.Types (Seconds (..))
+import Hedgehog (Gen, Group (Group), diff, failure, forAll, property, success, (===))
+import Hedgehog.Gen qualified as Gen
+import Hedgehog.Range qualified as Range
+
+tests :: Group
+tests =
+  Group
+    "Havidrome.Audio.State"
+    ( starting
+        <> holding
+        <> opening
+        <> reaching
+        <> seeking
+        <> stopping
+        <> ending
+        <> whatever
+        <> never
+    )
+
+-- | Putting a track on, over whatever was playing before.
+starting :: Checks
+starting =
+  [
+    ( "starting plays a track from its beginning"
+    , example
+        ( step (Start track (Seconds 0)) initial
+            === (requested 0, [Load track.url (Seconds 0), SetPaused False])
+        )
+    )
+  ,
+    ( "starting plays a track from a position inside it"
+    , example
+        ( step (Start track (Seconds 42)) initial
+            === (requested 42, [Load track.url (Seconds 42), SetPaused False])
+        )
+    )
+  ,
+    ( "starting replaces whatever was playing, and keeps running"
+    , example
+        ( stateAfter [Start track (Seconds 0), Pause, Start track (Seconds 5)]
+            === requested 5
+        )
+    )
+  ,
+    ( "starting replaces a track whose audio had started with one whose audio has not"
+    , example
+        ( step (Start track (Seconds 0)) (running 30)
+            === step (Start track (Seconds 0)) initial
+        )
+    )
+  ,
+    ( "starting lets the audio run even where it was held before"
+    , example (diff (SetPaused False) elem (told (Start track (Seconds 0)) (paused 10)))
+    )
+  ]
+
+-- | Holding the audio where it is, and letting it run again.
+holding :: Checks
+holding =
+  [
+    ( "pausing holds the audio where it is"
+    , example (step Pause (running 30) === (paused 30, [SetPaused True]))
+    )
+  ,
+    ( "pausing keeps the position while held"
+    , example
+        (stateAfter [Start track (Seconds 30), Opened, Began, Pause] === paused 30)
+    )
+  ,
+    ( "resuming continues from that same position"
+    , example (step Resume (paused 30) === (running 30, [SetPaused False]))
+    )
+  ,
+    ( "pausing says nothing to the player when already held"
+    , example (told Pause (paused 30) === [])
+    )
+  ,
+    ( "resuming says nothing to the player when already running"
+    , example (told Resume (running 30) === [])
+    )
+  ,
+    ( "pausing has nothing to pause when nothing is playing"
+    , example (step Pause initial === (Stopped, []))
+    )
+  ]
+
+-- | The player getting the track open and the audio underway.
+opening :: Checks
+opening =
+  [
+    ( "the audio starting has not happened while the player is opening the track"
+    , example (stateAfter [Start track (Seconds 0), Opened] === loaded Running Opening 0)
+    )
+  ,
+    ( "the audio starts when the player says so, once it has said it opened the track"
+    , example (stateAfter [Start track (Seconds 0), Opened, Began] === running 0)
+    )
+  ,
+    ( "the audio starting is not taken from a start heard before the opening, which is the replaced track's"
+    , example (stateAfter [Start track (Seconds 0), Began] === requested 0)
+    )
+  ,
+    ( "the audio starting is not undone by the start the player reports after a seek"
+    , example
+        ( stateAfter [Start track (Seconds 0), Opened, Began, SeekBy 5, Began]
+            === running 5
+        )
+    )
+  ,
+    ( "the audio starting is not undone by a late opening either"
+    , example
+        (stateAfter [Start track (Seconds 0), Opened, Began, Opened] === running 0)
+    )
+  ,
+    ( "the audio starting leaves a track held while it loaded held at its start"
+    , example
+        (stateAfter [Start track (Seconds 0), Pause, Opened, Began] === paused 0)
+    )
+  ,
+    ( "the audio starting tells the player nothing, so a held track stays held"
+    , example do
+        told Opened (requested 0) === []
+        told Began (loaded Paused Opening 0) === []
+    )
+  ,
+    ( "the audio starting is nobody's when nothing is playing"
+    , example do
+        step Opened initial === (Stopped, [])
+        step Began initial === (Stopped, [])
+    )
+  ]
+
+-- | Where the audio has got to, as the player reports it.
+reaching :: Checks
+reaching =
+  [
+    ( "the position the audio has reached follows what the player reports"
+    , example (step (Observed (Seconds 12)) (running 3) === (running 12, []))
+    )
+  ,
+    ( "the position never leaves the track, however the player counts"
+    , example (step (Observed (Seconds 200)) (running 3) === (running 180, []))
+    )
+  ,
+    ( "the position is nobody's when nothing is playing"
+    , example (step (Observed (Seconds 12)) initial === (Stopped, []))
+    )
+  ]
+
+-- | Moving the audio to another position in the track.
+seeking :: Checks
+seeking =
+  [
+    ( "seeking moves the audio and the position together"
+    , example (step (SeekBy 5) (running 30) === (running 35, [SeekTo (Seconds 35)]))
+    )
+  ,
+    ( "seeking moves backwards by the same measure"
+    , example (step (SeekBy (-30)) (running 60) === (running 30, [SeekTo (Seconds 30)]))
+    )
+  ,
+    ( "seeking lands at the start rather than before it"
+    , example (step (SeekBy (-30)) (running 10) === (running 0, [SeekTo (Seconds 0)]))
+    )
+  ,
+    ( "seeking lands at the end rather than past it"
+    , example (step (SeekBy 30) (running 175) === (running 180, [SeekTo (Seconds 180)]))
+    )
+  ,
+    ( "seeking leaves a held track held"
+    , example (step (SeekBy 5) (paused 30) === (paused 35, [SeekTo (Seconds 35)]))
+    )
+  ,
+    ( "seeking has nothing to seek when nothing is playing"
+    , example (step (SeekBy 5) initial === (Stopped, []))
+    )
+  ,
+    ( "seeking never leaves the track, wherever it is asked to go"
+    , property do
+        seconds <- forAll (Gen.int (Range.linear 0 600))
+        at <- forAll (Gen.int (Range.linearFrom 0 (-300) 900))
+        delta <- forAll (Gen.int (Range.linearFrom 0 (-900) 900))
+        let long = track {duration = Seconds seconds}
+            start = clampTo long (Seconds at)
+        case fst (step (SeekBy delta) (Loaded (Playback long Running start Begun))) of
+          Stopped -> failure
+          Loaded playback -> do
+            diff playback.elapsed (>=) (Seconds 0)
+            diff playback.elapsed (<=) long.duration
+    )
+  ]
+
+-- | Taking the track off, and what that is not.
+stopping :: Checks
+stopping =
+  [
+    ( "stopping plays nothing afterwards"
+    , example (step Stop (running 30) === (Stopped, [Unload]))
+    )
+  ,
+    ( "stopping reports nothing: being stopped is not finishing"
+    , example (diff (Announce Finished) notElem (told Stop (running 30)))
+    )
+  ,
+    ( "stopping has nothing to stop twice"
+    , example (step Stop Stopped === (Stopped, []))
+    )
+  ]
+
+-- | A track running out, and a track that would not play.
+ending :: Checks
+ending =
+  [
+    ( "finishing is reported, once"
+    , example (step Ended (running 180) === (Stopped, [Announce Finished]))
+    )
+  ,
+    ( "finishing is not reported a second time"
+    , example (told Ended (fst (step Ended (running 180))) === [])
+    )
+  ,
+    ( "finishing is not reported for a track that was stopped"
+    , example (told Ended (stateAfter [Start track (Seconds 0), Stop]) === [])
+    )
+  ,
+    ( "failing reports a server it could not reach"
+    , example
+        ( step (Broke (Unreachable "down")) (running 3)
+            === (Stopped, [Announce (Failed (Unreachable "down"))])
+        )
+    )
+  ,
+    ( "failing reports a file that will not play"
+    , example
+        ( step (Broke (Unplayable "corrupt")) (running 3)
+            === (Stopped, [Announce (Failed (Unplayable "corrupt"))])
+        )
+    )
+  ,
+    ( "failing says nothing about a track already stopped"
+    , example (told (Broke (Unplayable "corrupt")) Stopped === [])
+    )
+  ]
+
+-- | What holds of any state and any command at all.
+whatever :: Checks
+whatever =
+  [
+    ( "whatever happens to it, the position never leaves the track"
+    , property do
+        state <- forAll anyState
+        commands <- forAll (Gen.list (Range.linear 0 20) anyCommand)
+        case foldl' (\current command -> fst (step command current)) state commands of
+          Stopped -> success
+          Loaded playback -> do
+            diff playback.elapsed (>=) (Seconds 0)
+            diff playback.elapsed (<=) playback.track.duration
+    )
+  ,
+    ( "with nothing playing, nothing but a start does anything at all"
+    , property do
+        command <- forAll (Gen.filter (not . starts) anyCommand)
+        step command Stopped === (Stopped, [])
+    )
+  ,
+    ( "a start plays the track it names, from where it names, whatever was playing"
+    , property do
+        state <- forAll anyState
+        next <- forAll anyTrack
+        from <- forAll anyPosition
+        let at = clampTo next from
+        step (Start next from) state
+          === (Loaded (Playback next Running at Requested), [Load next.url at, SetPaused False])
+    )
+  ,
+    ( "nothing but a track running out or failing is ever reported"
+    , property do
+        state <- forAll anyState
+        command <- forAll (Gen.filter (not . reports) anyCommand)
+        filter announcement (told command state) === []
+    )
+  ,
+    ( "a track that ran out or failed is playing no longer, and is reported once"
+    , property do
+        state <- forAll anyState
+        command <- forAll (Gen.filter reports anyCommand)
+        let after = fst (step command state)
+        after === Stopped
+        told command after === []
+    )
+  ]
+
+-- | What no command ever does: give the player its own words back as an
+-- order, or move more of a track than it was asked to.
+never :: Checks
+never =
+  [
+    ( "what the player says about a track is never given back to it as an order"
+    , property do
+        state <- forAll anyState
+        at <- forAll anyPosition
+        told Opened state === []
+        told Began state === []
+        told (Observed at) state === []
+    )
+  ,
+    ( "holding a track and letting it go move nothing but the motion"
+    , property do
+        state <- forAll anyState
+        command <- forAll (Gen.element [Pause, Resume])
+        case (state, fst (step command state)) of
+          (Loaded before, Loaded after) -> do
+            after.track === before.track
+            after.elapsed === before.elapsed
+            after.phase === before.phase
+          (before, after) -> after === before
+    )
+  ]
+
+-- | Three minutes of audio at a made-up address; long enough that a seek has
+-- room on both sides of it.
+track :: Track
+track =
+  Track {url = "https://music.example.org/rest/stream?id=s1", duration = Seconds 180}
+
+-- | The track loaded, moving this way, this far along towards its audio
+-- starting, and this far into it.
+loaded :: Motion -> Phase -> Int -> State
+loaded motion phase at = Loaded (Playback track motion (Seconds at) phase)
+
+-- | The track just told to play, its audio not yet started.
+requested :: Int -> State
+requested = loaded Running Requested
+
+-- | The track with its audio started, running or held.
+running, paused :: Int -> State
+running = loaded Running Begun
+paused = loaded Paused Begun
+
+-- | The state a run of commands leaves behind, from nothing playing.
+stateAfter :: [Command] -> State
+stateAfter = foldl' (\state command -> fst (step command state)) initial
+
+-- | What the player is told when a command lands on a state.
+told :: Command -> State -> [Effect]
+told command = snd . step command
+
+-- | Any track at all: an address of its own, and a length anything that moves
+-- inside it has to stay within.
+anyTrack :: Gen Track
+anyTrack = do
+  ident <- Gen.int (Range.linear 1 999)
+  seconds <- Gen.int (Range.linear 0 600)
+  pure
+    Track
+      { url = "https://music.example.org/rest/stream?id=s" <> T.pack (show ident)
+      , duration = Seconds seconds
+      }
+
+-- | A position anywhere, before a track's start and past its end included,
+-- which is what the user and the player may each ask for.
+anyPosition :: Gen Seconds
+anyPosition = Seconds <$> Gen.int (Range.linearFrom 0 (-300) 900)
+
+-- | Any state the machine can be in: nothing playing, or a track loaded.
+anyState :: Gen State
+anyState = Gen.choice [pure Stopped, Loaded <$> anyPlayback]
+
+-- | A track loaded, moving or held, anywhere inside itself and any way along
+-- towards its audio starting.
+anyPlayback :: Gen Playback
+anyPlayback = do
+  playing <- anyTrack
+  motion <- Gen.element [Running, Paused]
+  at <- anyPosition
+  phase <- Gen.element [Requested, Opening, Begun]
+  pure (Playback playing motion (clampTo playing at) phase)
+
+-- | Anything that can happen to it: a control the user pressed, or a word
+-- from the player.
+anyCommand :: Gen Command
+anyCommand =
+  Gen.choice
+    [ Start <$> anyTrack <*> anyPosition
+    , pure Pause
+    , pure Resume
+    , SeekBy <$> Gen.int (Range.linearFrom 0 (-900) 900)
+    , pure Stop
+    , Observed <$> anyPosition
+    , pure Opened
+    , pure Began
+    , pure Ended
+    , Broke <$> anyFailure
+    ]
+
+anyFailure :: Gen Failure
+anyFailure = Gen.choice [Unreachable <$> reason, Unplayable <$> reason]
+  where
+    reason = Gen.text (Range.linear 0 12) Gen.unicode
+
+starts :: Command -> Bool
+starts command = case command of
+  Start _ _ -> True
+  _ -> False
+
+-- | Whether a command is one of the two the machine reports on: a track that
+-- ran out, and one that could not be played.
+reports :: Command -> Bool
+reports command = case command of
+  Ended -> True
+  Broke _ -> True
+  _ -> False
+
+announcement :: Effect -> Bool
+announcement effect = case effect of
+  Announce _ -> True
+  _ -> False

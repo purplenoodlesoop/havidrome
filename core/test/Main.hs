@@ -1,28 +1,38 @@
+-- | The core's suite: every group it holds, run one after another. The exit
+-- status is hedgehog's own — non-zero the moment a group has a failing
+-- property in it.
 module Main (main) where
 
-import Havidrome.Audio.IpcSpec qualified as IpcSpec
-import Havidrome.Audio.StateSpec qualified as StateSpec
-import Havidrome.Browse.RowSpec qualified as RowSpec
-import Havidrome.Browse.StripSpec qualified as StripSpec
-import Havidrome.BrowseSpec qualified as BrowseSpec
-import Havidrome.CredentialsSpec qualified as CredentialsSpec
-import Havidrome.DivideSpec qualified as DivideSpec
-import Havidrome.LoginSpec qualified as LoginSpec
-import Havidrome.Playback.QueueSpec qualified as QueueSpec
-import Havidrome.Subsonic.ProtocolSpec qualified as ProtocolSpec
-import Havidrome.WidthSpec qualified as WidthSpec
-import Test.Hspec (describe, hspec)
+import Havidrome.Audio.IpcTest qualified as IpcTest
+import Havidrome.Audio.StateTest qualified as StateTest
+import Havidrome.Browse.RowTest qualified as RowTest
+import Havidrome.Browse.StripTest qualified as StripTest
+import Havidrome.BrowseTest qualified as BrowseTest
+import Havidrome.CredentialsTest qualified as CredentialsTest
+import Havidrome.DivideTest qualified as DivideTest
+import Havidrome.LoginTest qualified as LoginTest
+import Havidrome.Playback.QueueTest qualified as QueueTest
+import Havidrome.Subsonic.ProtocolTest qualified as ProtocolTest
+import Havidrome.Subsonic.TypesTest qualified as TypesTest
+import Havidrome.WidthTest qualified as WidthTest
+import Hedgehog (Group, checkParallel)
+import Hedgehog.Main (defaultMain)
 
 main :: IO ()
-main = hspec $ do
-  describe "Havidrome.Divide" DivideSpec.spec
-  describe "Havidrome.Width" WidthSpec.spec
-  describe "Havidrome.Credentials" CredentialsSpec.spec
-  describe "Havidrome.Subsonic.Protocol" ProtocolSpec.spec
-  describe "Havidrome.Audio.State" StateSpec.spec
-  describe "Havidrome.Audio.Ipc" IpcSpec.spec
-  describe "Havidrome.Playback.Queue" QueueSpec.spec
-  describe "Havidrome.Browse" BrowseSpec.spec
-  describe "Havidrome.Browse.Row" RowSpec.spec
-  describe "Havidrome.Browse.Strip" StripSpec.spec
-  describe "Havidrome.Login" LoginSpec.spec
+main = defaultMain (fmap checkParallel groups)
+
+groups :: [Group]
+groups =
+  [ DivideTest.tests
+  , WidthTest.tests
+  , CredentialsTest.tests
+  , TypesTest.tests
+  , ProtocolTest.tests
+  , StateTest.tests
+  , IpcTest.tests
+  , QueueTest.tests
+  , BrowseTest.tests
+  , RowTest.tests
+  , StripTest.tests
+  , LoginTest.tests
+  ]
