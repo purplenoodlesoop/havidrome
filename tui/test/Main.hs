@@ -1,24 +1,40 @@
+-- | The shell's suite: every group it holds, run one after another. The exit
+-- status is hedgehog's own — non-zero the moment a group has a failing
+-- property in it.
+--
+-- The groups that reach outside the process are run one property at a time:
+-- the config file is found through the environment, which is the whole
+-- process's, and the audio tests time a real player, which two of them at
+-- once would throw off. The rest share nothing and are free to run together.
 module Main (main) where
 
-import Havidrome.AudioSpec qualified as AudioSpec
-import Havidrome.Browse.ScreenSpec qualified as ScreenSpec
-import Havidrome.Credentials.StoreSpec qualified as StoreSpec
-import Havidrome.Key.VtySpec qualified as VtySpec
-import Havidrome.Login.ScreenSpec qualified as LoginScreenSpec
-import Havidrome.PlaybackSpec qualified as PlaybackSpec
-import Havidrome.Subsonic.TransportSpec qualified as TransportSpec
-import Havidrome.SubsonicSpec qualified as SubsonicSpec
-import HavidromeSpec qualified
-import Test.Hspec (describe, hspec)
+import Havidrome.AudioTest qualified as AudioTest
+import Havidrome.Browse.ScreenTest qualified as ScreenTest
+import Havidrome.Credentials.StoreTest qualified as StoreTest
+import Havidrome.Key.VtyTest qualified as VtyTest
+import Havidrome.Login.ScreenTest qualified as LoginScreenTest
+import Havidrome.PlaybackTest qualified as PlaybackTest
+import Havidrome.Subsonic.TransportTest qualified as TransportTest
+import Havidrome.SubsonicTest qualified as SubsonicTest
+import HavidromeTest qualified
+import Hedgehog (checkParallel, checkSequential)
+import Hedgehog.Main (defaultMain)
 
 main :: IO ()
-main = hspec $ do
-  describe "Havidrome" HavidromeSpec.spec
-  describe "Havidrome.Credentials.Store" StoreSpec.spec
-  describe "Havidrome.Key.Vty" VtySpec.spec
-  describe "Havidrome.Subsonic" SubsonicSpec.spec
-  describe "Havidrome.Subsonic.Transport" TransportSpec.spec
-  describe "Havidrome.Audio" AudioSpec.spec
-  describe "Havidrome.Playback" PlaybackSpec.spec
-  describe "Havidrome.Browse.Screen" ScreenSpec.spec
-  describe "Havidrome.Login.Screen" LoginScreenSpec.spec
+main =
+  defaultMain $
+    fmap
+      checkSequential
+      [ HavidromeTest.tests
+      , StoreTest.tests
+      , AudioTest.tests
+      ]
+      <> fmap
+        checkParallel
+        [ VtyTest.tests
+        , SubsonicTest.tests
+        , TransportTest.tests
+        , PlaybackTest.tests
+        , ScreenTest.tests
+        , LoginScreenTest.tests
+        ]

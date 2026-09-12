@@ -43,6 +43,7 @@ import Graphics.Vty.Attributes
   )
 import Graphics.Vty.PictureToSpans (displayOpsForPic)
 import Graphics.Vty.Span (SpanOp (RowEnd, Skip, TextSpan), textSpanAttr, textSpanText)
+import Lists (drop1, dropEnd1, takeEnd)
 
 -- | One cell of a screen: how it is drawn — nothing where nothing was — and
 -- the character in it.
@@ -116,13 +117,3 @@ drawnIn wanted = \case
 text :: [Cell] -> Text
 text = T.pack . fmap snd
 
--- | Everything but the first of a list, and everything but its last.
-drop1, dropEnd1 :: [a] -> [a]
-drop1 = drop 1
-dropEnd1 = dropEnd 1
-
-dropEnd :: Int -> [a] -> [a]
-dropEnd count items = zipWith const items (drop count items)
-
-takeEnd :: Int -> [a] -> [a]
-takeEnd count items = drop (length items - count) items
