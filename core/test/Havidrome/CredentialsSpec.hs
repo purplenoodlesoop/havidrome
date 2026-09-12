@@ -2,7 +2,7 @@
 -- as it was written.
 module Havidrome.CredentialsSpec (spec) where
 
-import Data.Text qualified as Text
+import Data.Text qualified as T
 import Havidrome.Credentials (Credentials (..), parse, render)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Hspec.QuickCheck (prop)
@@ -18,9 +18,9 @@ spec = describe "render and parse" $ do
     \(server', username', password') ->
       let credentials =
             Credentials
-              { server = Text.pack server'
-              , username = Text.pack username'
-              , password = Text.pack password'
+              { server = T.pack server'
+              , username = T.pack username'
+              , password = T.pack password'
               }
        in parse (render credentials) === Right credentials
 

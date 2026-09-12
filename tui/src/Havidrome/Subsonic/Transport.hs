@@ -12,9 +12,9 @@ module Havidrome.Subsonic.Transport
 import Control.Exception (try)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as Lazy
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Data.Text.Encoding qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Subsonic.Types
 import Network.HTTP.Client
@@ -38,7 +38,7 @@ newtype Transport = Transport
 -- | A transport that really speaks HTTP, over a manager the caller owns.
 httpTransport :: Manager -> Transport
 httpTransport manager = Transport $ \url ->
-  case parseRequest (Text.unpack url) of
+  case parseRequest (T.unpack url) of
     Nothing ->
       pure (Left (NetworkFailure ("not a usable server address: " <> url)))
     Just request -> do
@@ -58,7 +58,7 @@ newHttpTransport = httpTransport <$> newTlsManager
 -- unknown host, a refused connection, a TLS failure, a timeout.
 classifyException :: HttpException -> SubsonicError
 classifyException exception =
-  NetworkFailure ("could not reach the server: " <> Text.pack (show exception))
+  NetworkFailure ("could not reach the server: " <> T.pack (show exception))
 
 -- | A reply with a status. Subsonic reports its own failures inside a 200, so
 -- anything else came from the server or something in front of it — and a 401
@@ -71,4 +71,4 @@ classifyStatus status body
   | otherwise = Left (ServerFailure code reason)
  where
   code = statusCode status
-  reason = Text.decodeUtf8Lenient (statusMessage status)
+  reason = T.decodeUtf8Lenient (statusMessage status)

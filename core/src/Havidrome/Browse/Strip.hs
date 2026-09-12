@@ -38,8 +38,8 @@ module Havidrome.Browse.Strip
 
 import Data.Char (toUpper)
 import Data.Ord (clamp)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Audio.State (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Playback.Playing
   ( Arrival (Picked)
@@ -125,7 +125,7 @@ showing strip = case strip.said of
 -- throughout, loading or not.
 overlaid :: Moment -> Int -> Playing -> Text
 overlaid at width playing =
-  Text.intercalate gap [titled, progress (width - taken) elapsed total, times]
+  T.intercalate gap [titled, progress (width - taken) elapsed total, times]
   where
     song = playing.song
     titled = symbol playing.sound <> " " <> song.title
@@ -134,7 +134,7 @@ overlaid at width playing =
     times = sofar <> " / " <> clock total
     sofar
       | playing.arrival == Picked && playing.sound == Loading =
-          Text.justifyRight (Width.text (clock elapsed)) ' ' (spinner at)
+          T.justifyRight (Width.text (clock elapsed)) ' ' (spinner at)
       | otherwise = clock elapsed
     gap = "  "
     taken = Width.text titled + Width.text times + 2 * Width.text gap
@@ -151,10 +151,10 @@ symbol = \case
 -- | The loading indicator at a moment: a dot running round a braille cell, a
 -- step every tenth of a second, which is as often as a beat comes.
 spinner :: Moment -> Text
-spinner (Moment at) = Text.take 1 (Text.drop turn turns)
+spinner (Moment at) = T.take 1 (T.drop turn turns)
   where
     turns = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    turn = floor (at * 10) `mod` Text.length turns
+    turn = floor (at * 10) `mod` T.length turns
 
 -- | A bar this many columns wide, filled for the part of the total that has
 -- elapsed. Only whole columns fill, so the bar is empty until a column's worth
@@ -162,7 +162,7 @@ spinner (Moment at) = Text.take 1 (Text.drop turn turns)
 -- to be filled for, and its bar stays empty however long it runs.
 progress :: Int -> Seconds -> Seconds -> Text
 progress width (Seconds elapsed) (Seconds total) =
-  Text.replicate filled "█" <> Text.replicate (columns - filled) "░"
+  T.replicate filled "█" <> T.replicate (columns - filled) "░"
   where
     columns = max 0 width
     filled
@@ -178,8 +178,8 @@ clock (Seconds total) = case hours of
   where
     (hours, rest) = max 0 total `divMod` 3600
     (minutes, seconds) = rest `divMod` 60
-    number = Text.pack . show
-    pad = Text.justifyRight 2 '0' . number
+    number = T.pack . show
+    pad = T.justifyRight 2 '0' . number
 
 -- | The strip a beat leaves behind: the song the audio is on now, and
 -- whatever it failed at since the last beat.
@@ -233,6 +233,6 @@ lifeOf (Said _ life) = life
 -- | A reason as a sentence of its own: the layers underneath word them from
 -- the middle of one.
 sentence :: Text -> Text
-sentence said = case Text.uncons said of
+sentence said = case T.uncons said of
   Nothing -> said
-  Just (opening, rest) -> Text.cons (toUpper opening) rest
+  Just (opening, rest) -> T.cons (toUpper opening) rest

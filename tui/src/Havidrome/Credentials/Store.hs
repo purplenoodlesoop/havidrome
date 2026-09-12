@@ -19,7 +19,7 @@ module Havidrome.Credentials.Store
 import Control.Exception (IOException, displayException, try)
 import Control.Monad (when)
 import Data.ByteString qualified as ByteString
-import Data.Text qualified as Text
+import Data.Text qualified as T
 import Data.Text.Encoding (decodeUtf8', encodeUtf8)
 import Havidrome.Credentials (Credentials, Fault (NotAccessible), parse, render)
 import System.Directory
@@ -58,7 +58,7 @@ load = do
     else either unreachable readable <$> try (ByteString.readFile path)
   where
     unreachable :: IOException -> Stored
-    unreachable = Unreadable . NotAccessible . Text.pack . displayException
+    unreachable = Unreadable . NotAccessible . T.pack . displayException
 
     readable bytes = case decodeUtf8' bytes of
       Left _ -> Unreadable (NotAccessible "the file is not valid UTF-8")

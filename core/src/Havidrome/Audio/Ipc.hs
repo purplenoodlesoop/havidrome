@@ -22,8 +22,8 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser, parseMaybe, withObject)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as Lazy
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Audio.State (Effect (..))
 import Havidrome.Subsonic.Types (Seconds (..))
 
@@ -73,7 +73,7 @@ command arguments =
 
 -- | The @start@ option of a @loadfile@: where in the track the audio begins.
 startAt :: Seconds -> Text
-startAt (Seconds at) = "start=" <> Text.pack (show at)
+startAt (Seconds at) = "start=" <> T.pack (show at)
 
 -- | What mpv just said, if it is anything this player acts on.
 readNotice :: ByteString -> Maybe Notice

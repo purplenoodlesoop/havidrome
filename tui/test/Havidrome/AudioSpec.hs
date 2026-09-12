@@ -6,8 +6,8 @@ module Havidrome.AudioSpec (spec) where
 import Control.Concurrent (threadDelay)
 import Data.ByteString.Builder qualified as Builder
 import Data.ByteString.Lazy qualified as Lazy
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Data.Word (Word32)
 import Havidrome.Audio
 import System.Directory (findExecutable)
@@ -160,7 +160,7 @@ withTrack content duration reach use =
   withSystemTempDirectory "havidrome-audio" $ \dir -> do
     let file = dir </> "track"
     Lazy.writeFile file content
-    withPlayer reach (\audio -> use audio (Track (Text.pack file) duration))
+    withPlayer reach (\audio -> use audio (Track (T.pack file) duration))
 
 -- | mpv on a null output, or a pending test where there is no mpv to run.
 withPlayer :: Reach -> (Audio -> IO ()) -> Expectation

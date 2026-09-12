@@ -72,7 +72,7 @@ import Control.Monad.State (get, put)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Data.Vector qualified as Vector
 import GHC.Clock (getMonotonicTime)
 import Graphics.Vty qualified as Vty

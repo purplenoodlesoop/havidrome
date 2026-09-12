@@ -3,7 +3,7 @@
 module Havidrome.WidthSpec (spec) where
 
 import Data.Char (isControl)
-import Data.Text qualified as Text
+import Data.Text qualified as T
 import Havidrome.Width (char, shorten, text)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Hspec.QuickCheck (prop)
@@ -13,23 +13,23 @@ spec :: Spec
 spec = do
   describe "char" $ do
     it "gives a printable ASCII character one column" $
-      map char "aZ0 ~!" `shouldBe` [1, 1, 1, 1, 1, 1]
+      fmap char "aZ0 ~!" `shouldBe` [1, 1, 1, 1, 1, 1]
 
     it "gives a control character none" $
-      map char "\0\t\n\r\ESC\DEL" `shouldBe` [0, 0, 0, 0, 0, 0]
+      fmap char "\0\t\n\r\ESC\DEL" `shouldBe` [0, 0, 0, 0, 0, 0]
 
     it "gives a combining mark none, so it measures with what it hangs off" $ do
-      map char "\x0301\x20DD\xFE0F" `shouldBe` [0, 0, 0]
+      fmap char "\x0301\x20DD\xFE0F" `shouldBe` [0, 0, 0]
       text "e\x0301" `shouldBe` 1
 
     it "gives an East Asian wide or full-width character two" $
-      map char "音\x1100\xAC00\xFF21\x20000" `shouldBe` [2, 2, 2, 2, 2]
+      fmap char "音\x1100\xAC00\xFF21\x20000" `shouldBe` [2, 2, 2, 2, 2]
 
     it "gives the player's own glyphs one each" $
-      map char "⏵⏸▶█░…⠋" `shouldBe` [1, 1, 1, 1, 1, 1, 1]
+      fmap char "⏵⏸▶█░…⠋" `shouldBe` [1, 1, 1, 1, 1, 1, 1]
 
     it "gives a Latin letter outside ASCII one" $
-      map char "äöüé" `shouldBe` [1, 1, 1, 1]
+      fmap char "äöüé" `shouldBe` [1, 1, 1, 1]
 
   describe "text" $ do
     it "is what its characters take between them" $
@@ -58,7 +58,7 @@ spec = do
       shorten 20 "one\ntwo\tthree" `shouldBe` "one two three"
 
     prop "takes no more columns than it is given" $ \(NonNegative room) said ->
-      text (shorten room (Text.pack said)) <= room
+      text (shorten room (T.pack said)) <= room
 
     prop "leaves nothing that would move the terminal" $ \room said ->
-      not (Text.any isControl (shorten room (Text.pack said)))
+      not (T.any isControl (shorten room (T.pack said)))

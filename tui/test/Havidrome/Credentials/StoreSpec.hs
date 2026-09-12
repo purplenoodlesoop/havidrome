@@ -5,8 +5,8 @@ module Havidrome.Credentials.StoreSpec (spec) where
 import Control.Exception (bracket)
 import Data.Bits ((.&.))
 import Data.ByteString qualified as ByteString
-import Data.Text (Text)
-import Data.Text.IO qualified as Text.IO
+import Data.Text as T (Text)
+import Data.Text.IO qualified as T.IO
 import Havidrome.Credentials (Credentials (..), Fault (..))
 import Havidrome.Credentials.Store (Stored (..))
 import Havidrome.Credentials.Store qualified as Store
@@ -155,4 +155,4 @@ writeConfig :: Text -> IO ()
 writeConfig contents = do
   path <- Store.configFile
   createDirectoryIfMissing True (takeDirectory path)
-  Text.IO.writeFile path contents
+  T.IO.writeFile path contents

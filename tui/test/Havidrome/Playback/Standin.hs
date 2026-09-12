@@ -28,7 +28,7 @@ module Havidrome.Playback.Standin
 import Control.Concurrent.STM (TChan, atomically, newTChanIO, readTChan, tryReadTChan, writeTChan)
 import Data.Foldable (traverse_)
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Havidrome.Audio (Audio (..))
 import Havidrome.Audio.State
   ( Command (..)

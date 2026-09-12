@@ -19,8 +19,8 @@ module Havidrome.Width
   ) where
 
 import Data.Char (isControl)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 
 -- | The columns one character takes.
 char :: Char -> Int
@@ -37,7 +37,7 @@ char character
 -- | The columns a line of text takes, which is what its characters take
 -- between them.
 text :: Text -> Int
-text = Text.foldl' (\taken character -> taken + char character) 0
+text = T.foldl' (\taken character -> taken + char character) 0
 
 -- | Text on one line of at most this many columns. What does not fit is cut
 -- off, and an ellipsis at the end says so. A character that would move the
@@ -45,17 +45,17 @@ text = Text.foldl' (\taken character -> taken + char character) 0
 shorten :: Int -> Text -> Text
 shorten room said
   | text flat <= room = flat
-  | room < text ellipsis = Text.empty
+  | room < text ellipsis = T.empty
   | otherwise = fitting (room - text ellipsis) flat <> ellipsis
   where
-    flat = Text.map (\character -> if isControl character then ' ' else character) said
+    flat = T.map (\character -> if isControl character then ' ' else character) said
     ellipsis = "…"
 
 -- | The longest start of the text that takes at most this many columns.
 fitting :: Int -> Text -> Text
-fitting room said = Text.take (length (takeWhile (<= room) reaches)) said
+fitting room said = T.take (length (takeWhile (<= room) reaches)) said
   where
-    reaches = scanl1 (+) (map char (Text.unpack said))
+    reaches = scanl1 (+) (fmap char (T.unpack said))
 
 -- | Whether a character hangs off the one before it rather than taking a
 -- column of its own: a non-spacing or enclosing mark, a format character, a

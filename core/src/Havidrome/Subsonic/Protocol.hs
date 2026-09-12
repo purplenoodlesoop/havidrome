@@ -30,10 +30,10 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser, parseEither, withObject)
 import Data.ByteString (ByteString)
 import Data.List (sortOn)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
-import Data.Text.Encoding qualified as Text
+import Data.Text.Encoding qualified as T
 import Havidrome.Subsonic.Types
 import Network.HTTP.Types.URI (renderSimpleQuery)
 
@@ -60,7 +60,7 @@ mkSalt = Salt
 -- against.
 token :: Credentials -> Salt -> ByteString
 token credentials (Salt salt) =
-  Text.encodeUtf8 . Text.pack . show $
+  T.encodeUtf8 . T.pack . show $
     (hash (encodeUtf8 (credentials.password <> salt)) :: Digest MD5)
 
 -- | The parameters every call carries: who is asking, the proof, and what is
@@ -117,10 +117,10 @@ audioUrl server credentials salt (SongId song) =
 
 restUrl :: Server -> Text -> [(ByteString, ByteString)] -> Text
 restUrl server name query =
-  Text.dropWhileEnd (== '/') server.url
+  T.dropWhileEnd (== '/') server.url
     <> "/rest/"
     <> name
-    <> Text.decodeUtf8 (renderSimpleQuery True query)
+    <> T.decodeUtf8 (renderSimpleQuery True query)
 
 -- | Unwraps a @subsonic-response@ and reads the payload out of it, turning
 -- every way that can go wrong into a 'SubsonicError'.
@@ -131,7 +131,7 @@ decodeEnvelope payload body = case Aeson.eitherDecodeStrict' body of
     Left message -> malformed message
     Right result -> result
  where
-  malformed = Left . MalformedResponse . Text.pack
+  malformed = Left . MalformedResponse . T.pack
 
   envelope = withObject "Subsonic response" $ \outer -> do
     response <- outer .: "subsonic-response"
@@ -203,13 +203,13 @@ decodeSongs = decodeEnvelope $ \response -> do
 -- | Alphabetically, ignoring case; exact name then id settle the ties, so the
 -- list is the same on every run.
 byArtistName :: [Artist] -> [Artist]
-byArtistName = sortOn (\a -> (Text.toCaseFold a.name, a.name, a.id))
+byArtistName = sortOn (\a -> (T.toCaseFold a.name, a.name, a.id))
 
 -- | Oldest year first; name then id settle the ties.
 byAlbumYear :: [Album] -> [Album]
-byAlbumYear = sortOn (\a -> (a.year, Text.toCaseFold a.name, a.id))
+byAlbumYear = sortOn (\a -> (a.year, T.toCaseFold a.name, a.id))
 
 -- | Album order: disc, then track within the disc; title then id settle the
 -- ties.
 byTrackOrder :: [Song] -> [Song]
-byTrackOrder = sortOn (\s -> (s.disc, s.track, Text.toCaseFold s.title, s.id))
+byTrackOrder = sortOn (\s -> (s.disc, s.track, T.toCaseFold s.title, s.id))

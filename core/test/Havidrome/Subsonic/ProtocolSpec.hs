@@ -1,7 +1,7 @@
 module Havidrome.Subsonic.ProtocolSpec (spec) where
 
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Subsonic.Fixtures
 import Havidrome.Subsonic.Protocol
   ( Endpoint (..)
@@ -33,7 +33,7 @@ spec = do
 
     it "never carries the password itself" $
       testCredentials.password `shouldSatisfy` \password ->
-        not (password `Text.isInfixOf` url Ping)
+        not (password `T.isInfixOf` url Ping)
 
     it "asks for one artist's albums by id" $
       url (GetArtist (ArtistId "a1"))
@@ -49,7 +49,7 @@ spec = do
 
     it "escapes what a query string cannot carry literally" $
       endpointUrl testServer (Credentials "some one&x" "hunter2") testSalt Ping
-        `shouldSatisfy` ("u=some%20one%26x&" `Text.isInfixOf`)
+        `shouldSatisfy` ("u=some%20one%26x&" `T.isInfixOf`)
 
   describe "audio requests" $ do
     it "asks for the file the server stores" $
@@ -59,24 +59,24 @@ spec = do
     it "names no format other than the stored one, and no bit rate" $
       audioUrl testServer testCredentials testSalt (SongId "s1")
         `shouldSatisfy` \request ->
-          length (Text.breakOnAll "format=" request) == 1
-            && "format=raw" `Text.isInfixOf` request
-            && not ("maxBitRate" `Text.isInfixOf` request)
+          length (T.breakOnAll "format=" request) == 1
+            && "format=raw" `T.isInfixOf` request
+            && not ("maxBitRate" `T.isInfixOf` request)
 
   describe "reading answers" $ do
     it "reads a ping" $
       decodePing pingAnswer `shouldBe` Right ()
 
     it "reads artists out of the server's index groups" $
-      fmap (map (.name)) (decodeArtists artistsAnswer)
+      fmap (fmap (.name)) (decodeArtists artistsAnswer)
         `shouldBe` Right ["zebra", "Aphex Twin", "anohni"]
 
     it "reads albums, with the year the server gave or none" $
-      fmap (map (.year)) (decodeAlbums albumsAnswer)
+      fmap (fmap (.year)) (decodeAlbums albumsAnswer)
         `shouldBe` Right [Just 2001, Just 1992, Nothing]
 
     it "reads songs with their track name and total time" $
-      fmap (map (\s -> (s.title, s.duration))) (decodeSongs songsAnswer)
+      fmap (fmap (\s -> (s.title, s.duration))) (decodeSongs songsAnswer)
         `shouldBe` Right
           [ ("Pulsewidth", Seconds 228)
           , ("Xtal", Seconds 293)
@@ -84,7 +84,7 @@ spec = do
           ]
 
     it "gives a song the server timed at nothing a total time of zero" $
-      fmap (map (.duration)) (decodeSongs songWithoutDurationAnswer)
+      fmap (fmap (.duration)) (decodeSongs songWithoutDurationAnswer)
         `shouldBe` Right [Seconds 0]
 
     it "reads an album the server lists no songs for as empty" $
@@ -111,23 +111,23 @@ spec = do
 
   describe "orders" $ do
     it "puts artists in alphabetical order, whatever their capitals" $
-      fmap (map (.name) . byArtistName) (decodeArtists artistsAnswer)
+      fmap (fmap (.name) . byArtistName) (decodeArtists artistsAnswer)
         `shouldBe` Right ["anohni", "Aphex Twin", "zebra"]
 
     it "puts an artist's albums oldest year first" $
-      fmap (map (.name) . byAlbumYear) (decodeAlbums albumsAnswer)
+      fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsAnswer)
         `shouldBe` Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
 
     it "puts an album's songs in album order, disc by disc" $
-      fmap (map (.title) . byTrackOrder) (decodeSongs songsAnswer)
+      fmap (fmap (.title) . byTrackOrder) (decodeSongs songsAnswer)
         `shouldBe` Right ["Xtal", "Tha", "Pulsewidth"]
 
     it "puts an album the server gave no year for above the oldest, by name" $
-      fmap (map (.name) . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
+      fmap (fmap (.name) . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
         `shouldBe` Right ["Demos", "Tapes", "Live"]
 
     it "puts a song the server gave no track number for first, by name" $
-      fmap (map (.title) . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
+      fmap (fmap (.title) . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
         `shouldBe` Right ["Loose end", "Sketch", "Opener"]
 
 isMalformed :: Either SubsonicError a -> Bool

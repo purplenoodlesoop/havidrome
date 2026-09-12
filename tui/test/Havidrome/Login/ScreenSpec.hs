@@ -8,8 +8,8 @@
 module Havidrome.Login.ScreenSpec (spec) where
 
 import Control.Monad (forM_)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Login (Field (Password, ServerUrl, Username), Form (..), blank)
 import Havidrome.Login.Screen (draw, theme)
 import Terminal (Cell, border, highlighted, inside, screenshot, terminal, vacant)
@@ -29,7 +29,7 @@ spec = do
     it "never shows a character of the password" $ do
       let screen = shown (40, 5) blank {password = "secret", focus = Password}
       screen !! 4 `shouldBe` "Password    ••••••"
-      screen `shouldSatisfy` all (not . Text.isInfixOf "secret")
+      screen `shouldSatisfy` all (not . T.isInfixOf "secret")
 
     it "marks the field being typed into, and no other" $ do
       marked (40, 7) blank {focus = ServerUrl} `shouldBe` ["Server URL"]

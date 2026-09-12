@@ -8,7 +8,7 @@ module HavidromeSpec (spec) where
 
 import Control.Exception (bracket, finally)
 import Control.Monad.Trans.State.Strict (State, execState, state)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Havidrome
   ( Account (Account, asks, browses, forgets)

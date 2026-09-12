@@ -18,7 +18,7 @@ spec = describe "classifying failures" $ do
     classifyStatus status200 "body" `shouldBe` Right "body"
 
   it "reads a 401 and a 403 as a refusal of these credentials" $
-    map (fmap (const ()) . (`classifyStatus` "")) [status401, status403]
+    fmap (fmap (const ()) . (`classifyStatus` "")) [status401, status403]
       `shouldSatisfy` all (\answer -> case answer of Left (AuthRejected _) -> True; _ -> False)
 
   it "reads any other status as the server failing" $

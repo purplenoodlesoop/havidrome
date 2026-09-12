@@ -29,8 +29,8 @@ module Havidrome.Subsonic
 
 import Control.Monad.Trans.Except (ExceptT (ExceptT))
 import Data.ByteString (ByteString)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Library (Library (..))
 import Havidrome.Subsonic.Protocol
@@ -128,7 +128,7 @@ library client =
 -- | Draws a fresh salt. Sixteen characters from an alphabet that needs no
 -- escaping in a URL, comfortably over the six the API asks for.
 randomSalt :: IO Salt
-randomSalt = mkSalt . Text.pack <$> traverse (const draw) [1 :: Int .. 16]
+randomSalt = mkSalt . T.pack <$> traverse (const draw) [1 :: Int .. 16]
   where
     alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
     draw = (alphabet !!) <$> randomRIO (0, length alphabet - 1)

@@ -6,8 +6,8 @@
 -- against a clock the spec winds itself, with nothing waited for.
 module Havidrome.Browse.StripSpec (spec) where
 
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Audio.State (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Browse.Fixtures (bar, drukqsSongs, filledIn, unnumbered)
 import Havidrome.Browse.Strip
@@ -65,7 +65,7 @@ spec = do
       overlaid (Moment 0) 46 (btoum 96) `shouldBe` "⏵ Btoum Roumada  " <> bar 16 0 <> "  1:36 / 1:36"
 
     it "fills a column only once a whole column's worth has played" $
-      map (filledIn . overlaid (Moment 0) 46 . btoum) [5, 6, 95, 96] `shouldBe` [0, 1, 15, 16]
+      fmap (filledIn . overlaid (Moment 0) 46 . btoum) [5, 6, 95, 96] `shouldBe` [0, 1, 15, 16]
 
     it "gives the bar the width the name and the times leave" $ do
       overlaid (Moment 0) 32 (btoum 48) `shouldBe` "⏵ Btoum Roumada  " <> bar 1 1 <> "  0:48 / 1:36"
@@ -81,7 +81,7 @@ spec = do
 
     prop "fills exactly the width it is given, wherever in the track the audio is" $
       \(NonNegative spare) (NonNegative seconds) ->
-        Text.length (overlaid (Moment 0) (30 + spare) (btoum (seconds `mod` 97))) === 30 + spare
+        T.length (overlaid (Moment 0) (30 + spare) (btoum (seconds `mod` 97))) === 30 + spare
 
     prop "fills as many whole columns as the part of the track played is worth" $
       \(NonNegative spare) (NonNegative seconds) ->
@@ -105,13 +105,13 @@ spec = do
       overlaid (Moment 0) 46 followingBtoum `shouldBe` "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
 
     it "moves nothing else on the line as the symbol comes and goes" $
-      map (Text.drop 1 . overlaid (Moment 0) 46) [followingBtoum, btoum 0, heldBtoum 0]
+      fmap (T.drop 1 . overlaid (Moment 0) 46) [followingBtoum, btoum 0, heldBtoum 0]
         `shouldBe` replicate 3 (" Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
 
     prop "fills exactly the width it is given, running or held" $
       \(NonNegative spare) (NonNegative seconds) ->
         let at = seconds `mod` 97
-         in map (Text.length . overlaid (Moment 0) (30 + spare)) [btoum at, heldBtoum at]
+         in fmap (T.length . overlaid (Moment 0) (30 + spare)) [btoum at, heldBtoum at]
               === replicate 2 (30 + spare)
 
   describe "a song picked, while it loads" $ do
@@ -130,7 +130,7 @@ spec = do
 
     prop "fills exactly the width it is given, whatever the moment" $
       \(NonNegative spare) (NonNegative at) ->
-        Text.length (overlaid (Moment at) (30 + spare) pickingBtoum) === 30 + spare
+        T.length (overlaid (Moment at) (30 + spare) pickingBtoum) === 30 + spare
 
     it "gives the whole strip to a failure, the indicator included" $
       showing (beat (Moment 0) (Just pickingBtoum) [broken] quiet) `shouldBe` Just (Wrong brokenly)

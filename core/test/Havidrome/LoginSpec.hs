@@ -8,8 +8,8 @@ module Havidrome.LoginSpec (spec) where
 
 import Control.Monad (foldM)
 import Control.Monad.Trans.State.Strict (State, modify', runState)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Credentials (Credentials (Credentials))
 import Havidrome.Key (Key (..), Modifier (Ctrl))
 import Havidrome.Login
@@ -65,11 +65,11 @@ spec = do
   describe "the three fields" $ do
     it "opens on the server URL, all three of them empty" $ do
       blank.focus `shouldBe` ServerUrl
-      map (`value` blank) fields `shouldBe` ["", "", ""]
+      fmap (`value` blank) fields `shouldBe` ["", "", ""]
 
     it "moves through them in the order they are asked in" $ do
-      map ahead fields `shouldBe` [Username, Password, ServerUrl]
-      map back fields `shouldBe` [Password, ServerUrl, Username]
+      fmap ahead fields `shouldBe` [Username, Password, ServerUrl]
+      fmap back fields `shouldBe` [Password, ServerUrl, Username]
 
     it "lands on the server URL moving forward from the password" $
       (.focus) <$> typing [Ahead, Ahead, Ahead] `shouldBe` Right ServerUrl
@@ -146,7 +146,7 @@ spec = do
       masked Username "secret" `shouldBe` "secret"
 
     it "lines the three labels up in a column of their own" $
-      map (Text.length . labelled) fields `shouldBe` [12, 12, 12]
+      fmap (T.length . labelled) fields `shouldBe` [12, 12, 12]
 
 -- | The fields, in the order they are asked in.
 fields :: [Field]
@@ -191,11 +191,11 @@ typing = fst . answering (Right ())
 
 -- | What stands in the three fields.
 filledIn :: Either Ending Form -> Either Ending [Text]
-filledIn = fmap (\form -> map (`value` form) fields)
+filledIn = fmap (\form -> fmap (`value` form) fields)
 
 -- | Typing something into the field the form is on.
 typed :: Text -> [Command]
-typed = map Type . Text.unpack
+typed = fmap Type . T.unpack
 
 -- | From the field the screen opens on, moving to a field and typing into it.
 typedInto :: Field -> Text -> [Command]

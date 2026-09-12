@@ -40,7 +40,7 @@ import Brick
   )
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get, put)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Graphics.Vty qualified as Vty
 import Havidrome.Credentials qualified as Credentials
 import Havidrome.Credentials.Store qualified as Store
@@ -135,7 +135,7 @@ draw form =
       [ withAttr titleAttribute (line "havidrome")
       , line " "
       ]
-        <> map field [minBound .. maxBound]
+        <> fmap field [minBound .. maxBound]
         <> [ fill ' '
            , maybe emptyWidget (withAttr troubleAttribute . line) form.trouble
            ]

@@ -30,8 +30,8 @@ module Havidrome.Login
   ) where
 
 import Data.Char (isPrint)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Credentials qualified as Credentials
 import Havidrome.Key (Key (..), Modifier (Ctrl))
 import Havidrome.Subsonic.Types (SubsonicError, explain)
@@ -169,7 +169,7 @@ step entry instruction form = case instruction of
   Leave -> pure (Left Abandoned)
   Ahead -> stay quiet {focus = ahead form.focus}
   Back -> stay quiet {focus = back form.focus}
-  Type character -> stay (alter form.focus (<> Text.singleton character) quiet)
+  Type character -> stay (alter form.focus (<> T.singleton character) quiet)
   Rub -> stay (alter form.focus dropLast quiet)
   Submit ->
     entry.accepts filled >>= \case
@@ -187,13 +187,13 @@ step entry instruction form = case instruction of
         }
 
 dropLast :: Text -> Text
-dropLast = Text.dropEnd 1
+dropLast = T.dropEnd 1
 
 -- | What a field is called, in a column of its own so that what is typed into
 -- the three of them lines up.
 labelled :: Field -> Text
 labelled =
-  Text.justifyLeft 12 ' ' . \case
+  T.justifyLeft 12 ' ' . \case
     ServerUrl -> "Server URL"
     Username -> "Username"
     Password -> "Password"
@@ -203,5 +203,5 @@ labelled =
 -- can be taken off the screen but its length.
 masked :: Field -> Text -> Text
 masked = \case
-  Password -> \typed -> Text.replicate (Text.length typed) "•"
+  Password -> \typed -> T.replicate (T.length typed) "•"
   _ -> id

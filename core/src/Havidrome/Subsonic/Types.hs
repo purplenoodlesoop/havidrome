@@ -19,8 +19,8 @@ module Havidrome.Subsonic.Types
   , explain
   ) where
 
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 
 -- | The base address of a Navidrome server, as typed at the login screen —
@@ -110,5 +110,5 @@ explain = \case
   NetworkFailure reason -> "The server could not be reached: " <> reason
   AuthRejected reason -> "The server refused these credentials: " <> reason
   ServerFailure code reason ->
-    "The server answered with an error (" <> Text.pack (show code) <> "): " <> reason
+    "The server answered with an error (" <> T.pack (show code) <> "): " <> reason
   MalformedResponse reason -> "The server's answer could not be read: " <> reason

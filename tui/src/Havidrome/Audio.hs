@@ -41,8 +41,8 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Char8 qualified as Char8
 import Data.Foldable (traverse_)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Audio.Ipc (Notice (..), observePosition, quit, readNotice, render)
 import Havidrome.Audio.State
@@ -267,7 +267,7 @@ httpReach = do
   pure (Reach (probe manager))
 
 probe :: Manager -> Text -> IO Bool
-probe manager url = case parseRequest (Text.unpack url) of
+probe manager url = case parseRequest (T.unpack url) of
   Nothing -> pure False
   Just request -> do
     attempt <- try (httpNoBody request {method = "HEAD"} manager)

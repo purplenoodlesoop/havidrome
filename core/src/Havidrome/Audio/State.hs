@@ -30,7 +30,7 @@ module Havidrome.Audio.State
   , clampTo
   ) where
 
-import Data.Text (Text)
+import Data.Text as T (Text)
 import GHC.Generics (Generic)
 import Havidrome.Subsonic.Types (Seconds (..))
 

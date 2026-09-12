@@ -23,10 +23,10 @@ module Havidrome.Browse.Fixtures
 
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
 import Data.Functor.Identity (Identity, runIdentity)
-import Data.Map.Strict (Map)
+import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
 import Havidrome.Subsonic.Types
@@ -138,8 +138,8 @@ unnumbered identifier name seconds = song identifier name seconds Nothing
 -- | The now-playing overlay's bar with this many of its columns filled, and
 -- this many more empty.
 bar :: Int -> Int -> Text
-bar filled empty = Text.replicate filled "█" <> Text.replicate empty "░"
+bar filled empty = T.replicate filled "█" <> T.replicate empty "░"
 
 -- | How many columns of the bar on this line are filled.
 filledIn :: Text -> Int
-filledIn = Text.count "█"
+filledIn = T.count "█"

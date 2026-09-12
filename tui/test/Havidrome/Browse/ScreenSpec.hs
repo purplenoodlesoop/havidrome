@@ -13,8 +13,8 @@ import Control.Monad.Trans.Except (ExceptT)
 import Data.Either (fromRight)
 import Data.List (nub, transpose)
 import Data.Maybe (catMaybes)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Graphics.Vty qualified as Vty
 import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Browse (Browse (AtSongs), selected)
@@ -176,7 +176,7 @@ spec = do
       withStandin $ \standin session -> do
         screen <- after session playingDrukqs
         _ <- ranOut standin session screen 2
-        loaded standin `shouldReturn` map from drukqsSongs
+        loaded standin `shouldReturn` fmap from drukqsSongs
 
     it "replaces what is playing when the song is of another album" $
       withStandin $ \standin session -> do
@@ -224,7 +224,7 @@ spec = do
             playingDrukqs
             [Ascend, Ascend, MoveUp, Descend, Descend]
         _ <- ranOut standin session screen 2
-        loaded standin `shouldReturn` map from drukqsSongs
+        loaded standin `shouldReturn` fmap from drukqsSongs
 
   describe "leaving the player and leaving the account" $ do
     it "stops the audio on the way out of the player" $ withStandin $ \standin session -> do
@@ -266,7 +266,7 @@ spec = do
       screen <- after session playingDrukqs
       _ <- pressing session screen [NextSong]
       playing session `shouldReturn` Just (drukqsSongs !! 1)
-      loaded standin `shouldReturn` map from (take 2 drukqsSongs)
+      loaded standin `shouldReturn` fmap from (take 2 drukqsSongs)
 
     it "ends the playing on n on the album's last song" $
       withStandin $ \standin session -> do
@@ -383,7 +383,7 @@ spec = do
       songs <- onDrukqs standin session
       albums <- taking library session songs Ascend >>= beaten session 1
       names <- taking library session albums Ascend >>= beaten session 2
-      map stripRow [songs, albums, names]
+      fmap stripRow [songs, albums, names]
         `shouldBe` replicate 3 ("⏵ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
 
     it "takes the bottom row inside the margin and the row above it, and no more of the screen" $
@@ -534,7 +534,7 @@ spec = do
         begin standin
         screen <- beaten session 0 picking
         later <- beaten session 10 screen
-        map stripRow [screen, later]
+        fmap stripRow [screen, later]
           `shouldBe` replicate 2 ("⏵ Silence  " <> bar 0 22 <> "  0:00 / 0:00")
 
     it "shrinks and grows with the width of the screen" $
@@ -566,7 +566,7 @@ spec = do
         screen <- breaking session standin (Unplayable "the file will not play: it is corrupt")
         later <- beaten session 10 screen
         stripRow later `shouldBe` "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
-        loaded standin `shouldReturn` map from (take 2 drukqsSongs)
+        loaded standin `shouldReturn` fmap from (take 2 drukqsSongs)
 
     it "keeps a network failure's reason there however long it is left" $
       withStandin $ \standin session -> do
@@ -588,15 +588,15 @@ spec = do
         running <- onDrukqs standin session
         held <- pressing session running [PauseOrResume] >>= beaten session 1
         again <- pressing session held [PauseOrResume] >>= beaten session 2
-        map standing [running, held, again] `shouldBe` [["⏵"], ["⏸"], ["⏵"]]
+        fmap standing [running, held, again] `shouldBe` [["⏵"], ["⏸"], ["⏵"]]
 
     it "is neither while a song picked with Enter loads, space pressed or not" $
       withStandin $ \_ session -> do
         loading <- loadingDrukqs session
         holding <- pressing session loading [PauseOrResume] >>= beaten session 1
-        map stripRow [loading, holding]
+        fmap stripRow [loading, holding]
           `shouldBe` replicate 2 ("  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36")
-        map standing [loading, holding] `shouldBe` [[], []]
+        fmap standing [loading, holding] `shouldBe` [[], []]
 
     it "is neither while a song reached by n or p, or moved on to by the album, loads" $
       withStandin $ \standin session -> do
@@ -604,12 +604,12 @@ spec = do
         forward <- pressing session screen [NextSong] >>= beaten session 1
         back <- pressing session forward [PreviousSong] >>= beaten session 2
         movedOn <- ranOut standin session back 1
-        map stripRow [forward, back, movedOn]
+        fmap stripRow [forward, back, movedOn]
           `shouldBe` [ "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
                      , "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
                      , "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
                      ]
-        map standing [forward, back, movedOn] `shouldBe` [[], [], []]
+        fmap standing [forward, back, movedOn] `shouldBe` [[], [], []]
 
     it "is the playing one once a song loads with no space pressed, however it started" $
       withStandin $ \standin session -> do
@@ -622,7 +622,7 @@ spec = do
         movedOn <- ranOut standin session forwardBegun 1
         begin standin
         movedOnBegun <- beaten session 3 movedOn
-        map standing [pickedBegun, forwardBegun, movedOnBegun] `shouldBe` replicate 3 ["⏵"]
+        fmap standing [pickedBegun, forwardBegun, movedOnBegun] `shouldBe` replicate 3 ["⏵"]
 
     it "is the paused one once a song loads with space pressed while it loaded, however it started" $
       withStandin $ \standin session -> do
@@ -635,7 +635,7 @@ spec = do
         movedOn <- ranOut standin session forwardBegun 1 >>= flip (pressing session) [PauseOrResume]
         begin standin
         movedOnBegun <- beaten session 3 movedOn
-        map standing [pickedBegun, forwardBegun, movedOnBegun] `shouldBe` replicate 3 ["⏸"]
+        fmap standing [pickedBegun, forwardBegun, movedOnBegun] `shouldBe` replicate 3 ["⏸"]
         motionOf standin `shouldReturn` Just Paused
 
     it "is neither while a skipped track's reason is in the strip, the next song running behind it" $
@@ -757,7 +757,7 @@ spec = do
     it "is never on an album or an artist" $ withStandin $ \standin session -> do
       albums <- onDrukqs standin session >>= flip (pressing session) [Ascend]
       names <- pressing session albums [Ascend]
-      map carrying [albums, names] `shouldBe` [[], []]
+      fmap carrying [albums, names] `shouldBe` [[], []]
 
     it "is on no song after logging out and in again" $ withStandin $ \_ session -> do
       ends session LogOut playingDrukqs `shouldReturn` Just LoggedOut
@@ -767,7 +767,7 @@ spec = do
   describe "the columns" $ do
     it "open on the artist list alone, one column at the left" $ do
       wide 6 start `shouldBe` ["Artists", rules 1, "anohni", "Aphex Twin", "zebra", ""]
-      wide 6 start `shouldSatisfy` all ((<= 40) . Text.length)
+      wide 6 start `shouldSatisfy` all ((<= 40) . T.length)
 
     it "put the keys on the first artist, and on no other row" $ withStandin $ \_ session -> do
       onKeys start `shouldBe` ["anohni"]
@@ -805,11 +805,11 @@ spec = do
     it "draw the rows picked left of the keys just as the keys' row, and none of them bold" $
       withStandin $ \_ session -> do
         albums <- after session [MoveDown, Descend]
-        map reversed (drawnAs "      Sketches" albums) `shouldBe` [True]
+        fmap reversed (drawnAs "      Sketches" albums) `shouldBe` [True]
         drawnAs "Aphex Twin" albums `shouldBe` drawnAs "      Sketches" albums
         emboldened albums `shouldBe` ["Artists", "Albums"]
         songs <- after session toDrukqs
-        map reversed (drawnAs "      Btoum Roumada" songs) `shouldBe` [True]
+        fmap reversed (drawnAs "      Btoum Roumada" songs) `shouldBe` [True]
         drawnAs "Aphex Twin" songs `shouldBe` drawnAs "      Btoum Roumada" songs
         drawnAs "2001  Drukqs" songs `shouldBe` drawnAs "      Btoum Roumada" songs
         emboldened songs `shouldBe` ["Artists", "Albums", "Songs"]
@@ -846,7 +846,7 @@ spec = do
               , Library.songs = const (pure [])
               }
           crowding = foldM (taking crowded session)
-          many = opening (map (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
+          many = opening (fmap (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
       artistsScrolled <- crowding many [MoveDown, MoveDown, MoveDown, MoveDown]
       wide 5 artistsScrolled `shouldBe` ["Artists", rules 1, "three", "four", "five"]
       albums <- crowding artistsScrolled [Descend]
@@ -930,7 +930,7 @@ spec = do
         screen <- after session toDrukqs
         let rule at = do
               let drawn = downColumn 6 at screen
-              map snd drawn `shouldBe` replicate 6 '│'
+              fmap snd drawn `shouldBe` replicate 6 '│'
               length (nub drawn) `shouldBe` 1
         rule 40
         rule 80
@@ -946,7 +946,7 @@ spec = do
         songs <- after session toDrukqs
         forM_ [start, albums, songs] $ \screen ->
           border (whole (122, 8) screen) `shouldSatisfy` all vacant
-        screenshot (whole (122, 8) songs) `shouldBe` [""] <> map (" " <>) drukqsColumns <> [""]
+        screenshot (whole (122, 8) songs) `shouldBe` [""] <> fmap (" " <>) drukqsColumns <> [""]
 
     it "has a song's strip on the row above its blank bottom row, and a blank row above the strip" $
       withStandin $ \standin session -> do
@@ -1098,7 +1098,7 @@ stripRow = last . shown (46, 5)
 -- anywhere on a terminal wide and tall enough to show every column and the
 -- strip.
 standing :: Screen -> [Text]
-standing screen = filter (\symbol -> any (Text.isInfixOf symbol) (wide 8 screen)) ["⏵", "⏸"]
+standing screen = filter (\symbol -> any (T.isInfixOf symbol) (wide 8 screen)) ["⏵", "⏸"]
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
@@ -1133,18 +1133,18 @@ wide height = shown (120, height)
 -- Each column takes 40 of its columns, the second and third starting with the
 -- rule between them and the column to the left.
 across :: [Text] -> Text
-across = Text.stripEnd . Text.intercalate "│" . zipWith (`Text.justifyLeft` ' ') (40 : repeat 39)
+across = T.stripEnd . T.intercalate "│" . zipWith (`T.justifyLeft` ' ') (40 : repeat 39)
 
 -- | The row of that terminal under the headings of this many columns: a line
 -- across each column, and the rule between one column and the next as it is on
 -- every other row.
 rules :: Int -> Text
-rules count = Text.intercalate "│" (map (`Text.replicate` "─") (take count (40 : repeat 39)))
+rules count = T.intercalate "│" (fmap (`T.replicate` "─") (take count (40 : repeat 39)))
 
 -- | What that terminal has in this one of its columns, top row to bottom, and
 -- how each is drawn: the look of the rule between two columns, taken whole.
 downColumn :: Int -> Int -> Screen -> [Cell]
-downColumn height at = map (!! at) . within (120, height)
+downColumn height at = fmap (!! at) . within (120, height)
 
 -- | Where the keys are on that terminal: the row highlighted in its rightmost
 -- column.
@@ -1155,19 +1155,19 @@ onKeys = foldl (\_ rightmost -> rightmost) [] . trail
 -- rightwards, each column's top to bottom: the row picked in each column left
 -- of the one being browsed, and the row the keys are on in that one.
 trail :: Screen -> [[Text]]
-trail = map catMaybes . transpose . map (map highlit . cells . concatMap letters) . runs . within (120, 6)
+trail = fmap catMaybes . transpose . fmap (fmap highlit . cells . concatMap letters) . runs . within (120, 6)
   where
-    letters (look, said) = map (reversed look,) (Text.unpack said)
+    letters (look, said) = fmap (reversed look,) (T.unpack said)
     cells characters = case break ((== '│') . snd) characters of
       (cell, []) -> [cell]
       (cell, _ : rest) -> cell : cells rest
     highlit cell = case [character | (True, character) <- cell] of
       [] -> Nothing
-      lit -> Just (Text.stripEnd (Text.pack lit))
+      lit -> Just (T.stripEnd (T.pack lit))
 
 -- | How each run of that terminal that reads exactly this is drawn.
 drawnAs :: Text -> Screen -> [Maybe Vty.Attr]
-drawnAs said = map fst . filter ((== said) . Text.stripEnd . snd) . concat . runs . within (120, 6)
+drawnAs said = fmap fst . filter ((== said) . T.stripEnd . snd) . concat . runs . within (120, 6)
 
 -- | Each stretch of it in bold: the columns' headings and the now-playing
 -- overlay.
@@ -1205,12 +1205,12 @@ ambientColumns =
 -- | The rows that carry the playing mark, as the column each is in reads them,
 -- on a terminal wide enough to leave every row whole.
 carrying :: Screen -> [Text]
-carrying = filter (Text.isInfixOf mark) . concatMap (map Text.stripEnd . Text.splitOn "│") . wide 8
+carrying = filter (T.isInfixOf mark) . concatMap (fmap T.stripEnd . T.splitOn "│") . wide 8
 
 -- | The same rows with the mark given back the space it stands in, which is
 -- what they read as with nothing playing.
 unmarked :: [Text] -> [Text]
-unmarked = map (Text.replace mark " ")
+unmarked = fmap (T.replace mark " ")
 
 -- | The artist and the album whose songs are the column being browsed, as
 -- their rows read, when songs are what is being browsed.

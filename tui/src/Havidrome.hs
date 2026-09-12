@@ -20,9 +20,9 @@ module Havidrome
 
 import Control.Monad.Trans.Except (runExceptT)
 import Data.Foldable (traverse_)
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Data.Text.IO qualified as Text.IO
+import Data.Text as T (Text)
+import Data.Text qualified as T
+import Data.Text.IO qualified as T.IO
 import Havidrome.Audio (withAudio)
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit), browsing, opening)
 import Havidrome.Credentials qualified as Credentials
@@ -58,7 +58,7 @@ start = \case
   Absent -> Ask
   Present credentials -> Browse credentials
   Unreadable fault ->
-    Stop ("the stored credentials could not be read: " <> Text.pack (show fault))
+    Stop ("the stored credentials could not be read: " <> T.pack (show fault))
 
 -- | Runs the player to completion: the library the credentials reach, browsed
 -- until the user quits, and every library logged into after it.
@@ -135,4 +135,4 @@ browse credentials = do
 
 -- | Says why the player cannot go on, and stops.
 stop :: Text -> IO a
-stop reason = Text.IO.hPutStrLn stderr ("havidrome: " <> reason) >> exitFailure
+stop reason = T.IO.hPutStrLn stderr ("havidrome: " <> reason) >> exitFailure

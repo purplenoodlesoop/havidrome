@@ -2,7 +2,7 @@
 -- gives its column, and the mark the song playback is on carries.
 module Havidrome.Browse.RowSpec (spec) where
 
-import Data.Text qualified as Text
+import Data.Text qualified as T
 import Havidrome.Browse.Fixtures (album, artist, song)
 import Havidrome.Browse.Row (Row (row), mark, marking)
 import Havidrome.Subsonic.Types (SongId (SongId))
@@ -32,8 +32,8 @@ spec = do
         `shouldBe` "  2 " <> mark <> " Vordhosbn"
 
     it "keeps the name in line with the unmarked rows around it" $
-      Text.length (marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2)))
-        `shouldBe` Text.length (row (song "s" "Vordhosbn" 293 (Just 2)))
+      T.length (marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2)))
+        `shouldBe` T.length (row (song "s" "Vordhosbn" 293 (Just 2)))
 
     it "leaves every other song as its row" $ do
       marking (Just (SongId "t")) (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2   Vordhosbn"

@@ -39,7 +39,7 @@ module Havidrome.Playback
   ) where
 
 import Control.Concurrent.MVar (MVar, modifyMVar, modifyMVar_, newMVar, readMVar)
-import Data.Text (Text)
+import Data.Text as T (Text)
 import GHC.Generics (Generic)
 import Havidrome.Audio
   ( Audio (..)

@@ -1,7 +1,7 @@
 -- | Walking the three levels, over a library held in the specs.
 module Havidrome.BrowseSpec (spec) where
 
-import Data.Text (Text)
+import Data.Text as T (Text)
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
   , Rows (..)
@@ -27,7 +27,7 @@ spec :: Spec
 spec = do
   describe "atArtists" $ do
     it "opens on the artist list, as the library gave it" $
-      items opening `shouldBe` map (.name) artists
+      items opening `shouldBe` fmap (.name) artists
 
     it "starts with the first artist selected" $
       cursor opening `shouldBe` Just 0
@@ -48,11 +48,11 @@ spec = do
 
   describe "descend" $ do
     it "shows exactly the selected artist's albums, in the library's order" $
-      fmap items (into (moveDown opening)) `shouldBe` Right (map (.name) aphexAlbums)
+      fmap items (into (moveDown opening)) `shouldBe` Right (fmap (.name) aphexAlbums)
 
     it "shows exactly the selected album's songs, in the library's order" $
       fmap items (into (moveDown opening) >>= into . moveDown . moveDown)
-        `shouldBe` Right (map (.title) drukqsSongs)
+        `shouldBe` Right (fmap (.title) drukqsSongs)
 
     it "selects the first item of the level it opens" $
       fmap cursor (into (moveDown opening)) `shouldBe` Right (Just 0)
@@ -93,9 +93,9 @@ into = answered . descend library
 -- | How the level on screen reads, item by item.
 items :: Browse -> [Text]
 items = \case
-  AtArtists artists' -> map (.name) artists'.items
-  AtAlbums _ albums -> map (.name) albums.items
-  AtSongs _ _ songs -> map (.title) songs.items
+  AtArtists artists' -> fmap (.name) artists'.items
+  AtAlbums _ albums -> fmap (.name) albums.items
+  AtSongs _ _ songs -> fmap (.title) songs.items
 
 -- | Which row of the level on screen is selected, and nothing at all when the
 -- level is empty and has no row to select.

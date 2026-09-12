@@ -4,8 +4,8 @@ module Havidrome.PlaybackSpec (spec) where
 
 import Control.Monad (replicateM)
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Audio.State (Failure (..), Motion (..))
 import Havidrome.Playback
 import Havidrome.Playback.Standin
@@ -15,12 +15,12 @@ import Test.Hspec
 -- | An album of so many songs, in album order, told apart from another
 -- album's by the name its songs are lettered with.
 album :: Text -> Int -> [Song]
-album name count = map song [1 .. count]
+album name count = fmap song [1 .. count]
  where
   song n =
     Song
-      { id = SongId (name <> Text.pack (show n))
-      , title = name <> Text.pack (" track " <> show n)
+      { id = SongId (name <> T.pack (show n))
+      , title = name <> T.pack (" track " <> show n)
       , duration = Seconds 180
       , track = Just n
       , disc = Nothing
@@ -64,13 +64,13 @@ spec = do
         start session (tracks `at` 1)
         shown <- runOut standin session 3
         shown `shouldBe` []
-        loaded standin `shouldReturn` map from (drop 1 tracks)
+        loaded standin `shouldReturn` fmap from (drop 1 tracks)
 
     it "plays nothing outside that album, however long it is left alone" $
       withStandin $ \standin session -> do
         start session (tracks `at` 0)
         _ <- runOut standin session 8
-        loaded standin `shouldReturn` map from tracks
+        loaded standin `shouldReturn` fmap from tracks
 
     it "leaves nothing playing once the album has run out" $
       withStandin $ \standin session -> do
@@ -130,14 +130,14 @@ spec = do
         start session (other `at` 1)
         _ <- runOut standin session 2
         current session `shouldReturn` Nothing
-        loaded standin `shouldReturn` (from (tracks !! 0) : map from (drop 1 other))
+        loaded standin `shouldReturn` (from (tracks !! 0) : fmap from (drop 1 other))
 
   describe "next" $ do
     it "plays the next song of the album" $ withStandin $ \standin session -> do
       start session (tracks `at` 0)
       next session
       current session `shouldReturn` Just (tracks !! 1)
-      loaded standin `shouldReturn` map from (take 2 tracks)
+      loaded standin `shouldReturn` fmap from (take 2 tracks)
 
     it "ends the playing on the last song" $ withStandin $ \standin session -> do
       start session (tracks `at` 3)
@@ -253,7 +253,7 @@ spec = do
         resume session
         seekBy session 30
         _ <- runOut standin session 3
-        loaded standin `shouldReturn` map from (drop 1 tracks)
+        loaded standin `shouldReturn` fmap from (drop 1 tracks)
 
   describe "stopping" $
     it "plays nothing, and leaves no album behind to carry on" $

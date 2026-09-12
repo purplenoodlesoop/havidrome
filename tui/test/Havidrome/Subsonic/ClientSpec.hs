@@ -2,8 +2,8 @@ module Havidrome.Subsonic.ClientSpec (spec) where
 
 import Data.ByteString (ByteString)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text as T (Text)
+import Data.Text qualified as T
 import Havidrome.Subsonic
 import Havidrome.Subsonic.Fixtures
 import Test.Hspec
@@ -37,11 +37,11 @@ spec = do
       (client, asked) <- stubClient (Right pingAnswer)
       _ <- checkCredentials client
       requested <- readIORef asked
-      requested `shouldSatisfy` ("/rest/ping?" `Text.isInfixOf`)
+      requested `shouldSatisfy` ("/rest/ping?" `T.isInfixOf`)
 
   describe "listArtists" $ do
     it "hands back every artist, alphabetically" $
-      answering (Right artistsAnswer) (fmap (fmap (map (.name))) . listArtists)
+      answering (Right artistsAnswer) (fmap (fmap (fmap (.name))) . listArtists)
         `shouldReturn` Right ["anohni", "Aphex Twin", "zebra"]
 
     it "passes a network failure straight through" $
@@ -52,27 +52,27 @@ spec = do
     it "hands back the albums of the artist it asked for, oldest year first" $
       answering
         (Right albumsAnswer)
-        (\client -> fmap (fmap (map (.name))) (listAlbums client (ArtistId "a1")))
+        (\client -> fmap (fmap (fmap (.name))) (listAlbums client (ArtistId "a1")))
         `shouldReturn` Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
 
     it "asks for that artist and no other" $ do
       (client, asked) <- stubClient (Right albumsAnswer)
       _ <- listAlbums client (ArtistId "a1")
       requested <- readIORef asked
-      requested `shouldSatisfy` ("/rest/getArtist?id=a1&" `Text.isInfixOf`)
+      requested `shouldSatisfy` ("/rest/getArtist?id=a1&" `T.isInfixOf`)
 
   describe "listSongs" $ do
     it "hands back the songs of the album it asked for, in album order" $
       answering
         (Right songsAnswer)
-        (\client -> fmap (fmap (map (.title))) (listSongs client (AlbumId "b1")))
+        (\client -> fmap (fmap (fmap (.title))) (listSongs client (AlbumId "b1")))
         `shouldReturn` Right ["Xtal", "Tha", "Pulsewidth"]
 
     it "asks for that album and no other" $ do
       (client, asked) <- stubClient (Right songsAnswer)
       _ <- listSongs client (AlbumId "b1")
       requested <- readIORef asked
-      requested `shouldSatisfy` ("/rest/getAlbum?id=b1&" `Text.isInfixOf`)
+      requested `shouldSatisfy` ("/rest/getAlbum?id=b1&" `T.isInfixOf`)
 
   describe "songAudioUrl" $
     it "points at the stored file, signed like every other call" $ do
