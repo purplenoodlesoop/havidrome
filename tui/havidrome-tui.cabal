@@ -142,7 +142,8 @@ test-suite havidrome-tui-test
         havidrome-core:fixtures,
         -- The shell under test.
         havidrome-tui,
-        -- Runs the suite: the properties, their generators and the runner.
+        -- Runs the suite: the properties, what generates their input, and
+        -- the runner that reports on them.
         hedgehog,
         -- Builds the responses the transport stand-in returns.
         http-client,
