@@ -16,6 +16,11 @@ let
     unions
     ;
 
+  # nixpkgs-unstable has dropped x86_64-darwin: GHC's `meta.platforms` no
+  # longer names it, so nothing written in Haskell can be built for it with
+  # this input. The flake evaluates there and offers nothing of havidrome.
+  buildable = pkgs.stdenv.hostPlatform.system != "x86_64-darwin";
+
   # Only what the compiler reads, so that touching a note does not rebuild.
   source = toSource {
     root = ../.;
@@ -148,7 +153,7 @@ let
   ];
 in
 {
-  flake = {
+  flake = lib.optionalAttrs buildable {
     packages = {
       default = release;
       havidrome = release;

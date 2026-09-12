@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -13,7 +14,9 @@ let
   );
 in
 {
-  flake.shell = [
+  # A shell to develop in exists where there is something to develop: on a
+  # system havidrome is not built for, the compiler itself is unavailable.
+  flake.shell = lib.optionals (config.flake.packages ? havidrome) [
     ghc
     haskellPackages.cabal-install
     # The same player the built executable carries, so `cabal run` and
