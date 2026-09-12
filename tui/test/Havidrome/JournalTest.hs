@@ -3,7 +3,7 @@
 --
 -- Everything here runs against a throwaway state directory, so that nothing in
 -- the suite touches the journal of whoever is running it.
-module Havidrome.JournalSpec (tests) where
+module Havidrome.JournalTest (tests) where
 
 import Control.Exception (bracket)
 import Data.Bits ((.&.))
@@ -11,10 +11,11 @@ import Data.IORef (readIORef)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
+import Havidrome.Check (example)
 import Havidrome.Journal (Journal (file, writes), mkJournal)
 import Havidrome.Journal.Fake (recording)
 import Havidrome.Subsonic.Transport (Transport (fetch), mkHttpTransport)
-import Hedgehog (Group (Group), Property, assert, evalIO, property, withTests, (===))
+import Hedgehog (Group (Group), Property, assert, evalIO, (===))
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath ((</>))
@@ -34,14 +35,14 @@ tests =
     ]
 
 underStateHome :: Property
-underStateHome = withTests 1 . property $ do
+underStateHome = example do
   (found, home) <- evalIO . withStateHome $ \home -> do
     journal <- mkJournal
     (,home) <$> journal.file
   found === home </> "havidrome" </> "journal"
 
 underHome :: Property
-underHome = withTests 1 . property $ do
+underHome = example do
   (found, home) <- evalIO . withSystemTempDirectory "havidrome-home" $ \home ->
     withEnvironment "XDG_STATE_HOME" Nothing
       . withEnvironment "HOME" (Just home)
@@ -53,7 +54,7 @@ underHome = withTests 1 . property $ do
 -- | Opening a journal is the whole of what a run has to do to leave one: the
 -- state directory need not have been there, and nothing need have gone wrong.
 leavesAFile :: Property
-leavesAFile = withTests 1 . property $ do
+leavesAFile = example do
   there <- evalIO . withSystemTempDirectory "havidrome-state" $ \parent ->
     withEnvironment "XDG_STATE_HOME" (Just (parent </> "fresh")) $ do
       journal <- mkJournal
@@ -63,7 +64,7 @@ leavesAFile = withTests 1 . property $ do
 -- | Each run builds a journal of its own, and each one finds the same file and
 -- adds to what is already in it.
 appends :: Property
-appends = withTests 1 . property $ do
+appends = example do
   said <- evalIO . withStateHome . const $ do
     firstRun <- mkJournal
     firstRun.writes "the first run said this"
@@ -80,7 +81,7 @@ appends = withTests 1 . property $ do
         ]
 
 ownerOnly :: Property
-ownerOnly = withTests 1 . property $ do
+ownerOnly = example do
   mode <- evalIO . withStateHome . const $ do
     journal <- mkJournal
     journal.writes "something happened"
@@ -90,9 +91,9 @@ ownerOnly = withTests 1 . property $ do
 -- | The transport catches everything a request can suffer, and an address
 -- nothing answers on is the plainest of them. The journal it is handed is a
 -- value of the same record type as the player's, keeping its lines where a
--- spec can read them back instead of putting them in a file.
+-- test can read them back instead of putting them in a file.
 caughtIsJournalled :: Property
-caughtIsJournalled = withTests 1 . property $ do
+caughtIsJournalled = example do
   (failed, written) <- evalIO $ do
     (journal, recorded) <- recording
     transport <- mkHttpTransport journal

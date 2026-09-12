@@ -71,8 +71,8 @@ library
         -- Text everywhere a user reads or types one.
         text >=2.1 && <2.2
 
--- The made-up library the specs walk and the answers they read, shared by
--- both packages' specs so that neither writes them out a second time.
+-- The made-up library the tests walk and the answers they read, shared by
+-- both packages' tests so that neither writes them out a second time.
 library fixtures
     import:          language
     visibility:      public
@@ -99,20 +99,20 @@ test-suite havidrome-core-test
     hs-source-dirs: test
     main-is:        Main.hs
     other-modules:
-        Havidrome.Audio.IpcSpec
-        Havidrome.Audio.StateSpec
-        Havidrome.Browse.RowSpec
-        Havidrome.Browse.StripSpec
-        Havidrome.BrowseSpec
-        Havidrome.CredentialsSpec
-        Havidrome.LoginSpec
-        Havidrome.Playback.QueueSpec
-        Havidrome.Subsonic.ProtocolSpec
-        Havidrome.WidthSpec
+        Havidrome.Audio.IpcTest
+        Havidrome.Audio.StateTest
+        Havidrome.Browse.RowTest
+        Havidrome.Browse.StripTest
+        Havidrome.BrowseTest
+        Havidrome.Check
+        Havidrome.CredentialsTest
+        Havidrome.LoginTest
+        Havidrome.Playback.QueueTest
+        Havidrome.Subsonic.ProtocolTest
+        Havidrome.Subsonic.TypesTest
+        Havidrome.WidthTest
 
     build-depends:
-        -- Generates the inputs of the property tests.
-        QuickCheck,
         -- Builds the JSON an mpv line is read back out of.
         aeson,
         -- The standard library.
@@ -123,8 +123,9 @@ test-suite havidrome-core-test
         havidrome-core,
         -- The made-up library and the server's answers.
         havidrome-core:fixtures,
-        -- Runs the suite: specs, expectations, the test runner.
-        hspec,
+        -- Runs the suite: the properties, what generates their input, and
+        -- the runner that reports on them.
+        hedgehog >=1.5 && <1.6,
         -- Text everywhere the player takes or gives one.
         text,
         -- The state a stand-in entry writes down what it was asked in.

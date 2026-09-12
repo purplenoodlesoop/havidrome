@@ -57,13 +57,12 @@ let
   corePackage =
     {
       mkDerivation,
-      QuickCheck,
       aeson,
       base,
       bytestring,
       containers,
       crypton,
-      hspec,
+      hedgehog,
       http-types,
       text,
       transformers,
@@ -89,11 +88,10 @@ let
       ];
 
       testHaskellDepends = [
-        QuickCheck
         aeson
         base
         bytestring
-        hspec
+        hedgehog
         text
         transformers
       ];
@@ -104,7 +102,6 @@ let
   tuiPackage =
     {
       mkDerivation,
-      QuickCheck,
       base,
       brick,
       bytestring,
@@ -112,7 +109,6 @@ let
       filepath,
       havidrome-core,
       hedgehog,
-      hspec,
       http-client,
       http-client-tls,
       http-types,
@@ -167,7 +163,6 @@ let
       ];
 
       testHaskellDepends = [
-        QuickCheck
         base
         brick
         bytestring
@@ -175,7 +170,6 @@ let
         filepath
         havidrome-core
         hedgehog
-        hspec
         http-client
         http-types
         stm
