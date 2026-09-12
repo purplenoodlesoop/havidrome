@@ -19,7 +19,6 @@ module Havidrome.Subsonic
   , mkSalt
   ) where
 
-import Control.Monad.Trans.Except (ExceptT (ExceptT))
 import Data.ByteString (ByteString)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -53,7 +52,7 @@ data Subsonic = Subsonic
   -- ^ Whether the server this account names accepts it. @Right ()@ is
   -- acceptance; a refusal and an unreachable server are both 'Left', and are
   -- told apart by which 'SubsonicError' it is.
-  , browses :: Credentials.Credentials -> Library (ExceptT SubsonicError IO)
+  , browses :: Credentials.Credentials -> Library IO
   -- ^ The library that account can walk.
   , addresses :: Credentials.Credentials -> SongId -> Text
   -- ^ Where a song's audio is, for that account: a plain GET, asking for the
@@ -111,17 +110,16 @@ call client endpoint decode = do
 ping :: Client -> IO (Either SubsonicError ())
 ping client = call client Ping decodePing
 
--- | The library a Navidrome server holds. Every call can fail, and a failure
--- stops the fetch it was part of rather than yielding a half-list, which is
--- what the 'ExceptT' says.
-libraryOf :: Client -> Library (ExceptT SubsonicError IO)
+-- | The library a Navidrome server holds. Every call can fail, and hands back
+-- the 'SubsonicError' it failed with in place of its list, never a half-list.
+libraryOf :: Client -> Library IO
 libraryOf client =
   Library
-    { artists = ExceptT (fmap byArtistName <$> call client GetArtists decodeArtists)
+    { artists = fmap byArtistName <$> call client GetArtists decodeArtists
     , albums = \artist ->
-        ExceptT (fmap byAlbumYear <$> call client (GetArtist artist) decodeAlbums)
+        fmap byAlbumYear <$> call client (GetArtist artist) decodeAlbums
     , songs = \album ->
-        ExceptT (fmap byTrackOrder <$> call client (GetAlbum album) decodeSongs)
+        fmap byTrackOrder <$> call client (GetAlbum album) decodeSongs
     }
 
 audioFor :: Client -> SongId -> Text

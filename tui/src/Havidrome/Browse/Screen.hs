@@ -68,7 +68,6 @@ import Control.Exception (bracket)
 import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get, put)
-import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
@@ -90,7 +89,7 @@ import Havidrome.Key.Vty (pressed)
 import Havidrome.Library (Library)
 import Havidrome.Margin (margined)
 import Havidrome.Playback (Playing (..), Session (..), startingAt)
-import Havidrome.Subsonic (Artist, Song (..), SongId, SubsonicError, explain)
+import Havidrome.Subsonic (Artist, Song (..), SongId, explain)
 import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 import Havidrome.Width qualified as Width
 import Optics.Core (view, (%))
@@ -216,7 +215,7 @@ data Ending
 -- song it is on, so the mark is on a picked song from the key press that
 -- picked it — while it is still loading — and follows @n@ and @p@ at once.
 step ::
-  Library (ExceptT SubsonicError IO) ->
+  Library IO ->
   Session ->
   Command ->
   Screen ->
@@ -236,7 +235,7 @@ step library session instruction screen = case instruction of
       traverse_ session.start (startingAt album song.id)
       stays taken
     Nothing -> do
-      descended <- runExceptT (Browse.descend library screen.browse)
+      descended <- Browse.descend library screen.browse
       stays $ case descended of
         Left failure -> taken {strip = Strip.wrong (explain failure) taken.strip}
         Right level -> taken {browse = level}
@@ -285,7 +284,7 @@ markOf = fmap (view (#song % #id))
 browsing ::
   (HasClock env, HasTerminal env) =>
   env ->
-  Library (ExceptT SubsonicError IO) ->
+  Library IO ->
   Session ->
   Screen ->
   IO Ending
@@ -315,7 +314,7 @@ interval = 100_000
 
 -- | The player, browsing the library it is given until it is left, over the
 -- session that plays what is picked in it.
-application :: Library (ExceptT SubsonicError IO) -> Session -> App Screen Beat Name
+application :: Library IO -> Session -> App Screen Beat Name
 application library session =
   App
     { appDraw = draw
@@ -326,7 +325,7 @@ application library session =
     }
 
 handle ::
-  Library (ExceptT SubsonicError IO) ->
+  Library IO ->
   Session ->
   BrickEvent Name Beat ->
   EventM Name Screen ()

@@ -3,9 +3,7 @@
 -- the client would have put them in, and asking for an artist or an album the
 -- library does not hold yields nothing.
 module Havidrome.Browse.Fixtures
-  ( Answer
-  , answered
-  , library
+  ( library
   , failing
   , artists
   , aphexAlbums
@@ -21,8 +19,6 @@ module Havidrome.Browse.Fixtures
   , filledIn
   ) where
 
-import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
-import Data.Functor.Identity (Identity, runIdentity)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -40,32 +36,25 @@ import Havidrome.Subsonic.Types
   , SubsonicError
   )
 
--- | What the stand-in library says: at once, and either an answer or the
--- failure the specs asked it for.
-type Answer = ExceptT SubsonicError Identity
-
--- | What it said.
-answered :: Answer a -> Either SubsonicError a
-answered = runIdentity . runExceptT
-
 -- | The whole stand-in library, which never fails. It answers wherever it is
 -- asked: the browsing specs ask it outside 'IO', the screen's specs ask it
 -- alongside a playback session, which is in 'IO'.
 library :: (Applicative f) => Library f
 library =
   Library
-    { Library.artists = pure artists
-    , Library.albums = \wanted -> pure (Map.findWithDefault [] wanted albumsByArtist)
-    , Library.songs = \wanted -> pure (Map.findWithDefault [] wanted songsByAlbum)
+    { Library.artists = pure (Right artists)
+    , Library.albums = \wanted -> pure (Right (Map.findWithDefault [] wanted albumsByArtist))
+    , Library.songs = \wanted -> pure (Right (Map.findWithDefault [] wanted songsByAlbum))
     }
 
--- | A library the server never answers for.
-failing :: (Monad f) => SubsonicError -> Library (ExceptT SubsonicError f)
+-- | A library the server never answers for: every one of the three comes back
+-- as the failure asked for here, and never as a list.
+failing :: (Applicative f) => SubsonicError -> Library f
 failing failure =
   Library
-    { Library.artists = throwE failure
-    , Library.albums = const (throwE failure)
-    , Library.songs = const (throwE failure)
+    { Library.artists = pure (Left failure)
+    , Library.albums = const (pure (Left failure))
+    , Library.songs = const (pure (Left failure))
     }
 
 artists :: [Artist]

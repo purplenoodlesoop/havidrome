@@ -89,8 +89,6 @@ library
         text,
         -- Stamps each journal line with the moment it was written.
         time,
-        -- The except transformer the client's failures travel in.
-        transformers,
         -- Sets the config and journal files' owner-only permissions.
         unix,
         -- The vector brick's list widget holds its rows in.
@@ -162,7 +160,7 @@ test-suite havidrome-tui-test
         temporary,
         -- Text everywhere the player takes or gives one.
         text,
-        -- The except transformer the client's failures travel in.
+        -- The state a stand-in account writes down what it was asked in.
         transformers,
         -- Reads back the config file's permissions.
         unix,

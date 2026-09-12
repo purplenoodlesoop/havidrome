@@ -20,6 +20,7 @@ module Havidrome.Audio.State
     -- * What is heard about it
   , Event (..)
   , Failure (..)
+  , explain
 
     -- * Moving it along
   , Command (..)
@@ -30,7 +31,9 @@ module Havidrome.Audio.State
   , clampTo
   ) where
 
+import Data.Char (toUpper)
 import Data.Text (Text)
+import Data.Text qualified as Text
 import GHC.Generics (Generic)
 import Havidrome.Subsonic.Types (Seconds (..))
 
@@ -99,6 +102,19 @@ data Failure
     -- unsupported, or corrupt.
     Unplayable Text
   deriving stock (Eq, Show)
+
+-- | What went wrong, in a sentence for the strip along the bottom of whatever
+-- screen is up. The player words its reasons from the middle of a sentence,
+-- so the sentence is opened around one here.
+explain :: Failure -> Text
+explain = \case
+  Unreachable reason -> sentence reason
+  Unplayable reason -> sentence reason
+
+sentence :: Text -> Text
+sentence said = case Text.uncons said of
+  Nothing -> said
+  Just (opening, rest) -> Text.cons (toUpper opening) rest
 
 -- | Something the backend reports of its own accord. A track that was stopped
 -- announces nothing, so 'Finished' means the audio really ran out, once.
