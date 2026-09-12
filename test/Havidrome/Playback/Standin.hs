@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | An audio backend that makes no sound: it keeps the same state machine the
 -- real one does, writes down every track it is told to play, and says only
 -- what a test tells it to say.
@@ -47,17 +45,17 @@ import Havidrome.Playback (Session, newSession)
 import Havidrome.Subsonic.Types (Seconds, SongId (SongId))
 
 data Standin = Standin
-  { standinState :: IORef State
-  , standinLoaded :: IORef [(Text, Seconds)]
-  , standinEvents :: TChan Event
+  { state :: IORef State
+  , tracks :: IORef [(Text, Seconds)]
+  , events :: TChan Event
   }
 
 newStandin :: IO Standin
 newStandin = do
   state <- newIORef initial
-  played <- newIORef []
+  tracks <- newIORef []
   events <- newTChanIO
-  pure Standin {standinState = state, standinLoaded = played, standinEvents = events}
+  pure Standin {state, tracks, events}
 
 standinAudio :: Standin -> Audio
 standinAudio standin =
@@ -67,9 +65,9 @@ standinAudio standin =
     , resume = perform standin Resume
     , seekBy = perform standin . SeekBy
     , stop = perform standin Stop
-    , nowPlaying = readIORef (standinState standin)
-    , nextEvent = atomically (tryReadTChan (standinEvents standin))
-    , awaitEvent = atomically (readTChan (standinEvents standin))
+    , nowPlaying = readIORef standin.state
+    , nextEvent = atomically (tryReadTChan standin.events)
+    , awaitEvent = atomically (readTChan standin.events)
     }
 
 -- | A session over a stand-in backend, and the stand-in behind it: the specs
@@ -87,16 +85,16 @@ address (SongId identifier) = "https://music.example.org/rest/stream?id=" <> ide
 -- | Every track it has been told to play, in the order it was told, each with
 -- the position it was told to start at.
 loaded :: Standin -> IO [(Text, Seconds)]
-loaded = fmap reverse . readIORef . standinLoaded
+loaded standin = fmap reverse (readIORef standin.tracks)
 
 -- | Whether the loaded track is running or held, and nothing when no track is
 -- loaded.
 motionOf :: Standin -> IO (Maybe Motion)
 motionOf standin = do
-  state <- readIORef (standinState standin)
+  state <- readIORef standin.state
   pure $ case state of
     Stopped -> Nothing
-    Loaded playback -> Just (playbackMotion playback)
+    Loaded playback -> Just playback.motion
 
 -- | The loaded track has been opened and its audio has started, as mpv says
 -- it: the opening first, then the start.
@@ -117,11 +115,12 @@ breakWith standin = perform standin . Broke
 
 perform :: Standin -> Command -> IO ()
 perform standin command = do
-  effects <- atomicModifyIORef' (standinState standin) (step command)
+  effects <- atomicModifyIORef' standin.state (step command)
   traverse_ (record standin) effects
 
 record :: Standin -> Effect -> IO ()
 record standin effect = case effect of
-  Load url from -> atomicModifyIORef' (standinLoaded standin) (\played -> ((url, from) : played, ()))
-  Announce event -> atomically (writeTChan (standinEvents standin) event)
+  Load url from ->
+    atomicModifyIORef' standin.tracks (\before -> ((url, from) : before, ()))
+  Announce event -> atomically (writeTChan standin.events event)
   _ -> pure ()

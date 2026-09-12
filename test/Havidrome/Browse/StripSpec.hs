@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The strip along the bottom: the now-playing line it carries, and the
 -- reasons that take it over and how long each of them holds it.
 --

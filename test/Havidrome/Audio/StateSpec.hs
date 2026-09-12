@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Havidrome.Audio.StateSpec (spec) where
 
 import Havidrome.Audio.State
@@ -10,7 +8,8 @@ import Test.QuickCheck
 -- | Three minutes of audio at a made-up address; long enough that a seek has
 -- room on both sides of it.
 track :: Track
-track = Track {trackUrl = "https://music.example.org/rest/stream?id=s1", trackDuration = Seconds 180}
+track =
+  Track {url = "https://music.example.org/rest/stream?id=s1", duration = Seconds 180}
 
 -- | The track loaded, moving this way, this far along towards its audio
 -- starting, and this far into it.
@@ -39,11 +38,11 @@ spec = do
   describe "starting" $ do
     it "plays a track from its beginning" $
       step (Start track (Seconds 0)) initial
-        `shouldBe` (requested 0, [Load (trackUrl track) (Seconds 0), SetPaused False])
+        `shouldBe` (requested 0, [Load track.url (Seconds 0), SetPaused False])
 
     it "plays a track from a position inside it" $
       step (Start track (Seconds 42)) initial
-        `shouldBe` (requested 42, [Load (trackUrl track) (Seconds 42), SetPaused False])
+        `shouldBe` (requested 42, [Load track.url (Seconds 42), SetPaused False])
 
     it "replaces whatever was playing, and keeps running" $
       stateAfter [Start track (Seconds 0), Pause, Start track (Seconds 5)] `shouldBe` requested 5
@@ -132,14 +131,14 @@ spec = do
 
     it "never leaves the track, wherever it is asked to go" $
       property $ \at delta duration ->
-        let long = track {trackDuration = Seconds (abs duration)}
+        let long = track {duration = Seconds (abs duration)}
             start = clampTo long (Seconds at)
             (sought, _) = step (SeekBy delta) (Loaded (Playback long Running start Begun))
          in case sought of
               Stopped -> False
               Loaded playback ->
-                playbackElapsed playback >= Seconds 0
-                  && playbackElapsed playback <= trackDuration long
+                playback.elapsed >= Seconds 0
+                  && playback.elapsed <= long.duration
 
   describe "stopping" $ do
     it "plays nothing afterwards" $

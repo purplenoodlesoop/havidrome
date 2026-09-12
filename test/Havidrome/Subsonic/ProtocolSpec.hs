@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Havidrome.Subsonic.ProtocolSpec (spec) where
 
 import Data.Text (Text)
@@ -41,7 +39,7 @@ spec = do
         `shouldBe` "https://music.example.org/rest/ping?f=json&" <> credentialQuery
 
     it "never carries the password itself" $
-      credentialsPassword testCredentials `shouldSatisfy` \password ->
+      testCredentials.password `shouldSatisfy` \password ->
         not (password `Text.isInfixOf` url Ping)
 
     it "asks for one artist's albums by id" $
@@ -77,15 +75,15 @@ spec = do
       decodePing pingAnswer `shouldBe` Right ()
 
     it "reads artists out of the server's index groups" $
-      fmap (map artistName) (decodeArtists artistsAnswer)
+      fmap (map (.name)) (decodeArtists artistsAnswer)
         `shouldBe` Right ["zebra", "Aphex Twin", "anohni"]
 
     it "reads albums, with the year the server gave or none" $
-      fmap (map albumYear) (decodeAlbums albumsAnswer)
+      fmap (map (.year)) (decodeAlbums albumsAnswer)
         `shouldBe` Right [Just 2001, Just 1992, Nothing]
 
     it "reads songs with their track name and total time" $
-      fmap (map (\s -> (songTitle s, songDuration s))) (decodeSongs songsAnswer)
+      fmap (map (\s -> (s.title, s.duration))) (decodeSongs songsAnswer)
         `shouldBe` Right
           [ ("Pulsewidth", Seconds 228)
           , ("Xtal", Seconds 293)
@@ -93,7 +91,7 @@ spec = do
           ]
 
     it "gives a song the server timed at nothing a total time of zero" $
-      fmap (map songDuration) (decodeSongs songWithoutDurationAnswer)
+      fmap (map (.duration)) (decodeSongs songWithoutDurationAnswer)
         `shouldBe` Right [Seconds 0]
 
     it "reads an album the server lists no songs for as empty" $
@@ -139,23 +137,23 @@ spec = do
 
   describe "orders" $ do
     it "puts artists in alphabetical order, whatever their capitals" $
-      fmap (map artistName . byArtistName) (decodeArtists artistsAnswer)
+      fmap (map (.name) . byArtistName) (decodeArtists artistsAnswer)
         `shouldBe` Right ["anohni", "Aphex Twin", "zebra"]
 
     it "puts an artist's albums oldest year first" $
-      fmap (map albumName . byAlbumYear) (decodeAlbums albumsAnswer)
+      fmap (map (.name) . byAlbumYear) (decodeAlbums albumsAnswer)
         `shouldBe` Right ["Sketches", "Selected Ambient Works 85-92", "Drukqs"]
 
     it "puts an album's songs in album order, disc by disc" $
-      fmap (map songTitle . byTrackOrder) (decodeSongs songsAnswer)
+      fmap (map (.title) . byTrackOrder) (decodeSongs songsAnswer)
         `shouldBe` Right ["Xtal", "Tha", "Pulsewidth"]
 
     it "puts an album the server gave no year for above the oldest, by name" $
-      fmap (map albumName . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
+      fmap (map (.name) . byAlbumYear) (decodeAlbums albumsWithoutYearAnswer)
         `shouldBe` Right ["Demos", "Tapes", "Live"]
 
     it "puts a song the server gave no track number for first, by name" $
-      fmap (map songTitle . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
+      fmap (map (.title) . byTrackOrder) (decodeSongs songsWithoutTrackAnswer)
         `shouldBe` Right ["Loose end", "Sketch", "Opener"]
 
 isMalformed :: Either SubsonicError a -> Bool

@@ -1,6 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The credentials the player needs to reach a Navidrome server, and the
 -- plain config file they live in between runs.
 --
@@ -64,9 +61,9 @@ instance Show Credentials where
   showsPrec d credentials =
     showParen (d > 10) $
       showString "Credentials "
-        . showsPrec 11 (server credentials)
+        . showsPrec 11 credentials.server
         . showString " "
-        . showsPrec 11 (username credentials)
+        . showsPrec 11 credentials.username
         . showString " <password>"
 
 -- | What a 'load' found in the config file.
@@ -168,9 +165,9 @@ assignment line = maybe (Left (BadLine line)) Right $ do
 
 fields :: [(Text, Credentials -> Text)]
 fields =
-  [ (serverField, server)
-  , (usernameField, username)
-  , (passwordField, password)
+  [ (serverField, (.server))
+  , (usernameField, (.username))
+  , (passwordField, (.password))
   ]
 
 serverField, usernameField, passwordField :: Text

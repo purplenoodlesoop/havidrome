@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | A library of three artists, held in the specs themselves, so that
 -- browsing can be walked without a server: the lists come back in the order
 -- the client would have put them in, and asking for an artist or an album the
@@ -117,20 +115,20 @@ drukqsSongs =
   ]
 
 artist :: Text -> Text -> Artist
-artist identifier name = Artist {artistId = ArtistId identifier, artistName = name}
+artist identifier name = Artist {id = ArtistId identifier, name}
 
 album :: Text -> Text -> Maybe Int -> Album
 album identifier name year =
-  Album {albumId = AlbumId identifier, albumName = name, albumYear = year}
+  Album {id = AlbumId identifier, name, year}
 
 song :: Text -> Text -> Int -> Maybe Int -> Song
 song identifier name seconds track =
   Song
-    { songId = SongId identifier
-    , songTitle = name
-    , songDuration = Seconds seconds
-    , songTrack = track
-    , songDisc = Nothing
+    { id = SongId identifier
+    , title = name
+    , duration = Seconds seconds
+    , track
+    , disc = Nothing
     }
 
 -- | A song the server gives no track number for.

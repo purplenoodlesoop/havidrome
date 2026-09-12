@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The Subsonic wire protocol, as pure functions: the URL of every call the
 -- player makes, the reading of every answer, and the orders the lists are
 -- shown in. Nothing here performs I\/O, so all of it is testable without a
@@ -73,13 +71,13 @@ randomSalt = Salt . Text.pack <$> traverse (const draw) [1 :: Int .. 16]
 token :: Credentials -> Salt -> ByteString
 token credentials (Salt salt) =
   Text.encodeUtf8 . Text.pack . show $
-    (hash (encodeUtf8 (credentialsPassword credentials <> salt)) :: Digest MD5)
+    (hash (encodeUtf8 (credentials.password <> salt)) :: Digest MD5)
 
 -- | The parameters every call carries: who is asking, the proof, and what is
 -- asking.
 authQuery :: Credentials -> Salt -> [(ByteString, ByteString)]
 authQuery credentials salt@(Salt s) =
-  [ ("u", encodeUtf8 (credentialsUser credentials))
+  [ ("u", encodeUtf8 credentials.user)
   , ("t", token credentials salt)
   , ("s", encodeUtf8 s)
   , ("v", apiVersion)
@@ -129,7 +127,7 @@ audioUrl server credentials salt (SongId song) =
 
 restUrl :: Server -> Text -> [(ByteString, ByteString)] -> Text
 restUrl server name query =
-  Text.dropWhileEnd (== '/') (serverUrl server)
+  Text.dropWhileEnd (== '/') server.url
     <> "/rest/"
     <> name
     <> Text.decodeUtf8 (renderSimpleQuery True query)
@@ -215,13 +213,13 @@ decodeSongs = decodeEnvelope $ \response -> do
 -- | Alphabetically, ignoring case; exact name then id settle the ties, so the
 -- list is the same on every run.
 byArtistName :: [Artist] -> [Artist]
-byArtistName = sortOn (\a -> (Text.toCaseFold (artistName a), artistName a, artistId a))
+byArtistName = sortOn (\a -> (Text.toCaseFold a.name, a.name, a.id))
 
 -- | Oldest year first; name then id settle the ties.
 byAlbumYear :: [Album] -> [Album]
-byAlbumYear = sortOn (\a -> (albumYear a, Text.toCaseFold (albumName a), albumId a))
+byAlbumYear = sortOn (\a -> (a.year, Text.toCaseFold a.name, a.id))
 
 -- | Album order: disc, then track within the disc; title then id settle the
 -- ties.
 byTrackOrder :: [Song] -> [Song]
-byTrackOrder = sortOn (\s -> (songDisc s, songTrack s, Text.toCaseFold (songTitle s), songId s))
+byTrackOrder = sortOn (\s -> (s.disc, s.track, Text.toCaseFold s.title, s.id))

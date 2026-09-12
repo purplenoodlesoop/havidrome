@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The lines in these tests are mpv's own, taken from a session with the
 -- player this backend drives.
 module Havidrome.Audio.IpcSpec (spec) where

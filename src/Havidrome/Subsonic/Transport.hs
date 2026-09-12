@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | How a request actually leaves the machine. The client is written against
 -- 'Transport' rather than against @http-client@, so its behaviour can be
 -- exercised without a server on the other end.
@@ -17,6 +15,7 @@ import Data.ByteString.Lazy qualified as Lazy
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
+import GHC.Generics (Generic)
 import Havidrome.Subsonic.Types
 import Network.HTTP.Client
   ( HttpException
@@ -34,6 +33,7 @@ import Network.HTTP.Types.Status (Status, statusCode, statusMessage)
 newtype Transport = Transport
   { fetch :: Text -> IO (Either SubsonicError ByteString)
   }
+  deriving stock (Generic)
 
 -- | A transport that really speaks HTTP, over a manager the caller owns.
 httpTransport :: Manager -> Transport

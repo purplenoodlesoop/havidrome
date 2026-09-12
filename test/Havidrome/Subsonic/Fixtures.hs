@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Answers copied from the shape Navidrome really sends, and the pieces of a
 -- client the specs point at a stand-in server.
 module Havidrome.Subsonic.Fixtures
@@ -36,7 +34,7 @@ testServer :: Server
 testServer = Server "https://music.example.org"
 
 testCredentials :: Credentials
-testCredentials = Credentials {credentialsUser = "someone", credentialsPassword = "hunter2"}
+testCredentials = Credentials {user = "someone", password = "hunter2"}
 
 testSalt :: Salt
 testSalt = mkSalt "abc123"

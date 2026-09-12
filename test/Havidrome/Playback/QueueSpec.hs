@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Havidrome.Playback.QueueSpec (spec) where
 
 import Data.Maybe (fromMaybe, isNothing)
@@ -16,11 +14,11 @@ album count = map song [1 .. count]
 song :: Int -> Song
 song n =
   Song
-    { songId = SongId (Text.pack ("s" <> show n))
-    , songTitle = Text.pack ("Track " <> show n)
-    , songDuration = Seconds 180
-    , songTrack = Just n
-    , songDisc = Nothing
+    { id = SongId (Text.pack ("s" <> show n))
+    , title = Text.pack ("Track " <> show n)
+    , duration = Seconds 180
+    , track = Just n
+    , disc = Nothing
     }
 
 -- | The queue over an album that starts at the song in this place, counting
@@ -28,7 +26,7 @@ song n =
 at :: [Song] -> Int -> Queue
 at songs' place =
   fromMaybe (error "the album has no song in that place") $
-    startingAt songs' (songId (songs' !! place))
+    startingAt songs' (songs' !! place).id
 
 -- | Moving the queue as a run of steps: forward where it can go forward,
 -- backward otherwise.
@@ -51,7 +49,7 @@ spec :: Spec
 spec = do
   describe "the album it is made from" $ do
     it "starts at the song it is given" $
-      fmap playing (startingAt (album 3) (SongId "s2")) `shouldBe` Just (song 2)
+      fmap (.playing) (startingAt (album 3) (SongId "s2")) `shouldBe` Just (song 2)
 
     it "is nothing when that song is not in the album" $
       startingAt (album 3) (SongId "s9") `shouldSatisfy` isNothing
@@ -64,27 +62,27 @@ spec = do
 
   describe "moving forward" $ do
     it "goes to the next song of the album" $
-      fmap playing (forward (album 3 `at` 0)) `shouldBe` Just (song 2)
+      fmap (.playing) (forward (album 3 `at` 0)) `shouldBe` Just (song 2)
 
     it "runs out after the last song" $
       forward (album 3 `at` 2) `shouldSatisfy` isNothing
 
     it "reaches every later song of the album, in order" $
-      map playing (walkTo (album 4 `at` 1)) `shouldBe` [song 2, song 3, song 4]
+      map (.playing) (walkTo (album 4 `at` 1)) `shouldBe` [song 2, song 3, song 4]
 
   describe "moving back" $ do
     it "goes to the previous song of the album" $
-      playing (backward (album 3 `at` 2)) `shouldBe` song 2
+      (backward (album 3 `at` 2)).playing `shouldBe` song 2
 
     it "stays on the first song, which is where going back from it leads" $
-      playing (backward (album 3 `at` 0)) `shouldBe` song 1
+      (backward (album 3 `at` 0)).playing `shouldBe` song 1
 
   describe "however it is moved" $ do
     it "never leaves the album, and never skips a place in it" $
       property $ \(Positive count) (NonNegative offset) steps ->
         let place = offset `mod` count
             walked = walk steps (album count `at` place)
-         in playing walked == song (1 + walkedTo count steps place)
+         in walked.playing == song (1 + walkedTo count steps place)
 
     it "keeps the album it was made from" $
       property $ \(Positive count) (NonNegative offset) steps ->

@@ -6,7 +6,30 @@ build-type:      Simple
 
 common language
     default-language:   GHC2021
-    default-extensions: DerivingStrategies
+    default-extensions:
+        DerivingStrategies
+        DerivingVia
+        DeriveAnyClass
+        GeneralizedNewtypeDeriving
+        LambdaCase
+        MultiWayIf
+        BlockArguments
+        ViewPatterns
+        PatternSynonyms
+        QuasiQuotes
+        ApplicativeDo
+        OverloadedStrings
+        OverloadedLabels
+        OverloadedRecordDot
+        DuplicateRecordFields
+        NoFieldSelectors
+        RecordWildCards
+        NamedFieldPuns
+        TypeFamilies
+        DataKinds
+        FunctionalDependencies
+        UndecidableInstances
+
     ghc-options:        -Wall -Wcompat -Wredundant-constraints
 
 library
@@ -42,9 +65,9 @@ library
         http-client,
         http-client-tls,
         http-types,
-        microlens,
         mtl,
         network,
+        optics-core,
         process,
         random,
         stm,

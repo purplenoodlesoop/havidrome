@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The strip along the bottom of the browsing screen: one line under the
 -- list, never more, and never a line the keyboard reaches. It is looked at
 -- and nothing else, so the lists above it go on being walked exactly as they
@@ -49,10 +46,10 @@ import GHC.Clock (getMonotonicTime)
 import Havidrome.Audio (Failure (Unplayable, Unreachable), Motion (Paused, Running))
 import Havidrome.Playback
   ( Arrival (Picked)
-  , Playing (playingArrival, playingElapsed, playingSong, playingSound)
+  , Playing (..)
   , Sound (Loading, Sounding)
   )
-import Havidrome.Subsonic (Seconds (Seconds), Song (songDuration, songTitle))
+import Havidrome.Subsonic (Seconds (Seconds), Song (..))
 
 -- | A moment on the player's own clock, in seconds. Only the distance between
 -- two of them means anything: the clock never goes backwards, so a line put
@@ -77,9 +74,9 @@ briefly = 3
 -- said over the top of it, and the moment of the last beat, which is what
 -- turns the loading indicator.
 data Strip = Strip
-  { stripPlaying :: Maybe Playing
-  , stripSaid :: Maybe Said
-  , stripAt :: Moment
+  { playing :: Maybe Playing
+  , said :: Maybe Said
+  , at :: Moment
   }
   deriving stock (Eq, Show)
 
@@ -98,7 +95,7 @@ data Life
 
 -- | Nothing playing and nothing to say, which is no strip on screen at all.
 quiet :: Strip
-quiet = Strip {stripPlaying = Nothing, stripSaid = Nothing, stripAt = Moment 0}
+quiet = Strip {playing = Nothing, said = Nothing, at = Moment 0}
 
 -- | What the strip has on it, and 'Nothing' when it has nothing and so is not
 -- on screen.
@@ -111,9 +108,9 @@ data Showing
   deriving stock (Eq, Show)
 
 showing :: Strip -> Maybe Showing
-showing strip = case stripSaid strip of
+showing strip = case strip.said of
   Just (Said said _) -> Just (Wrong said)
-  Nothing -> Overlay (stripAt strip) <$> stripPlaying strip
+  Nothing -> Overlay strip.at <$> strip.playing
 
 -- | The overlay's line at a moment, laid out across this many columns: a
 -- symbol for whether the audio runs or is held, the track name one space after
@@ -136,13 +133,13 @@ overlaid :: Moment -> Int -> Playing -> Text
 overlaid at width playing =
   Text.intercalate gap [titled, progress (width - taken) elapsed total, times]
   where
-    song = playingSong playing
-    titled = symbol (playingSound playing) <> " " <> songTitle song
-    elapsed = playingElapsed playing
-    total = songDuration song
+    song = playing.song
+    titled = symbol playing.sound <> " " <> song.title
+    elapsed = playing.elapsed
+    total = song.duration
     times = sofar <> " / " <> clock total
     sofar
-      | playingArrival playing == Picked && playingSound playing == Loading =
+      | playing.arrival == Picked && playing.sound == Loading =
           Text.justifyRight (textWidth (clock elapsed)) ' ' (spinner at)
       | otherwise = clock elapsed
     gap = "  "
@@ -200,11 +197,11 @@ clock (Seconds total) = case hours of
 beat :: Moment -> Maybe Playing -> [Failure] -> Strip -> Strip
 beat at playing failures strip =
   Strip
-    { stripPlaying = playing
-    , stripSaid = case failures of
-        [] -> stripSaid strip >>= lasting at
+    { playing
+    , said = case failures of
+        [] -> strip.said >>= lasting at
         _ -> Just (saidOf at (last failures))
-    , stripAt = at
+    , at
     }
 
 -- | What a playback failure says, and for how long.
@@ -224,13 +221,13 @@ lasting at said = case lifeOf said of
 -- | Something the player itself has to say, which stays until a key press: a
 -- level the library would not answer for.
 wrong :: Text -> Strip -> Strip
-wrong said strip = strip {stripSaid = Just (Said said UntilAKey)}
+wrong said strip = strip {said = Just (Said said UntilAKey)}
 
 -- | The strip a key press leaves behind. What was waiting for a key goes;
 -- what has a few seconds still to run keeps them, since it is the clock and
 -- not the keyboard that takes it down.
 pressed :: Strip -> Strip
-pressed strip = strip {stripSaid = stripSaid strip >>= heard}
+pressed strip = strip {said = strip.said >>= heard}
   where
     heard said = case lifeOf said of
       UntilAKey -> Nothing
