@@ -39,7 +39,7 @@ import Havidrome.Credentials.Store
 import Havidrome.Journal (HasJournal (getJournal), Journal, mkJournal)
 import Havidrome.Library (Library (artists))
 import Havidrome.Login.Screen qualified as Login
-import Havidrome.Playback (mkSession)
+import Havidrome.Playback (newSession)
 import Havidrome.Subsonic
   ( HasSubsonic (getSubsonic)
   , Subsonic (addresses, browses)
@@ -189,7 +189,7 @@ browse env credentials = do
   runExceptT browsed.artists >>= \case
     Left failure -> stop env (explain failure)
     Right artists -> do
-      session <- mkSession (getAudio env) (subsonic.addresses credentials)
+      session <- newSession (getAudio env) (subsonic.addresses credentials)
       browsing env browsed session (opening artists)
 
 -- | Says why the player cannot go on, and stops.

@@ -41,7 +41,7 @@ import Havidrome.Audio.State
   , initial
   , step
   )
-import Havidrome.Playback (Session, mkSession)
+import Havidrome.Playback (Session, newSession)
 import Havidrome.Subsonic.Types (Seconds, SongId (SongId))
 
 data Standin = Standin
@@ -75,7 +75,7 @@ standinAudio standin =
 withStandin :: (Standin -> Session -> IO a) -> IO a
 withStandin use = do
   standin <- mkStandin
-  session <- mkSession (standinAudio standin) address
+  session <- newSession (standinAudio standin) address
   use standin session
 
 -- | Where a song's audio lives, as the Subsonic client would say.
