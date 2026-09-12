@@ -123,7 +123,7 @@ Two packages, each in its own directory with its own `.cabal`:
 - `core/` — `havidrome-core`, the part that is a function of its arguments. It
   reaches no network, no disk, no process and no terminal, so it builds and its
   tests run anywhere GHC does. `src/` is the library, `fixtures/` a made-up
-  library both packages' specs walk, `test/` its test suite.
+  library both packages' tests walk, `test/` its test suite.
 - `tui/` — `havidrome-tui`, the shell: the terminal, the config file, the HTTP
   calls, the player process, and the loop that ties them to the core. `src/` is
   the library, `app/` the `havidrome` executable, a thin entry point, and
