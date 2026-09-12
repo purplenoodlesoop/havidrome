@@ -2,10 +2,15 @@
 -- player this backend drives.
 module Havidrome.Audio.IpcTest (tests) where
 
-import Data.Aeson (Value)
+import Data.Aeson (Value (Number, String))
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Types (Pair)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
+import Data.ByteString.Lazy qualified as LazyByteString
+import Data.Foldable (traverse_)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Havidrome.Audio.Ipc
   ( Notice (Broken, Fetching, RanOut, Reached, Underway)
   , observePosition
@@ -15,11 +20,14 @@ import Havidrome.Audio.Ipc
   )
 import Havidrome.Audio.State
   ( Effect (Announce, Load, SeekTo, SetPaused, Unload)
-  , Event (Finished)
+  , Event (Failed, Finished)
+  , Failure (Unplayable, Unreachable)
   )
 import Havidrome.Check (example)
 import Havidrome.Subsonic.Types (Seconds (..))
-import Hedgehog (Group (Group), (===))
+import Hedgehog (Gen, Group (Group), PropertyT, forAll, property, (===))
+import Hedgehog.Gen qualified as Gen
+import Hedgehog.Range qualified as Range
 
 tests :: Group
 tests =
@@ -144,6 +152,53 @@ tests =
       ( "nothing is heard in a line that is not JSON at all"
       , example (heard "mpv fell over" === Nothing)
       )
+    ,
+      ( "every order for the player is a line, and the whole of one"
+      , property do
+          order <- forAll anyOrder
+          traverse_ oneLine (render order)
+          oneLine observePosition
+          oneLine quit
+      )
+    ,
+      ( "what the caller is told is no order for the player, whatever it is"
+      , property do
+          event <- forAll anyEvent
+          render (Announce event) === Nothing
+      )
+    ,
+      ( "a load names the track's address and the second it starts at, wherever that is"
+      , property do
+          url <- forAll anyUrl
+          at <- forAll anySecond
+          sent (Load url (Seconds at))
+            === command
+              [ String "loadfile"
+              , String url
+              , String "replace"
+              , Number (-1)
+              , String ("start=" <> Text.pack (show at))
+              ]
+      )
+    ,
+      ( "a seek names the second it is to land on, wherever that is"
+      , property do
+          at <- forAll anySecond
+          sent (SeekTo (Seconds at))
+            === command [String "seek", Number (fromIntegral at), String "absolute"]
+      )
+    ,
+      ( "a position the player reports is the second the audio is inside, however finely it counts"
+      , property do
+          at <- forAll (Gen.double (Range.linearFrac 0 6000))
+          heard (positionLine at) === Just (Reached (Seconds (floor at)))
+      )
+    ,
+      ( "nothing is heard in an event this player never asked about"
+      , property do
+          name <- forAll (Gen.filter (`notElem` actedOn) (Gen.text (Range.linear 1 10) Gen.alphaNum))
+          heard (eventLine name) === Nothing
+      )
     ]
 
 -- | A rendered command, read back as JSON so the test does not depend on how
@@ -154,3 +209,67 @@ sent effect = render effect >>= Aeson.decodeStrict
 -- | What the backend makes of one line the player said.
 heard :: ByteString -> Maybe Notice
 heard = readNotice
+
+-- | Whether a line the player is sent is one line: it ends the line it is,
+-- and it is all of it.
+oneLine :: ByteString -> PropertyT IO ()
+oneLine line = do
+  ByteString.count newline line === 1
+  ByteString.last line === newline
+  where
+    newline = 10
+
+-- | The command a rendered line carries, as JSON, beside what it should be.
+command :: [Value] -> Maybe Value
+command arguments = Just (Aeson.object ["command" Aeson..= arguments])
+
+-- | Anything the state machine can order the player to do. What it announces
+-- to the caller instead is 'anyEvent'.
+anyOrder :: Gen Effect
+anyOrder =
+  Gen.choice
+    [ Load <$> anyUrl <*> (Seconds <$> anySecond)
+    , SetPaused <$> Gen.bool
+    , SeekTo . Seconds <$> anySecond
+    , pure Unload
+    ]
+
+anyEvent :: Gen Event
+anyEvent =
+  Gen.choice
+    [ pure Finished
+    , Failed <$> Gen.choice [Unreachable <$> reason, Unplayable <$> reason]
+    ]
+  where
+    reason = Gen.text (Range.linear 0 12) Gen.unicode
+
+-- | An address to play from, the characters a line has to escape among them.
+anyUrl :: Gen Text
+anyUrl = do
+  song <- Gen.text (Range.linear 1 8) Gen.unicode
+  pure ("https://music.example.org/rest/stream?id=" <> song)
+
+anySecond :: Gen Int
+anySecond = Gen.int (Range.linear 0 6000)
+
+-- | The events this player acts on, which are the ones the line below is not
+-- made of.
+actedOn :: [Text]
+actedOn = ["property-change", "start-file", "playback-restart", "end-file"]
+
+-- | The line the player says a position in.
+positionLine :: Double -> ByteString
+positionLine at =
+  saying
+    [ "event" Aeson..= ("property-change" :: Text)
+    , "id" Aeson..= (1 :: Int)
+    , "name" Aeson..= ("time-pos" :: Text)
+    , "data" Aeson..= at
+    ]
+
+-- | The line the player says something else in.
+eventLine :: Text -> ByteString
+eventLine name = saying ["event" Aeson..= name]
+
+saying :: [Pair] -> ByteString
+saying said = LazyByteString.toStrict (Aeson.encode (Aeson.object said))
