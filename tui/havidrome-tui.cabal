@@ -112,16 +112,17 @@ test-suite havidrome-tui-test
     hs-source-dirs: test
     main-is:        Main.hs
     other-modules:
-        Havidrome.AudioSpec
-        Havidrome.Browse.ScreenSpec
-        Havidrome.Credentials.StoreSpec
-        Havidrome.Key.VtySpec
-        Havidrome.Login.ScreenSpec
+        Havidrome.AudioTest
+        Havidrome.Browse.ScreenTest
+        Havidrome.Check
+        Havidrome.Credentials.StoreTest
+        Havidrome.Key.VtyTest
+        Havidrome.Login.ScreenTest
         Havidrome.Playback.Standin
-        Havidrome.PlaybackSpec
-        Havidrome.Subsonic.TransportSpec
-        Havidrome.SubsonicSpec
-        HavidromeSpec
+        Havidrome.PlaybackTest
+        Havidrome.Subsonic.TransportTest
+        Havidrome.SubsonicTest
+        HavidromeTest
         Terminal
 
     build-depends:
@@ -141,8 +142,8 @@ test-suite havidrome-tui-test
         havidrome-core:fixtures,
         -- The shell under test.
         havidrome-tui,
-        -- Runs the suite: specs, expectations, the test runner.
-        hspec,
+        -- Runs the suite: the properties, their generators and the runner.
+        hedgehog,
         -- Builds the responses the transport stand-in returns.
         http-client,
         -- The status codes those responses carry.
