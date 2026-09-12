@@ -9,6 +9,7 @@ import Data.Text (Text)
 import Data.Text.IO qualified as Text.IO
 import Havidrome.Credentials (Credentials (..), Fault (..))
 import Havidrome.Credentials.Store (Store (..), Stored (..), mkStore)
+import Havidrome.Journal.Fake (silent)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath (takeDirectory, (</>))
@@ -119,10 +120,11 @@ spec = do
         store.discard
         store.load `shouldReturn` Absent
 
--- | The store as the player builds it. It finds the config file for itself,
--- so this one value serves every throwaway directory below.
+-- | The store as the player builds it, over a journal that keeps nothing. It
+-- finds the config file for itself, so this one value serves every throwaway
+-- directory below.
 store :: Store
-store = mkStore
+store = mkStore silent
 
 account :: Credentials
 account =

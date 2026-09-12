@@ -111,6 +111,7 @@ let
       directory,
       filepath,
       havidrome-core,
+      hedgehog,
       hspec,
       http-client,
       http-client-tls,
@@ -123,6 +124,7 @@ let
       stm,
       temporary,
       text,
+      time,
       transformers,
       unix,
       vector,
@@ -153,6 +155,7 @@ let
         random
         stm
         text
+        time
         transformers
         unix
         vector
@@ -171,6 +174,7 @@ let
         directory
         filepath
         havidrome-core
+        hedgehog
         hspec
         http-client
         http-types

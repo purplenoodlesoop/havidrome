@@ -36,6 +36,7 @@ import Havidrome.Credentials.Store
   , Stored (Absent, Present, Unreadable)
   , mkStore
   )
+import Havidrome.Journal (HasJournal (getJournal), Journal, mkJournal)
 import Havidrome.Library (Library (artists))
 import Havidrome.Login.Screen qualified as Login
 import Havidrome.Playback (mkSession)
@@ -57,6 +58,7 @@ data Env = Env
   , audio :: Audio
   , terminal :: Terminal
   , clock :: Clock
+  , journal :: Journal
   }
 
 instance HasStore Env where
@@ -73,6 +75,9 @@ instance HasTerminal Env where
 
 instance HasClock Env where
   getClock env = env.clock
+
+instance HasJournal Env where
+  getJournal env = env.journal
 
 -- | Where a run starts, which is settled by what the config file holds.
 data Start
@@ -102,17 +107,22 @@ start = \case
 -- Every capability is built here, once, and lasts exactly as long as the run:
 -- the player mpv makes the sound with is started before the first screen and
 -- gone after the last, and one account after another is played through it.
+-- The journal is built before anything else, because the capabilities that
+-- recover from an exception write to it and so are built on top of it: a
+-- journal is the smallest environment that has one.
 run :: IO ()
 run = do
-  subsonic <- mkSubsonic
-  withAudio $ \audio -> do
+  journal <- mkJournal
+  subsonic <- mkSubsonic journal
+  withAudio journal $ \audio -> do
     let env =
           Env
-            { store = mkStore
+            { store = mkStore journal
             , subsonic
             , audio
             , terminal = mkTerminal
             , clock = mkClock
+            , journal
             }
     started <- start <$> (getStore env).load
     case started of

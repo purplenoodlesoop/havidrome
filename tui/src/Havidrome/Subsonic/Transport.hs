@@ -16,6 +16,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import GHC.Generics (Generic)
+import Havidrome.Journal (HasJournal (getJournal), Journal (writes))
 import Havidrome.Subsonic.Types
 import Network.HTTP.Client
   ( HttpException
@@ -35,24 +36,31 @@ newtype Transport = Transport
   }
   deriving stock (Generic)
 
--- | A transport that really speaks HTTP, over a manager the caller owns.
-httpTransport :: Manager -> Transport
-httpTransport manager = Transport $ \url ->
+-- | A transport that really speaks HTTP, over a manager the caller owns. A
+-- request that never arrives is a line in the journal as well as a
+-- 'NetworkFailure' the caller is handed.
+httpTransport :: (HasJournal env) => env -> Manager -> Transport
+httpTransport env manager = Transport $ \url ->
   case parseRequest (Text.unpack url) of
     Nothing ->
       pure (Left (NetworkFailure ("not a usable server address: " <> url)))
     Just request -> do
       attempt <- try (httpLbs request manager)
-      pure $ case attempt of
-        Left exception -> Left (classifyException exception)
+      case attempt of
+        Left exception -> do
+          (getJournal env).writes
+            ("the request to " <> url <> " failed: " <> Text.pack (show exception))
+          pure (Left (classifyException exception))
         Right response ->
-          classifyStatus
-            (responseStatus response)
-            (Lazy.toStrict (responseBody response))
+          pure
+            ( classifyStatus
+                (responseStatus response)
+                (Lazy.toStrict (responseBody response))
+            )
 
 -- | A transport with a TLS-capable manager of its own.
-mkHttpTransport :: IO Transport
-mkHttpTransport = httpTransport <$> newTlsManager
+mkHttpTransport :: (HasJournal env) => env -> IO Transport
+mkHttpTransport env = httpTransport env <$> newTlsManager
 
 -- | Anything @http-client@ throws means the server was never reached: an
 -- unknown host, a refused connection, a TLS failure, a timeout.

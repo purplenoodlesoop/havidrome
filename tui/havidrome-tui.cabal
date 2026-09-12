@@ -45,6 +45,7 @@ library
         Havidrome.Browse.Screen
         Havidrome.Clock
         Havidrome.Credentials.Store
+        Havidrome.Journal
         Havidrome.Key.Vty
         Havidrome.Login.Screen
         Havidrome.Margin
@@ -60,9 +61,9 @@ library
         brick,
         -- Bytes on the wire: request bodies, mpv's IPC lines.
         bytestring,
-        -- Finds and creates the XDG config directory.
+        -- Finds and creates the XDG config and state directories.
         directory,
-        -- Builds the path of the config file inside it.
+        -- Builds the paths of the config and journal files inside them.
         filepath,
         -- Everything the shell performs the effects of.
         havidrome-core,
@@ -86,9 +87,11 @@ library
         stm,
         -- Text everywhere a user reads or types one.
         text,
+        -- Stamps each journal line with the moment it was written.
+        time,
         -- The except transformer the client's failures travel in.
         transformers,
-        -- Sets the config file's owner-only permissions.
+        -- Sets the config and journal files' owner-only permissions.
         unix,
         -- The vector brick's list widget holds its rows in.
         vector,
@@ -117,6 +120,8 @@ test-suite havidrome-tui-test
         Havidrome.AudioSpec
         Havidrome.Browse.ScreenSpec
         Havidrome.Credentials.StoreSpec
+        Havidrome.Journal.Fake
+        Havidrome.JournalSpec
         Havidrome.Key.VtySpec
         Havidrome.Login.ScreenSpec
         Havidrome.Playback.Standin
@@ -143,6 +148,8 @@ test-suite havidrome-tui-test
         havidrome-core:fixtures,
         -- The shell under test.
         havidrome-tui,
+        -- The properties the journal is checked by.
+        hedgehog,
         -- Runs the suite: specs, expectations, the test runner.
         hspec,
         -- Builds the responses the transport stand-in returns.

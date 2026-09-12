@@ -10,6 +10,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Word (Word32)
 import Havidrome.Audio
+import Havidrome.Journal.Fake (silent)
 import System.Directory (findExecutable)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -132,7 +133,7 @@ spec = do
         failed `shouldSatisfy` failing (Unreachable "the server could not be reached: unrecognized file format")
 
     it "asks the server itself, and calls a server that answers nothing a network failure" $ do
-      reach <- mkHttpReach
+      reach <- mkHttpReach silent
       withPlayer reach $ \audio -> do
         audio.play (Track nowhere (Seconds 60)) (Seconds 0)
         failed <- waitForEvent audio
@@ -168,7 +169,7 @@ withPlayer reach use = do
   found <- findExecutable "mpv"
   case found of
     Nothing -> pendingWith "no mpv on PATH; the Nix build supplies one"
-    Just mpv -> withMpv mpv ["--ao=null"] reach use
+    Just mpv -> withMpv silent mpv ["--ao=null"] reach use
 
 -- | A server that answers, or does not, whatever it is asked about.
 answering :: Bool -> Reach

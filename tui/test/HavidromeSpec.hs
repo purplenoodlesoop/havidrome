@@ -20,6 +20,7 @@ import Havidrome
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit))
 import Havidrome.Credentials (Credentials (Credentials), Fault (MissingField))
 import Havidrome.Credentials.Store (Store (save), Stored (Absent, Present, Unreadable), mkStore)
+import Havidrome.Journal.Fake (silent)
 import System.Environment (setEnv, unsetEnv)
 import System.Exit (ExitCode (ExitFailure))
 import System.IO (IOMode (WriteMode), hClose, stderr, withFile)
@@ -72,8 +73,8 @@ spec = do
 
   describe "run" $
     it "stops instead of browsing when the artist list cannot be fetched" $
-      withConfigHome $ do
-        mkStore.save (Credentials nowhere "someone" "secret")
+      withOwnDirectories $ do
+        (mkStore silent).save (Credentials nowhere "someone" "secret")
         quietly run `shouldThrow` (== ExitFailure 1)
 
 -- | An account to start a run with. Nothing answers at its server.
@@ -143,12 +144,19 @@ ran answered ended from =
 nowhere :: Text
 nowhere = "http://nowhere.example"
 
--- | An empty config directory of its own, so that the specs never read the
--- credentials of whoever is running them.
-withConfigHome :: IO a -> IO a
-withConfigHome action =
-  withSystemTempDirectory "havidrome-config" $ \home ->
-    bracket (setEnv "XDG_CONFIG_HOME" home) (const (unsetEnv "XDG_CONFIG_HOME")) (const action)
+-- | Empty config and state directories of its own, so that a run here never
+-- reads the credentials of whoever is running it, nor writes a line into their
+-- journal.
+withOwnDirectories :: IO a -> IO a
+withOwnDirectories action =
+  withSystemTempDirectory "havidrome-config" $ \config ->
+    withSystemTempDirectory "havidrome-state" $ \state' ->
+      withEnvironment "XDG_CONFIG_HOME" config $
+        withEnvironment "XDG_STATE_HOME" state' action
+
+withEnvironment :: String -> String -> IO a -> IO a
+withEnvironment name value action =
+  bracket (setEnv name value) (const (unsetEnv name)) (const action)
 
 -- | Runs something with its complaints sent nowhere, so that a spec about
 -- stopping does not print the reason among the results.
