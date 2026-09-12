@@ -22,7 +22,6 @@ module Havidrome
   , player
   ) where
 
-import Control.Monad.Trans.Except (runExceptT)
 import Data.Foldable (traverse_)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -176,7 +175,7 @@ browse ::
 browse env credentials = do
   let subsonic = getSubsonic env
       browsed = subsonic.browses credentials
-  runExceptT browsed.artists >>= \case
+  browsed.artists >>= \case
     Left failure -> stop env (explain failure)
     Right artists -> do
       session <- mkSession (getAudio env) (subsonic.addresses credentials)

@@ -9,7 +9,6 @@
 module Havidrome.Browse.ScreenSpec (spec) where
 
 import Control.Monad (foldM, forM_)
-import Control.Monad.Trans.Except (ExceptT)
 import Data.Either (fromRight)
 import Data.List (nub, transpose)
 import Data.Maybe (catMaybes)
@@ -836,14 +835,14 @@ spec = do
     it "scroll each on its own" $ withStandin $ \_ session -> do
       let crowded =
             Library
-              { Library.artists = pure []
+              { Library.artists = pure (Right [])
               , Library.albums =
-                  const . pure $
+                  const . pure . Right $
                     zipWith
                       (\year name -> album name name (Just year))
                       [2001 ..]
                       ["First", "Second", "Third", "Fourth", "Fifth"]
-              , Library.songs = const (pure [])
+              , Library.songs = const (pure (Right []))
               }
           crowding = foldM (taking crowded session)
           many = opening (map (\name -> artist name name) ["one", "two", "three", "four", "five", "six"])
@@ -1026,12 +1025,12 @@ resuming session already next = do
   screen <- after session already
   pressing session screen next
 
-walking :: Library (ExceptT SubsonicError IO) -> Session -> [Command] -> IO Screen
+walking :: Library IO -> Session -> [Command] -> IO Screen
 walking held session = foldM (taking held session) start
 
 -- | The screen one key press leaves behind. A key that ends browsing leaves
 -- none, and for that the screen it was pressed on stands.
-taking :: Library (ExceptT SubsonicError IO) -> Session -> Screen -> Command -> IO Screen
+taking :: Library IO -> Session -> Screen -> Command -> IO Screen
 taking held session screen instruction =
   fromRight screen <$> step held session instruction screen
 

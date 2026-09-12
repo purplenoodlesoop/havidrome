@@ -36,11 +36,14 @@ module Havidrome.Browse.Strip
   , Moment (..)
   ) where
 
-import Data.Char (toUpper)
 import Data.Ord (clamp)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Havidrome.Audio.State (Failure (Unplayable, Unreachable), Motion (Paused, Running))
+import Havidrome.Audio.State
+  ( Failure (Unplayable, Unreachable)
+  , Motion (Paused, Running)
+  , explain
+  )
 import Havidrome.Playback.Playing
   ( Arrival (Picked)
   , Playing (..)
@@ -200,9 +203,10 @@ beat at playing failures strip =
 
 -- | What a playback failure says, and for how long.
 saidOf :: Moment -> Failure -> Said
-saidOf at = \case
-  Unplayable reason -> Said (sentence reason) (Until (after briefly at))
-  Unreachable reason -> Said (sentence reason) UntilAKey
+saidOf at failure =
+  Said (explain failure) $ case failure of
+    Unplayable _ -> Until (after briefly at)
+    Unreachable _ -> UntilAKey
 
 -- | The same line while its time is not up, and nothing once it is.
 lasting :: Moment -> Said -> Maybe Said
@@ -229,10 +233,3 @@ pressed strip = strip {said = strip.said >>= heard}
 
 lifeOf :: Said -> Life
 lifeOf (Said _ life) = life
-
--- | A reason as a sentence of its own: the layers underneath word them from
--- the middle of one.
-sentence :: Text -> Text
-sentence said = case Text.uncons said of
-  Nothing -> said
-  Just (opening, rest) -> Text.cons (toUpper opening) rest
