@@ -1,0 +1,132 @@
+cabal-version:   3.4
+name:            havidrome-core
+version:         1.0.0.0
+synopsis:        The pure core of havidrome, a CLI player for a Navidrome server.
+build-type:      Simple
+
+common language
+    default-language:   GHC2021
+    default-extensions:
+        DerivingStrategies
+        DerivingVia
+        DeriveAnyClass
+        GeneralizedNewtypeDeriving
+        LambdaCase
+        MultiWayIf
+        BlockArguments
+        ViewPatterns
+        PatternSynonyms
+        QuasiQuotes
+        ApplicativeDo
+        OverloadedStrings
+        OverloadedLabels
+        OverloadedRecordDot
+        DuplicateRecordFields
+        NoFieldSelectors
+        RecordWildCards
+        NamedFieldPuns
+        TypeFamilies
+        DataKinds
+        FunctionalDependencies
+        UndecidableInstances
+
+    ghc-options:
+        -Wall -Wcompat -Widentities -Wmissing-export-lists
+        -Wmissing-home-modules -Wmissing-deriving-strategies -Wpartial-fields
+        -Wredundant-constraints -Woperator-whitespace
+        -Wredundant-bang-patterns -Wunused-type-patterns -Wunused-packages
+
+library
+    import:          language
+    hs-source-dirs:  src
+    exposed-modules:
+        Havidrome.Audio.Ipc
+        Havidrome.Audio.State
+        Havidrome.Browse
+        Havidrome.Browse.Row
+        Havidrome.Browse.Strip
+        Havidrome.Credentials
+        Havidrome.Key
+        Havidrome.Library
+        Havidrome.Login
+        Havidrome.Playback.Playing
+        Havidrome.Playback.Queue
+        Havidrome.Subsonic.Protocol
+        Havidrome.Subsonic.Types
+        Havidrome.Width
+
+    -- The core bounds everything it takes, so that what builds it is settled
+    -- here and not by whatever happens to be around.
+    build-depends:
+        -- Reads the Subsonic server's JSON answers, and mpv's IPC lines.
+        aeson >=2.2 && <2.3,
+        -- The standard library.
+        base >=4.17 && <5,
+        -- The bytes both of those arrive as.
+        bytestring >=0.12 && <0.13,
+        -- The MD5 that salts the Subsonic password token.
+        crypton >=1.0 && <1.1,
+        -- Builds the query strings the calls are made with.
+        http-types >=0.12 && <0.13,
+        -- Text everywhere a user reads or types one.
+        text >=2.1 && <2.2
+
+-- The made-up library the specs walk and the answers they read, shared by
+-- both packages' specs so that neither writes them out a second time.
+library fixtures
+    import:          language
+    visibility:      public
+    hs-source-dirs:  fixtures
+    exposed-modules:
+        Havidrome.Browse.Fixtures
+        Havidrome.Subsonic.Fixtures
+
+    build-depends:
+        -- The standard library.
+        base,
+        -- The bytes a stand-in server answers with.
+        bytestring,
+        -- The maps the stand-in library is looked up in.
+        containers,
+        -- What the fixtures are fixtures of.
+        havidrome-core,
+        -- Text everywhere the player takes or gives one.
+        text,
+        -- The except transformer a stand-in library's failures travel in.
+        transformers
+
+test-suite havidrome-core-test
+    import:         language
+    type:           exitcode-stdio-1.0
+    hs-source-dirs: test
+    main-is:        Main.hs
+    other-modules:
+        Havidrome.Audio.IpcSpec
+        Havidrome.Audio.StateSpec
+        Havidrome.Browse.StripSpec
+        Havidrome.BrowseSpec
+        Havidrome.CredentialsSpec
+        Havidrome.LoginSpec
+        Havidrome.Playback.QueueSpec
+        Havidrome.Subsonic.ProtocolSpec
+        Havidrome.WidthSpec
+
+    build-depends:
+        -- Generates the inputs of the property tests.
+        QuickCheck,
+        -- Builds the JSON an mpv line is read back out of.
+        aeson,
+        -- The standard library.
+        base,
+        -- The bytes those lines arrive as.
+        bytestring,
+        -- The core under test.
+        havidrome-core,
+        -- The made-up library and the server's answers.
+        havidrome-core:fixtures,
+        -- Runs the suite: specs, expectations, the test runner.
+        hspec,
+        -- Text everywhere the player takes or gives one.
+        text,
+        -- The state a stand-in entry writes down what it was asked in.
+        transformers

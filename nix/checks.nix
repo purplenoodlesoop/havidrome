@@ -11,23 +11,28 @@ let
     appendConfigureFlag
     doCheck
     ;
+
+  # The gate is where -Werror lives: a warning must fail the check without
+  # making the player itself unbuildable, so it is never in a `.cabal`. It
+  # goes in at configure time because cabal drops a `--ghc-options=-Werror`
+  # as an option that changes no build artifact, and a Nix build compiles
+  # every module from scratch, so no warning is skipped over as already
+  # built.
+  tested = lib.flip lib.pipe [
+    doCheck
+    (appendConfigureFlag "--ghc-option=-Werror")
+  ];
 in
 {
-  # `nix flake check` builds the package with its test suite enabled, on every
-  # system the package exists for. The tests that drive a real player need one
-  # to drive, on a null audio output: no device, but no stand-in either.
-  #
-  # The gate is also where -Werror lives: a warning must fail the check
-  # without making the player itself unbuildable, so it is never in the
-  # `.cabal`. It goes in at configure time because cabal drops a
-  # `--ghc-options=-Werror` as an option that changes no build artifact, and a
-  # Nix build compiles every module from scratch, so no warning is skipped
-  # over as already built.
+  # `nix flake check` builds both packages with their test suites enabled, on
+  # every system they exist for. The shell's tests drive a real player on a
+  # null audio output: no device, but no stand-in either. The core's drive
+  # nothing, which is the point of it.
   flake.output.checks = lib.optionalAttrs (config.flake.packages ? havidrome) {
-    havidrome-test = lib.pipe config.flake.packages.havidrome [
-      (addTestToolDepends [ mpv-unwrapped ])
-      doCheck
-      (appendConfigureFlag "--ghc-option=-Werror")
-    ];
+    havidrome-core-test = tested config.flake.packages.havidrome-core;
+
+    havidrome-tui-test = tested (
+      addTestToolDepends [ mpv-unwrapped ] config.flake.packages.havidrome
+    );
   };
 }

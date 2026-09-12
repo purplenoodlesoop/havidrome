@@ -7,10 +7,16 @@
 let
   inherit (pkgs) haskellPackages mpv-unwrapped;
 
-  # A GHC that already carries the package's dependencies, so `cabal` in the
-  # dev shell never reaches for Hackage.
+  # A GHC that already carries both packages' dependencies, so `cabal` in the
+  # dev shell never reaches for Hackage. Neither havidrome package is among
+  # them: the shell is where they are built from source.
+  dependencies =
+    package: builtins.filter (input: (input.pname or "") != "havidrome-core") package.getBuildInputs.haskellBuildInputs;
+
   ghc = haskellPackages.ghcWithPackages (
-    _: config.flake.packages.havidrome.getBuildInputs.haskellBuildInputs
+    _:
+    dependencies config.flake.packages.havidrome-core
+    ++ dependencies config.flake.packages.havidrome
   );
 in
 {

@@ -1,4 +1,7 @@
 import: cabal.project
 
-package havidrome
+package havidrome-core
+  ghc-options: -Werror
+
+package havidrome-tui
   ghc-options: -Werror

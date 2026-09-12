@@ -99,7 +99,7 @@ is driven over its JSON IPC.
 ## Tests
 
 ```sh
-nix flake check      # builds the package and runs its test suite
+nix flake check      # builds both packages and runs both test suites
 ```
 
 The tests that drive a real player run it on a null audio output, so they need
@@ -118,9 +118,16 @@ once; `.envrc` is already here.
 
 ## Layout
 
-- `src/` — the library, everything the player is made of.
-- `app/` — the `havidrome` executable, a thin entry point.
-- `test/` — the test suite.
+Two packages, each in its own directory with its own `.cabal`:
+
+- `core/` — `havidrome-core`, the part that is a function of its arguments. It
+  reaches no network, no disk, no process and no terminal, so it builds and its
+  tests run anywhere GHC does. `src/` is the library, `fixtures/` a made-up
+  library both packages' specs walk, `test/` its test suite.
+- `tui/` — `havidrome-tui`, the shell: the terminal, the config file, the HTTP
+  calls, the player process, and the loop that ties them to the core. `src/` is
+  the library, `app/` the `havidrome` executable, a thin entry point, and
+  `test/` its test suite.
 - `nix/havidrome.nix` — the flake's per-system module: packages, checks, shell.
 
 The flake is assembled with [`core-flake`](https://github.com/purplenoodlesoop/core-flake).

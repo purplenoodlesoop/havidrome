@@ -1,0 +1,165 @@
+cabal-version:   3.4
+name:            havidrome-tui
+version:         1.0.0.0
+synopsis:        The terminal, network and player shell of havidrome.
+build-type:      Simple
+
+common language
+    default-language:   GHC2021
+    default-extensions:
+        DerivingStrategies
+        DerivingVia
+        DeriveAnyClass
+        GeneralizedNewtypeDeriving
+        LambdaCase
+        MultiWayIf
+        BlockArguments
+        ViewPatterns
+        PatternSynonyms
+        QuasiQuotes
+        ApplicativeDo
+        OverloadedStrings
+        OverloadedLabels
+        OverloadedRecordDot
+        DuplicateRecordFields
+        NoFieldSelectors
+        RecordWildCards
+        NamedFieldPuns
+        TypeFamilies
+        DataKinds
+        FunctionalDependencies
+        UndecidableInstances
+
+    ghc-options:
+        -Wall -Wcompat -Widentities -Wmissing-export-lists
+        -Wmissing-home-modules -Wmissing-deriving-strategies -Wpartial-fields
+        -Wredundant-constraints -Woperator-whitespace
+        -Wredundant-bang-patterns -Wunused-type-patterns -Wunused-packages
+
+library
+    import:          language
+    hs-source-dirs:  src
+    exposed-modules:
+        Havidrome
+        Havidrome.Audio
+        Havidrome.Browse.Screen
+        Havidrome.Credentials.Store
+        Havidrome.Key.Vty
+        Havidrome.Login.Screen
+        Havidrome.Margin
+        Havidrome.Playback
+        Havidrome.Subsonic
+        Havidrome.Subsonic.Transport
+
+    build-depends:
+        -- The standard library.
+        base,
+        -- The TUI: widgets, the event loop, the list widget.
+        brick,
+        -- Bytes on the wire: request bodies, mpv's IPC lines.
+        bytestring,
+        -- Finds and creates the XDG config directory.
+        directory,
+        -- Builds the path of the config file inside it.
+        filepath,
+        -- Everything the shell performs the effects of.
+        havidrome-core,
+        -- Performs the HTTP requests to the server.
+        http-client,
+        -- Gives http-client TLS, so an https server works.
+        http-client-tls,
+        -- Reads the status codes those requests come back with.
+        http-types,
+        -- The state monad the brick event handlers run in.
+        mtl,
+        -- Opens the unix socket mpv is commanded over.
+        network,
+        -- Reaches the fields nested inside a record.
+        optics-core,
+        -- Starts mpv and holds on to the process.
+        process,
+        -- Draws the salt for each password token.
+        random,
+        -- Shares the playback state between the UI and the audio threads.
+        stm,
+        -- Text everywhere a user reads or types one.
+        text,
+        -- The except transformer the client's failures travel in.
+        transformers,
+        -- Sets the config file's owner-only permissions.
+        unix,
+        -- The vector brick's list widget holds its rows in.
+        vector,
+        -- The terminal brick draws on: keys, attributes, images.
+        vty
+
+executable havidrome
+    import:         language
+    hs-source-dirs: app
+    main-is:        Main.hs
+
+    -- vty runs its input on threads of its own.
+    ghc-options:    -threaded -rtsopts "-with-rtsopts=-N"
+    build-depends:
+        -- The standard library.
+        base,
+        -- The player itself; this executable only starts it.
+        havidrome-tui
+
+test-suite havidrome-tui-test
+    import:         language
+    type:           exitcode-stdio-1.0
+    hs-source-dirs: test
+    main-is:        Main.hs
+    other-modules:
+        Havidrome.AudioSpec
+        Havidrome.Browse.ScreenSpec
+        Havidrome.Credentials.StoreSpec
+        Havidrome.Key.VtySpec
+        Havidrome.Login.ScreenSpec
+        Havidrome.Playback.Standin
+        Havidrome.PlaybackSpec
+        Havidrome.Subsonic.ClientSpec
+        Havidrome.Subsonic.TransportSpec
+        HavidromeSpec
+        Terminal
+
+    build-depends:
+        -- Generates the inputs of the property tests.
+        QuickCheck,
+        -- The standard library.
+        base,
+        -- Renders widgets the screen tests then read back.
+        brick,
+        -- The bytes of a server's answers and of mpv's IPC lines.
+        bytestring,
+        -- Makes and removes the directories a config test needs.
+        directory,
+        -- Builds the paths inside them.
+        filepath,
+        -- The vocabulary the shell is written against.
+        havidrome-core,
+        -- The made-up library and the server's answers.
+        havidrome-core:fixtures,
+        -- The shell under test.
+        havidrome-tui,
+        -- Runs the suite: specs, expectations, the test runner.
+        hspec,
+        -- Builds the responses the transport stand-in returns.
+        http-client,
+        -- The status codes those responses carry.
+        http-types,
+        -- Records what the stand-in audio backend was told to do.
+        stm,
+        -- Gives each config test a directory of its own.
+        temporary,
+        -- Text everywhere the player takes or gives one.
+        text,
+        -- The except transformer the client's failures travel in.
+        transformers,
+        -- Reads back the config file's permissions.
+        unix,
+        -- The vector a list widget's rows are read out of.
+        vector,
+        -- Renders a picture to the cells a screen test asserts on.
+        vty

@@ -1,1 +1,1 @@
-packages: .
+packages: core, tui
