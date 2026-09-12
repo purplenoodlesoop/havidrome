@@ -8,6 +8,7 @@ module Havidrome.AudioSpec (spec) where
 import Control.Concurrent (threadDelay)
 import Data.ByteString.Builder qualified as Builder
 import Data.ByteString.Lazy qualified as Lazy
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Word (Word32)
 import Havidrome.Audio
@@ -132,12 +133,17 @@ spec = do
         failed <- waitForEvent audio
         failed `shouldSatisfy` failing (Unreachable "the server could not be reached: unrecognized file format")
 
-    it "asks the server itself, and calls a refused connection a network failure" $ do
+    it "asks the server itself, and calls a server that answers nothing a network failure" $ do
       reach <- httpReach
       withPlayer reach $ \audio -> do
-        play audio (Track "http://127.0.0.1:1/stream" (Seconds 60)) (Seconds 0)
+        play audio (Track nowhere (Seconds 60)) (Seconds 0)
         failed <- waitForEvent audio
         failed `shouldSatisfy` unreachable
+
+-- | An invented address nothing answers on, so that a track fetched from it
+-- fails the way a track fails against a server that cannot be reached.
+nowhere :: Text
+nowhere = "http://nowhere.example/stream"
 
 -- | Six seconds of silence, which is long enough to seek about inside.
 tone :: Seconds
