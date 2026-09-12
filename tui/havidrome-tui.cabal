@@ -125,8 +125,6 @@ test-suite havidrome-tui-test
         Terminal
 
     build-depends:
-        -- Generates the inputs of the property tests.
-        QuickCheck,
         -- The standard library.
         base,
         -- Renders widgets the screen tests then read back.

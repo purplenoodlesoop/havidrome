@@ -10,7 +10,6 @@ module Havidrome.Browse.ScreenSpec (spec) where
 
 import Control.Monad (foldM, forM_)
 import Control.Monad.Trans.Except (ExceptT)
-import Data.Char (isControl)
 import Data.Either (fromRight)
 import Data.List (nub, transpose)
 import Data.Maybe (catMaybes)
@@ -29,7 +28,6 @@ import Havidrome.Browse.Fixtures
   , filledIn
   , library
   , sketchesSongs
-  , song
   )
 import Havidrome.Browse.Screen
   ( Command
@@ -53,7 +51,7 @@ import Havidrome.Browse.Screen
   , step
   , theme
   )
-import Havidrome.Browse.Row (Row (row), mark, marking)
+import Havidrome.Browse.Row (Row (row), mark)
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Wrong), showing)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Library (Library (Library))
@@ -74,15 +72,10 @@ import Havidrome.Playback.Standin
 import Havidrome.Subsonic
   ( Seconds (Seconds)
   , Song (..)
-  , SongId (SongId)
   , SubsonicError (NetworkFailure)
   )
-import Havidrome.Width (shorten)
-import Havidrome.Width qualified as Width
 import Terminal (Cell, border, inBold, inside, reversed, runs, screenshot, terminal, vacant)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldReturn, shouldSatisfy)
-import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (NonNegative (NonNegative))
 
 spec :: Spec
 spec = do
@@ -771,35 +764,6 @@ spec = do
       loggedIn <- after session toDrukqs
       carrying loggedIn `shouldBe` []
 
-  describe "row" $ do
-    it "shows an artist by name" $
-      row (artist "a" "Aphex Twin") `shouldBe` "Aphex Twin"
-
-    it "shows an album's year before its name" $
-      row (album "b" "Drukqs" (Just 2001)) `shouldBe` "2001  Drukqs"
-
-    it "leaves the column blank for an album the server gave no year" $
-      row (album "b" "Sketches" Nothing) `shouldBe` "      Sketches"
-
-    it "shows a song's track number before its title, the mark's column blank between them" $
-      row (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2   Vordhosbn"
-
-    it "leaves the column blank for a song the server gave no track number" $
-      row (song "s" "Btoum Roumada" 96 Nothing) `shouldBe` "      Btoum Roumada"
-
-  describe "marking" $ do
-    it "puts the mark and one space before the name of the song playback is on" $
-      marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2))
-        `shouldBe` "  2 " <> mark <> " Vordhosbn"
-
-    it "keeps the name in line with the unmarked rows around it" $
-      Text.length (marking (Just (SongId "s")) (song "s" "Vordhosbn" 293 (Just 2)))
-        `shouldBe` Text.length (row (song "s" "Vordhosbn" 293 (Just 2)))
-
-    it "leaves every other song as its row" $ do
-      marking (Just (SongId "t")) (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2   Vordhosbn"
-      marking Nothing (song "s" "Vordhosbn" 293 (Just 2)) `shouldBe` "  2   Vordhosbn"
-
   describe "the columns" $ do
     it "open on the artist list alone, one column at the left" $ do
       wide 6 start `shouldBe` ["Artists", rules 1, "anohni", "Aphex Twin", "zebra", ""]
@@ -1012,28 +976,6 @@ spec = do
         forM_ [start, albums, loading, playingScreen, failed] $ \screen ->
           forM_ sizes $ \region ->
             (region, filter (not . vacant) (border (whole region screen))) `shouldBe` (region, [])
-
-  describe "shorten" $ do
-    it "leaves text that fits as it is" $
-      shorten 10 "Aphex Twin" `shouldBe` "Aphex Twin"
-
-    it "cuts text that does not fit, and ends it in an ellipsis" $
-      shorten 8 "Aphex Twin" `shouldBe` "Aphex T…"
-
-    it "leaves nothing where there is no room at all" $
-      shorten 0 "Aphex Twin" `shouldBe` ""
-
-    it "measures by the terminal's columns, splitting no wide character" $
-      shorten 4 "日本語" `shouldBe` "日…"
-
-    it "puts a space for whatever would move the terminal elsewhere" $
-      shorten 20 "one\ntwo\tthree" `shouldBe` "one two three"
-
-    prop "takes no more columns than it is given" $ \(NonNegative room) said ->
-      Width.text (shorten room (Text.pack said)) <= room
-
-    prop "leaves nothing that would move the terminal" $ \room said ->
-      not (Text.any isControl (shorten room (Text.pack said)))
 
 -- | The screen a run opens on, over the stand-in library.
 start :: Screen

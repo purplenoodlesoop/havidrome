@@ -103,6 +103,7 @@ test-suite havidrome-core-test
     other-modules:
         Havidrome.Audio.IpcSpec
         Havidrome.Audio.StateSpec
+        Havidrome.Browse.RowSpec
         Havidrome.Browse.StripSpec
         Havidrome.BrowseSpec
         Havidrome.CredentialsSpec

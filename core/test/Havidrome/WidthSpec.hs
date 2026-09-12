@@ -2,11 +2,12 @@
 -- terminal, what a line of them takes, and what is left of a line cut to fit.
 module Havidrome.WidthSpec (spec) where
 
+import Data.Char (isControl)
 import Data.Text qualified as Text
 import Havidrome.Width (char, shorten, text)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (Positive (Positive), (===))
+import Test.QuickCheck (NonNegative (NonNegative))
 
 spec :: Spec
 spec = do
@@ -38,21 +39,26 @@ spec = do
       text "" `shouldBe` 0
 
   describe "shorten" $ do
-    it "leaves a line that fits exactly as it is" $
-      shorten 10 "abc" `shouldBe` "abc"
+    it "leaves text that fits as it is" $
+      shorten 10 "Aphex Twin" `shouldBe` "Aphex Twin"
 
-    it "cuts a line that does not, and says so with an ellipsis" $
-      shorten 5 "abcdefgh" `shouldBe` "abcd…"
+    it "cuts text that does not fit, and ends it in an ellipsis" $
+      shorten 8 "Aphex Twin" `shouldBe` "Aphex T…"
 
-    it "cuts by columns, not by characters" $
+    it "measures by the terminal's columns, splitting no wide character" $
+      shorten 4 "日本語" `shouldBe` "日…"
+
+    it "cuts by columns where the wide characters fill the room exactly" $
       shorten 5 "音音音音" `shouldBe` "音音…"
 
-    it "gives nothing at all for a line with no room even for the ellipsis" $
-      shorten 0 "abc" `shouldBe` ""
+    it "leaves nothing where there is no room at all" $
+      shorten 0 "Aphex Twin" `shouldBe` ""
 
-    it "puts a space where a character would move the terminal elsewhere" $
-      shorten 10 "a\nb\tc" `shouldBe` "a b c"
+    it "puts a space for whatever would move the terminal elsewhere" $
+      shorten 20 "one\ntwo\tthree" `shouldBe` "one two three"
 
-    prop "never takes more columns than it is given" $
-      \(Positive room) said ->
-        (text (shorten room (Text.pack said)) <= room) === True
+    prop "takes no more columns than it is given" $ \(NonNegative room) said ->
+      text (shorten room (Text.pack said)) <= room
+
+    prop "leaves nothing that would move the terminal" $ \room said ->
+      not (Text.any isControl (shorten room (Text.pack said)))
