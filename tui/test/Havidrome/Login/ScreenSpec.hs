@@ -29,7 +29,7 @@ spec = do
     it "never shows a character of the password" $ do
       let screen = shown (40, 5) blank {password = "secret", focus = Password}
       drop 4 screen `shouldBe` ["Password    ••••••"]
-      screen `shouldSatisfy` (not . any (T.isInfixOf "secret"))
+      screen `shouldSatisfy` not . any (T.isInfixOf "secret")
 
     it "marks the field being typed into, and no other" $ do
       marked (40, 7) blank {focus = ServerUrl} `shouldBe` ["Server URL"]

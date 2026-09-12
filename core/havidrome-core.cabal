@@ -106,6 +106,7 @@ test-suite havidrome-core-test
         Havidrome.Browse.StripSpec
         Havidrome.BrowseSpec
         Havidrome.CredentialsSpec
+        Havidrome.DivideSpec
         Havidrome.LoginSpec
         Havidrome.Playback.QueueSpec
         Havidrome.Subsonic.ProtocolSpec

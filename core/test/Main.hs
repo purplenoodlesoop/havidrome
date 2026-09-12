@@ -6,6 +6,7 @@ import Havidrome.Browse.RowSpec qualified as RowSpec
 import Havidrome.Browse.StripSpec qualified as StripSpec
 import Havidrome.BrowseSpec qualified as BrowseSpec
 import Havidrome.CredentialsSpec qualified as CredentialsSpec
+import Havidrome.DivideSpec qualified as DivideSpec
 import Havidrome.LoginSpec qualified as LoginSpec
 import Havidrome.Playback.QueueSpec qualified as QueueSpec
 import Havidrome.Subsonic.ProtocolSpec qualified as ProtocolSpec
@@ -14,6 +15,7 @@ import Test.Hspec (describe, hspec)
 
 main :: IO ()
 main = hspec $ do
+  describe "Havidrome.Divide" DivideSpec.spec
   describe "Havidrome.Width" WidthSpec.spec
   describe "Havidrome.Credentials" CredentialsSpec.spec
   describe "Havidrome.Subsonic.Protocol" ProtocolSpec.spec
