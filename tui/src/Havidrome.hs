@@ -22,10 +22,8 @@ module Havidrome
   , player
   ) where
 
-import Control.Monad.Trans.Except (runExceptT)
 import Data.Foldable (traverse_)
 import Data.Text (Text)
-import Data.Text qualified as Text
 import Havidrome.Audio (Audio, HasAudio (getAudio), withAudio)
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit), browsing, opening)
 import Havidrome.Clock (Clock, HasClock (getClock), mkClock)
@@ -89,8 +87,7 @@ start :: Stored -> Start
 start = \case
   Absent -> Ask
   Present credentials -> Browse credentials
-  Unreadable fault ->
-    Stop ("the stored credentials could not be read: " <> Text.pack (show fault))
+  Unreadable fault -> Stop (Credentials.explain fault)
 
 -- | Runs the player to completion: the library the credentials reach, browsed
 -- until the user quits, and every library logged into after it.
@@ -176,7 +173,7 @@ browse ::
 browse env credentials = do
   let subsonic = getSubsonic env
       browsed = subsonic.browses credentials
-  runExceptT browsed.artists >>= \case
+  browsed.artists >>= \case
     Left failure -> stop env (explain failure)
     Right artists -> do
       session <- newSession (getAudio env) (subsonic.addresses credentials)

@@ -86,8 +86,6 @@ library
         stm,
         -- Text everywhere a user reads or types one.
         text,
-        -- The except transformer the client's failures travel in.
-        transformers,
         -- Sets the config file's owner-only permissions.
         unix,
         -- The vector brick's list widget holds its rows in.
@@ -155,7 +153,7 @@ test-suite havidrome-tui-test
         temporary,
         -- Text everywhere the player takes or gives one.
         text,
-        -- The except transformer the client's failures travel in.
+        -- The state a stand-in account writes down what it was asked in.
         transformers,
         -- Reads back the config file's permissions.
         unix,

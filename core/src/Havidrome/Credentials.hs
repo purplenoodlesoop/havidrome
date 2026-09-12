@@ -17,6 +17,7 @@ module Havidrome.Credentials
   , render
   , parse
   , Fault (..)
+  , explain
   ) where
 
 import Data.Text (Text)
@@ -57,6 +58,14 @@ data Fault
   | -- | A field the file sets more than once.
     RepeatedField Text
   deriving stock (Eq, Show)
+
+-- | Why the credentials that were stored cannot be used, in the line the
+-- player says before it stops. The fault stands in that line as it is
+-- written here, which is what the player has always said; this is the only
+-- place a 'Fault' becomes text.
+explain :: Fault -> Text
+explain fault =
+  "the stored credentials could not be read: " <> Text.pack (show fault)
 
 -- | The contents of a config file holding these credentials.
 render :: Credentials -> Text
