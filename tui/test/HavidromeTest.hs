@@ -10,6 +10,7 @@ import Control.Exception (bracket, bracket_, finally, try)
 import Control.Monad.Trans.State.Strict (State, execState, state)
 import Data.ByteString qualified as ByteString
 import Data.Text as T (Text)
+import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Havidrome
@@ -23,6 +24,7 @@ import Havidrome.Browse.Screen (Ending (LoggedOut, Quit))
 import Havidrome.Check (Checks, example)
 import Havidrome.Credentials (Credentials (Credentials), Fault (MissingField))
 import Havidrome.Credentials.Store (Store (file, save), Stored (Absent, Present, Unreadable), mkStore)
+import Havidrome.Journal.Fake (silent)
 import Hedgehog (Gen, Group (Group), annotateShow, assert, evalIO, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -150,16 +152,16 @@ stopping =
   [
     ( "run stops instead of browsing when the artist list cannot be fetched"
     , example do
-        (_, stopped) <- evalIO . withConfigHome $ do
-          mkStore.save (Credentials nowhere "someone" "secret")
+        (_, stopped) <- evalIO . withOwnDirectories $ do
+          (mkStore silent).save (Credentials nowhere "someone" "secret")
           complaining run
         stopped === Left (ExitFailure 1)
     )
   ,
     ( "run says on the terminal why it cannot go on, and leaves that line behind"
     , example do
-        (said, stopped) <- evalIO . withConfigHome $ do
-          path <- mkStore.file
+        (said, stopped) <- evalIO . withOwnDirectories $ do
+          path <- (mkStore silent).file
           createDirectoryIfMissing True (takeDirectory path)
           ByteString.writeFile path "server=https://music.example.org\nusername=someone\n"
           complaining run
@@ -294,12 +296,22 @@ isPrefixOfList these those = take (length these) those == these
 nowhere :: Text
 nowhere = "http://nowhere.example"
 
--- | An empty config directory of its own, so that the tests never read the
--- credentials of whoever is running them.
-withConfigHome :: IO a -> IO a
-withConfigHome action =
-  withSystemTempDirectory "havidrome-config" $ \home ->
-    bracket_ (setEnv "XDG_CONFIG_HOME" home) (unsetEnv "XDG_CONFIG_HOME") action
+-- | Empty config and state directories of its own, so that a run here never
+-- reads the credentials of whoever is running it, nor writes a line into their
+-- journal.
+withOwnDirectories :: IO a -> IO a
+withOwnDirectories action =
+  withSystemTempDirectory "havidrome-config" $ \config ->
+    withSystemTempDirectory "havidrome-state" $ \state' ->
+      withEnvironment "XDG_CONFIG_HOME" config $
+        withEnvironment "XDG_STATE_HOME" state' action
+
+-- | Runs an action with one environment variable set to this path, unset again
+-- afterwards.
+withEnvironment :: Text -> FilePath -> IO a -> IO a
+withEnvironment name value = bracket_ (setEnv named value) (unsetEnv named)
+ where
+  named = T.unpack name
 
 -- | Runs something with what it leaves on the terminal caught rather than
 -- printed: the line comes back to be read, and none of it lands among the

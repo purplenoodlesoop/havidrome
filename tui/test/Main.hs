@@ -3,14 +3,16 @@
 -- property in it.
 --
 -- The groups that reach outside the process are run one property at a time:
--- the config file is found through the environment, which is the whole
--- process's, and the audio tests time a real player, which two of them at
--- once would throw off. The rest share nothing and are free to run together.
+-- the config file and the journal are found through the environment, which is
+-- the whole process's, and the audio tests time a real player, which two of
+-- them at once would throw off. The rest share nothing and are free to run
+-- together.
 module Main (main) where
 
 import Havidrome.AudioTest qualified as AudioTest
 import Havidrome.Browse.ScreenTest qualified as ScreenTest
 import Havidrome.Credentials.StoreTest qualified as StoreTest
+import Havidrome.JournalTest qualified as JournalTest
 import Havidrome.Key.VtyTest qualified as VtyTest
 import Havidrome.Login.ScreenTest qualified as LoginScreenTest
 import Havidrome.PlaybackTest qualified as PlaybackTest
@@ -28,6 +30,7 @@ main =
       [ HavidromeTest.tests
       , StoreTest.tests
       , AudioTest.tests
+      , JournalTest.tests
       ]
       <> fmap
         checkParallel

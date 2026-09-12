@@ -119,6 +119,7 @@ let
       stm,
       temporary,
       text,
+      time,
       transformers,
       unix,
       vector,
@@ -149,6 +150,8 @@ let
         random
         stm
         text
+        time
+        transformers
         unix
         vector
         vty

@@ -12,6 +12,7 @@ import Data.Text.IO qualified as Text.IO
 import Havidrome.Check (Checks, example)
 import Havidrome.Credentials (Credentials (..), Fault (BadLine, MissingField, NotAccessible, RepeatedField))
 import Havidrome.Credentials.Store (Store (..), Stored (Absent, Present, Unreadable), mkStore)
+import Havidrome.Journal.Fake (silent)
 import Hedgehog (Gen, Group (Group), assert, evalIO, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -225,10 +226,11 @@ anySave =
     )
   ]
 
--- | The store as the player builds it. It finds the config file for itself,
--- so this one value serves every throwaway directory below.
+-- | The store as the player builds it, over a journal that keeps nothing. It
+-- finds the config file for itself, so this one value serves every throwaway
+-- directory below.
 store :: Store
-store = mkStore
+store = mkStore silent
 
 account :: Credentials
 account =

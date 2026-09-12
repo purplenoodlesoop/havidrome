@@ -24,6 +24,7 @@ import Data.Text as T (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Havidrome.Credentials qualified as Credentials
+import Havidrome.Journal (HasJournal)
 import Havidrome.Library (Library (..))
 import Havidrome.Subsonic.Protocol
   ( Endpoint (..)
@@ -63,8 +64,8 @@ class HasSubsonic env where
   getSubsonic :: env -> Subsonic
 
 -- | The calls over a transport of its own and a salt drawn for this run.
-mkSubsonic :: IO Subsonic
-mkSubsonic = subsonicOver <$> mkHttpTransport <*> randomSalt
+mkSubsonic :: (HasJournal env) => env -> IO Subsonic
+mkSubsonic env = subsonicOver <$> mkHttpTransport env <*> randomSalt
 
 -- | The calls over a transport and a salt the caller chooses.
 subsonicOver :: Transport -> Salt -> Subsonic

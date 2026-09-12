@@ -59,6 +59,7 @@ import Havidrome.Audio.State
   , initial
   , step
   )
+import Havidrome.Journal (HasJournal (getJournal), Journal (writes))
 import Havidrome.Subsonic.Types (Seconds (..))
 import Network.HTTP.Client (HttpException, Manager, httpNoBody, method, parseRequest)
 import Network.HTTP.Client.TLS (newTlsManager)
@@ -108,16 +109,24 @@ class HasAudio env where
 
 -- | An audio backend over the mpv on @PATH@, which the Nix build supplies.
 -- The player is started when the action begins and gone when it ends.
-withAudio :: (Audio -> IO a) -> IO a
-withAudio use = do
-  reach <- mkHttpReach
-  withMpv "mpv" [] reach use
+withAudio :: (HasJournal env) => env -> (Audio -> IO a) -> IO a
+withAudio env use = do
+  reach <- mkHttpReach env
+  withMpv env "mpv" [] reach use
 
 -- | An audio backend over a named mpv, given extra options and a way to
 -- probe the server. The tests use it to run mpv on a null audio output,
 -- where there is no device to play to.
-withMpv :: FilePath -> [Text] -> Reach -> (Audio -> IO a) -> IO a
-withMpv program options reach use = bracket (start program options reach) end (use . audio)
+withMpv ::
+  (HasJournal env) =>
+  env ->
+  FilePath ->
+  [Text] ->
+  Reach ->
+  (Audio -> IO a) ->
+  IO a
+withMpv env program options reach use =
+  bracket (start env program options reach) (end env) (use . audio env)
 
 -- | A mpv player: the state it is in, what it has to report, the line to
 -- it, and the process and reader thread behind it.
@@ -148,8 +157,8 @@ arguments =
   , "--input-ipc-client=fd://0"
   ]
 
-start :: FilePath -> [Text] -> Reach -> IO Mpv
-start program options reach = do
+start :: (HasJournal env) => env -> FilePath -> [Text] -> Reach -> IO Mpv
+start env program options reach = do
   (ours, theirs) <- socketPair AF_UNIX Stream defaultProtocol
   line <- socketToHandle ours ReadWriteMode
   hSetBuffering line LineBuffering
@@ -157,8 +166,8 @@ start program options reach = do
   state <- newMVar initial
   events <- newTChanIO
   let player = Player state events line reach
-  send player observePosition
-  reader <- forkIO (drain player)
+  send env player observePosition
+  reader <- forkIO (drain env player)
   pure (Mpv player process reader)
 
 spawn :: FilePath -> [Text] -> Socket -> IO ProcessHandle
@@ -173,23 +182,26 @@ spawn program options socket = do
         }
   pure process
 
-end :: Mpv -> IO ()
-end mpv = do
+end :: (HasJournal env) => env -> Mpv -> IO ()
+end env mpv = do
   killThread mpv.reader
-  send mpv.player quit
-  ignoringIO (hClose (view (#player Optics.% #line) mpv))
+  send env mpv.player quit
+  ignoringIO
+    env
+    "the line to the player would not close"
+    (hClose (view (#player Optics.% #line) mpv))
   terminateProcess mpv.process
   _ <- waitForProcess mpv.process
   pure ()
 
-audio :: Mpv -> Audio
-audio mpv =
+audio :: (HasJournal env) => env -> Mpv -> Audio
+audio env mpv =
   Audio
-    { play = \track from -> perform player (Start track from)
-    , pause = perform player Pause
-    , resume = perform player Resume
-    , seekBy = perform player . SeekBy
-    , stop = perform player Stop
+    { play = \track from -> perform env player (Start track from)
+    , pause = perform env player Pause
+    , resume = perform env player Resume
+    , seekBy = perform env player . SeekBy
+    , stop = perform env player Stop
     , nowPlaying = readMVar player.state
     , nextEvent = atomically (tryReadTChan player.events)
     , awaitEvent = atomically (readTChan player.events)
@@ -199,54 +211,59 @@ audio mpv =
 
 -- | Moves the state on, and does what the step asks for. Holding the state
 -- while the player is told keeps the orders in the order the state took them.
-perform :: Player -> Command -> IO ()
-perform player command =
+perform :: (HasJournal env) => env -> Player -> Command -> IO ()
+perform env player command =
   modifyMVar_ player.state $ \current -> do
     let (next, effects) = step command current
-    traverse_ (apply player) effects
+    traverse_ (apply env player) effects
     pure next
 
-apply :: Player -> Effect -> IO ()
-apply player effect = case effect of
+apply :: (HasJournal env) => env -> Player -> Effect -> IO ()
+apply env player effect = case effect of
   Announce event -> atomically (writeTChan player.events event)
-  _ -> traverse_ (send player) (render effect)
+  _ -> traverse_ (send env player) (render effect)
 
 -- | A player that has died can no longer be told anything, and says so
 -- through the reader instead of here.
-send :: Player -> ByteString -> IO ()
-send player line =
-  ignoringIO (ByteString.hPut player.line line >> hFlush player.line)
+send :: (HasJournal env) => env -> Player -> ByteString -> IO ()
+send env player line =
+  ignoringIO
+    env
+    "the player would not take an order"
+    (ByteString.hPut player.line line >> hFlush player.line)
 
 -- | Reads what mpv says for as long as it says anything. The end of the
 -- stream is the player itself dying, which for a loaded track is a failure to
 -- play it.
-drain :: Player -> IO ()
-drain player = do
+drain :: (HasJournal env) => env -> Player -> IO ()
+drain env player = do
   line <- try (Char8.hGetLine player.line)
   case line of
-    Left (_ :: IOException) -> broke player "the player stopped"
+    Left (fault :: IOException) -> do
+      (getJournal env).writes ("the player stopped: " <> T.pack (show fault))
+      broke env player "the player stopped"
     Right said -> do
-      traverse_ (react player) (readNotice said)
-      drain player
+      traverse_ (react env player) (readNotice said)
+      drain env player
 
-react :: Player -> Notice -> IO ()
-react player heard = case heard of
-  Reached at -> perform player (Observed at)
-  Fetching -> perform player Opened
-  Underway -> perform player Began
-  RanOut -> perform player Ended
-  Broken detail -> broke player detail
+react :: (HasJournal env) => env -> Player -> Notice -> IO ()
+react env player heard = case heard of
+  Reached at -> perform env player (Observed at)
+  Fetching -> perform env player Opened
+  Underway -> perform env player Began
+  RanOut -> perform env player Ended
+  Broken detail -> broke env player detail
 
 -- | Which of the two failures a broken track is, decided by asking the server
 -- whether it is still there.
-broke :: Player -> Text -> IO ()
-broke player detail = do
+broke :: (HasJournal env) => env -> Player -> Text -> IO ()
+broke env player detail = do
   current <- readMVar player.state
   case current of
     Stopped -> pure ()
     Loaded playback -> do
       answered <- view (#reach Optics.% #answers) player (view (#track Optics.% #url) playback)
-      perform player (Broke (failureOf answered detail))
+      perform env player (Broke (failureOf answered detail))
 
 -- | A server that still answers means the file itself is at fault; a server
 -- that does not means the network is.
@@ -266,22 +283,28 @@ newtype Reach = Reach
 -- | A probe that asks the server for the track's headers and nothing else, so
 -- that no audio is fetched to answer the question. Any answer at all, refusal
 -- included, means the server was reached.
-mkHttpReach :: IO Reach
-mkHttpReach = Reach . probe <$> newTlsManager
+mkHttpReach :: (HasJournal env) => env -> IO Reach
+mkHttpReach env = Reach . probe env <$> newTlsManager
 
-probe :: Manager -> Text -> IO Bool
-probe manager url = case parseRequest (T.unpack url) of
+probe :: (HasJournal env) => env -> Manager -> Text -> IO Bool
+probe env manager url = case parseRequest (T.unpack url) of
   Nothing -> pure False
   Just request -> do
     attempt <- try (httpNoBody request {method = "HEAD"} manager)
-    pure $ case attempt of
-      Left (_ :: HttpException) -> False
-      Right _ -> True
+    case attempt of
+      Left (fault :: HttpException) -> do
+        (getJournal env).writes
+          ("the server did not answer for " <> url <> ": " <> T.pack (show fault))
+        pure False
+      Right _ -> pure True
 
-ignoringIO :: IO () -> IO ()
-ignoringIO act = do
+-- | Carries on from an exception the player can do nothing about, leaving the
+-- journal to say what it was.
+ignoringIO :: (HasJournal env) => env -> Text -> IO () -> IO ()
+ignoringIO env about act = do
   attempt <- try act
   case attempt of
-    Left (_ :: IOException) -> pure ()
+    Left (fault :: IOException) ->
+      (getJournal env).writes (about <> ": " <> T.pack (show fault))
     Right () -> pure ()
 
