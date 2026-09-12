@@ -46,7 +46,6 @@ import Brick
   , Widget (Widget)
   , attrMap
   , attrName
-  , customMainWithDefaultVty
   , emptyWidget
   , getContext
   , hBox
@@ -68,12 +67,11 @@ import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (bracket)
 import Control.Monad (forever)
 import Control.Monad.State (get, liftIO, put)
-import Data.Functor.Compose (Compose, getCompose)
 import Data.Foldable (traverse_)
+import Data.Functor.Compose (Compose, getCompose)
 import Data.Maybe (fromMaybe)
 import Data.Text as T (Text)
 import Data.Vector qualified as Vector
-import GHC.Clock (getMonotonicTime)
 import Graphics.Vty qualified as Vty
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
@@ -83,15 +81,16 @@ import Havidrome.Browse
   )
 import Havidrome.Browse qualified as Browse
 import Havidrome.Browse.Row (Row (row), marking)
-import Havidrome.Browse.Strip (Moment (Moment), Showing (Overlay, Wrong), Strip)
 import Havidrome.Browse.Strip qualified as Strip
+import Havidrome.Clock (Clock (now), HasClock (getClock))
 import Havidrome.Divide (quotientRemainder)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Key.Vty (pressed)
 import Havidrome.Library (Library)
 import Havidrome.Margin (margined)
-import Havidrome.Playback qualified as Playback
+import Havidrome.Playback (Playing (..), Session (..), startingAt)
 import Havidrome.Subsonic (Artist, Song (..), SongId, SubsonicError, explain)
+import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 import Havidrome.Width qualified as Width
 import Optics.Core qualified as Optics
 
@@ -108,7 +107,7 @@ data Name
 -- audio is on, and how browsing ended, once it has ended.
 data Screen = Screen
   { browse :: Browse
-  , strip :: Strip
+  , strip :: Strip.Strip
   , marked :: Maybe SongId
   -- ^ The song playback is on, which carries the mark in whichever song list
   -- it is in; nothing while nothing is playing.
@@ -217,7 +216,7 @@ data Ending
 -- picked it — while it is still loading — and follows @n@ and @p@ at once.
 step ::
   Library (Compose IO (Either SubsonicError)) ->
-  Playback.Session ->
+  Session ->
   Command ->
   Screen ->
   IO (Either Ending Screen)
@@ -227,13 +226,13 @@ step library session instruction screen = case instruction of
   MoveUp -> here Browse.moveUp
   MoveDown -> here Browse.moveDown
   Ascend -> here Browse.ascend
-  PauseOrResume -> toAudio (Playback.togglePause session)
-  NextSong -> toAudio (Playback.next session)
-  PreviousSong -> toAudio (Playback.previous session)
-  Seek by -> toAudio (Playback.seekBy session by)
+  PauseOrResume -> toAudio session.togglePause
+  NextSong -> toAudio session.next
+  PreviousSong -> toAudio session.previous
+  Seek by -> toAudio (session.seekBy by)
   Descend -> case picked screen.browse of
     Just (album, song) -> do
-      traverse_ (Playback.start session) (Playback.startingAt album song.id)
+      traverse_ session.start (startingAt album song.id)
       stays taken
     Nothing -> do
       descended <- getCompose (Browse.descend library screen.browse)
@@ -244,16 +243,16 @@ step library session instruction screen = case instruction of
     -- Whatever a key press does, the strip hears about it first.
     taken = screen {strip = Strip.pressed screen.strip}
     stays next = do
-      on <- Playback.nowPlaying session
+      on <- session.nowPlaying
       pure (Right next {marked = markOf on})
     here move = stays taken {browse = move screen.browse}
     toAudio act = act >> stays taken
-    ends ended = Playback.stop session >> pure (Left ended)
+    ends ended = session.stop >> pure (Left ended)
 
 -- | The beat the player hears between key presses: the moment it happened at,
 -- which is both when what the audio has done is taken in and the clock a line
 -- with a few seconds to live is measured against.
-newtype Beat = Beat Moment
+newtype Beat = Beat Strip.Moment
   deriving stock (Eq, Show)
 
 -- | What the player takes in on a beat: everything the audio has done since
@@ -265,10 +264,10 @@ newtype Beat = Beat Moment
 -- audio reports lands on the strip in place of the overlay's contents. The mark
 -- moves with the audio too — onto the song an album moved on to or a skip
 -- landed on, and off every song once the playing has ended.
-onBeat :: Playback.Session -> Moment -> Screen -> IO Screen
+onBeat :: Session -> Strip.Moment -> Screen -> IO Screen
 onBeat session at screen = do
-  failures <- Playback.attend session
-  playing <- Playback.nowPlaying session
+  failures <- session.attend
+  playing <- session.nowPlaying
   pure
     screen
       { strip = Strip.beat at playing failures screen.strip
@@ -276,37 +275,36 @@ onBeat session at screen = do
       }
 
 -- | The song that carries the mark: the one being played, if any is.
-markOf :: Maybe Playback.Playing -> Maybe SongId
+markOf :: Maybe Playing -> Maybe SongId
 markOf = fmap (Optics.view (#song Optics.% #id))
 
 -- | Hands the terminal to the browsing screen, takes it back when browsing
 -- ends, and says how it ended. The beat runs for exactly as long as the screen
 -- is up.
-browsing :: Library (Compose IO (Either SubsonicError)) -> Playback.Session -> Screen -> IO Ending
-browsing library session screen = do
+browsing ::
+  (HasClock env, HasTerminal env) =>
+  env ->
+  Library (Compose IO (Either SubsonicError)) ->
+  Session ->
+  Screen ->
+  IO Ending
+browsing env library session screen = do
   beats <- newBChan 1
-  bracket (forkIO (beating beats)) killThread $ \_ -> do
-    (final, vty) <- customMainWithDefaultVty (Just beats) (application library session) screen
-    -- brick hands back the terminal it was driving rather than putting it
-    -- down, so that one screen can hand it to the next. This one hands it to
-    -- nobody: the login screen a logout goes to takes a terminal of its own,
-    -- and a run that ends here leaves the terminal as it found it.
-    Vty.shutdown vty
+  bracket (forkIO (beating env beats)) killThread $ \_ -> do
+    final <-
+      onTerminal (getTerminal env) (Just beats) (application library session) screen
     -- Only the two commands that end browsing take the screen down, and each
     -- writes down which of them it was; a screen that is gone for any other
     -- reason is one the player was left at.
     pure (fromMaybe Quit final.ending)
 
--- | A beat, then the next, for as long as it is left running.
-beating :: BChan Beat -> IO ()
-beating beats = forever $ do
-  at <- moment
+-- | A beat, then the next, for as long as it is left running. Each is struck
+-- at the moment the clock says, which is the moment it carries.
+beating :: (HasClock env) => env -> BChan Beat -> IO ()
+beating env beats = forever $ do
+  at <- (getClock env).now
   writeBChan beats (Beat at)
   threadDelay interval
-
--- | The moment it is now, on the player's own clock.
-moment :: IO Moment
-moment = Moment <$> getMonotonicTime
 
 -- | How long a beat lasts, in microseconds: short enough that one song follows
 -- another without a silence to hear, long enough that the player is idle
@@ -316,7 +314,7 @@ interval = 100_000
 
 -- | The player, browsing the library it is given until it is left, over the
 -- session that plays what is picked in it.
-application :: Library (Compose IO (Either SubsonicError)) -> Playback.Session -> App Screen Beat Name
+application :: Library (Compose IO (Either SubsonicError)) -> Session -> App Screen Beat Name
 application library session =
   App
     { appDraw = draw
@@ -328,7 +326,7 @@ application library session =
 
 handle ::
   Library (Compose IO (Either SubsonicError)) ->
-  Playback.Session ->
+  Session ->
   BrickEvent Name Beat ->
   EventM Name Screen ()
 handle library session = \case
@@ -358,8 +356,8 @@ draw screen =
   ]
   where
     bottom = \case
-      Wrong said -> withAttr troubleAttribute (line said)
-      Overlay at playing -> withAttr overlayAttribute (across (\width -> Strip.overlaid at width playing))
+      Strip.Wrong said -> withAttr troubleAttribute (line said)
+      Strip.Overlay at playing -> withAttr overlayAttribute (across (\width -> Strip.overlaid at width playing))
 
 -- | A row laid out for the width the screen has for it when it is drawn, and
 -- across the whole of that width. What it lays out is left whole, so a row

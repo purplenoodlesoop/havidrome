@@ -2,23 +2,15 @@
 -- credentials, walk the library artist to album to song, and say where a
 -- song's audio lives.
 --
--- A 'Client' is pointed at a server by its caller and holds no default of its
--- own, so nothing here is tied to a particular server.
+-- Every call is made as an account, and an account names its server as well
+-- as its user, so one record serves every server a run talks to and holds no
+-- default of its own: nothing here is tied to a particular server.
 module Havidrome.Subsonic
-  ( -- * The client
-    Client
-  , newClient
-  , clientOver
-
-    -- * Calls
-  , checkCredentials
-  , listArtists
-  , listAlbums
-  , listSongs
-  , songAudioUrl
-
-    -- * The library browsing walks
-  , library
+  ( -- * The calls
+    Subsonic (..)
+  , HasSubsonic (..)
+  , mkSubsonic
+  , subsonicOver
 
     -- * Vocabulary
   , module Havidrome.Subsonic.Types
@@ -27,11 +19,12 @@ module Havidrome.Subsonic
   , mkSalt
   ) where
 
-import Data.Functor.Compose (Compose (Compose))
 import Data.ByteString (ByteString)
+import Data.Functor.Compose (Compose (Compose))
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Havidrome.Credentials qualified as Credentials
 import Havidrome.Library (Library (..))
 import Havidrome.Subsonic.Protocol
   ( Endpoint (..)
@@ -47,14 +40,46 @@ import Havidrome.Subsonic.Protocol
   , endpointUrl
   , mkSalt
   )
-import Havidrome.Subsonic.Transport (Transport (..), newHttpTransport)
+import Havidrome.Subsonic.Transport (Transport (..), mkHttpTransport)
 import Havidrome.Subsonic.Types
 import Optics.Core (view)
 import Optics.Core qualified as Optics
 import System.Random (randomRIO)
 
--- | A server, the credentials to present to it, and the way out to the
--- network.
+-- | Everything the player asks a Navidrome server, whatever account it asks
+-- as.
+data Subsonic = Subsonic
+  { accepts :: Credentials.Credentials -> IO (Either SubsonicError ())
+  -- ^ Whether the server this account names accepts it. @Right ()@ is
+  -- acceptance; a refusal and an unreachable server are both 'Left', and are
+  -- told apart by which 'SubsonicError' it is.
+  , browses :: Credentials.Credentials -> Library (Compose IO (Either SubsonicError))
+  -- ^ The library that account can walk.
+  , addresses :: Credentials.Credentials -> SongId -> Text
+  -- ^ Where a song's audio is, for that account: a plain GET, asking for the
+  -- file the server stores and never for a transcode of it.
+  }
+
+class HasSubsonic env where
+  getSubsonic :: env -> Subsonic
+
+-- | The calls over a transport of its own and a salt drawn for this run.
+mkSubsonic :: IO Subsonic
+mkSubsonic = subsonicOver <$> mkHttpTransport <*> randomSalt
+
+-- | The calls over a transport and a salt the caller chooses.
+subsonicOver :: Transport -> Salt -> Subsonic
+subsonicOver transport salt =
+  Subsonic
+    { accepts = ping . client
+    , browses = libraryOf . client
+    , addresses = audioFor . client
+    }
+  where
+    client = clientFor transport salt
+
+-- | A server, the account presented to it, the salt that account's tokens are
+-- signed with, and the way out to the network.
 data Client = Client
   { server :: Server
   , credentials :: Credentials
@@ -63,19 +88,11 @@ data Client = Client
   }
   deriving stock (Generic)
 
--- | A client that speaks HTTP, with a salt drawn for this session.
-newClient :: Server -> Credentials -> IO Client
-newClient server credentials = do
-  transport <- newHttpTransport
-  salt <- randomSalt
-  pure (clientOver transport salt server credentials)
-
--- | A client over a transport and a salt the caller chooses.
-clientOver :: Transport -> Salt -> Server -> Credentials -> Client
-clientOver transport salt server credentials =
+clientFor :: Transport -> Salt -> Credentials.Credentials -> Client
+clientFor transport salt account =
   Client
-    { server
-    , credentials
+    { server = Server account.server
+    , credentials = Credentials account.username account.password
     , salt
     , transport
     }
@@ -91,40 +108,24 @@ call client endpoint decode = do
       (endpointUrl client.server client.credentials client.salt endpoint)
   pure (answer >>= decode)
 
--- | Whether the server accepts the client's credentials. @Right ()@ is
--- acceptance; a refusal and an unreachable server are both 'Left', and are
--- told apart by which 'SubsonicError' it is.
-checkCredentials :: Client -> IO (Either SubsonicError ())
-checkCredentials client = call client Ping decodePing
-
--- | Every artist in the library, alphabetically.
-listArtists :: Client -> IO (Either SubsonicError [Artist])
-listArtists client = fmap (fmap byArtistName) (call client GetArtists decodeArtists)
-
--- | One artist's albums, oldest year first.
-listAlbums :: Client -> ArtistId -> IO (Either SubsonicError [Album])
-listAlbums client artist = fmap (fmap byAlbumYear) (call client (GetArtist artist) decodeAlbums)
-
--- | One album's songs, in album order.
-listSongs :: Client -> AlbumId -> IO (Either SubsonicError [Song])
-listSongs client album = fmap (fmap byTrackOrder) (call client (GetAlbum album) decodeSongs)
-
--- | Where a song's audio is: a plain GET, asking for the file the server
--- stores and never for a transcode of it.
-songAudioUrl :: Client -> SongId -> Text
-songAudioUrl client =
-  audioUrl client.server client.credentials client.salt
+ping :: Client -> IO (Either SubsonicError ())
+ping client = call client Ping decodePing
 
 -- | The library a Navidrome server holds. Every call can fail, and a failure
 -- stops the fetch it was part of rather than yielding a half-list, which is
 -- what composing the failure into the fetch says.
-library :: Client -> Library (Compose IO (Either SubsonicError))
-library client =
+libraryOf :: Client -> Library (Compose IO (Either SubsonicError))
+libraryOf client =
   Library
-    { artists = Compose (listArtists client)
-    , albums = Compose . listAlbums client
-    , songs = Compose . listSongs client
+    { artists = Compose (fmap byArtistName <$> call client GetArtists decodeArtists)
+    , albums = \artist ->
+        Compose (fmap byAlbumYear <$> call client (GetArtist artist) decodeAlbums)
+    , songs = \album ->
+        Compose (fmap byTrackOrder <$> call client (GetAlbum album) decodeSongs)
     }
+
+audioFor :: Client -> SongId -> Text
+audioFor client = audioUrl client.server client.credentials client.salt
 
 -- | Draws a fresh salt. Sixteen characters from an alphabet that needs no
 -- escaping in a URL, comfortably over the six the API asks for.

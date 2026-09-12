@@ -7,10 +7,9 @@
 -- 'Havidrome.Credentials.Fault'.
 module Havidrome.Credentials.Store
   ( -- * The config file
-    configFile
-  , load
-  , save
-  , discard
+    Store (..)
+  , HasStore (..)
+  , mkStore
 
     -- * What a load found
   , Stored (..)
@@ -33,7 +32,26 @@ import System.FilePath (takeDirectory, (</>))
 import System.Posix.Files (setFileMode)
 import System.Posix.Types (FileMode)
 
--- | What a 'load' found in the config file.
+-- | The one file the player keeps, and everything it does with it.
+data Store = Store
+  { file :: IO FilePath
+  -- ^ Where the credentials live: @$XDG_CONFIG_HOME/havidrome/config@, and
+  -- @~\/.config\/havidrome\/config@ when @XDG_CONFIG_HOME@ is unset.
+  , load :: IO Stored
+  -- ^ Reads the stored credentials, if there are any to read.
+  , save :: Credentials -> IO ()
+  -- ^ Stores a set of credentials, replacing whatever was stored before and
+  -- creating the config directory if it is missing. The file is the user's
+  -- own: it holds a password in the clear, so nobody else is let near it.
+  , discard :: IO ()
+  -- ^ Throws away the stored credentials, leaving nothing behind for a later
+  -- load to find. Discarding when nothing is stored does nothing.
+  }
+
+class HasStore env where
+  getStore :: env -> Store
+
+-- | What a load found in the config file.
 data Stored
   = -- | Nothing is stored. Not an error: it is what a first run finds.
     Absent
@@ -43,14 +61,23 @@ data Stored
     Present Credentials
   deriving stock (Eq, Show)
 
--- | Where the credentials live: @$XDG_CONFIG_HOME/havidrome/config@, and
--- @~\/.config\/havidrome\/config@ when @XDG_CONFIG_HOME@ is unset.
+-- | The config file under the XDG directory the run is given. It opens
+-- nothing and holds nothing open, so it is not in 'IO'; each operation finds
+-- the file for itself.
+mkStore :: Store
+mkStore =
+  Store
+    { file = configFile
+    , load = loading
+    , save = saving
+    , discard = discarding
+    }
+
 configFile :: IO FilePath
 configFile = (</> "config") <$> getXdgDirectory XdgConfig "havidrome"
 
--- | Reads the stored credentials, if there are any to read.
-load :: IO Stored
-load = do
+loading :: IO Stored
+loading = do
   path <- configFile
   exists <- doesFileExist path
   if not exists
@@ -64,11 +91,8 @@ load = do
       Left _ -> Unreadable (NotAccessible "the file is not valid UTF-8")
       Right text -> either Unreadable Present (parse text)
 
--- | Stores a set of credentials, replacing whatever was stored before and
--- creating the config directory if it is missing. The file is the user's
--- own: it holds a password in the clear, so nobody else is let near it.
-save :: Credentials -> IO ()
-save credentials = do
+saving :: Credentials -> IO ()
+saving credentials = do
   path <- configFile
   let directory = takeDirectory path
   createDirectoryIfMissing True directory
@@ -76,10 +100,8 @@ save credentials = do
   ByteString.writeFile path (encodeUtf8 (render credentials))
   setFileMode path ownerOnlyFile
 
--- | Throws away the stored credentials, leaving nothing behind for a later
--- 'load' to find. Discarding when nothing is stored does nothing.
-discard :: IO ()
-discard = do
+discarding :: IO ()
+discarding = do
   path <- configFile
   exists <- doesFileExist path
   when exists (removeFile path)

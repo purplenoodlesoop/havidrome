@@ -7,7 +7,7 @@
 -- track that is no longer loaded is dropped here as it is there.
 module Havidrome.Playback.Standin
   ( Standin
-  , newStandin
+  , mkStandin
   , standinAudio
 
     -- * A session over one
@@ -50,8 +50,8 @@ data Standin = Standin
   , events :: TChan Event
   }
 
-newStandin :: IO Standin
-newStandin = do
+mkStandin :: IO Standin
+mkStandin = do
   state <- newIORef initial
   tracks <- newIORef []
   events <- newTChanIO
@@ -74,7 +74,7 @@ standinAudio standin =
 -- ask the session for something and see what the backend was told.
 withStandin :: (Standin -> Session -> IO a) -> IO a
 withStandin use = do
-  standin <- newStandin
+  standin <- mkStandin
   session <- newSession (standinAudio standin) address
   use standin session
 

@@ -27,10 +27,14 @@
       specialArgs = { inherit ai-haskell-linter; };
 
       perSystem.imports = [
+        # Every operation this repository has is a declared task, and this
+        # module is what turns the declarations in `nix/tasks.nix` into apps
+        # and into commands on the dev shell's PATH.
         core-flake.nixosModules.tasks
         ./nix/havidrome.nix
         ./nix/shell.nix
         ./nix/checks.nix
+        ./nix/tasks.nix
         ./nix/lint.nix
       ];
     };

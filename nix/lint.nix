@@ -6,7 +6,7 @@
   ...
 }:
 let
-  inherit (ai-haskell-linter.packages.${pkgs.system}) hlint hlint-config;
+  inherit (ai-haskell-linter.packages.${pkgs.stdenv.hostPlatform.system}) hlint hlint-config;
   inherit (lib.fileset) toSource unions;
 
   # A system havidrome is not built for has no Haskell in it to lint, and
@@ -85,24 +85,12 @@ let
   command = "LANG=C.UTF-8 ${hlint}/bin/hlint ${arguments}";
 in
 {
-  # The check and the task run the one command, so `nix flake check` and
-  # `lint` cannot disagree about what the ruleset says.
+  # The `lint` task in `nix/tasks.nix` is this check run on its own.
   flake.output.checks = lib.optionalAttrs lintable {
     lint-check = pkgs.runCommandLocal "lint-check" { } ''
       cd ${source}
       ${command}
       touch $out
     '';
-  };
-
-  tasks = lib.optionalAttrs lintable {
-    lint = {
-      description = "Lint both packages against the shared hlint ruleset";
-      body = ''
-        set -euo pipefail
-        cd "$(git rev-parse --show-toplevel)"
-        ${command}
-      '';
-    };
   };
 }

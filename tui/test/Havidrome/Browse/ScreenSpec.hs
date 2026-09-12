@@ -58,8 +58,7 @@ import Havidrome.Browse.Strip (Moment (Moment), Showing (Wrong), showing)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
-import Havidrome.Playback (Playing (..), Session, nowPlaying)
-import Havidrome.Playback qualified as Playback
+import Havidrome.Playback (Playing (..), Session (..))
 import Havidrome.Playback.Standin
   ( Standin
   , address
@@ -211,7 +210,7 @@ pickingASong = describe "picking a song" $ do
       _ <- ranOut standin session screen 3
       loaded standin
         `shouldReturn` [from btoumRoumada, from untitled]
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
 
   it "plays nothing at a level that has no song to pick" $
     withStandin $ \standin session -> do
@@ -251,20 +250,20 @@ leaving :: Spec
 leaving = describe "leaving the player and leaving the account" $ do
   it "stops the audio on the way out of the player" $ withStandin $ \standin session -> do
     ends session Leave playingDrukqs `shouldReturn` Just Quit
-    nowPlaying session `shouldReturn` Nothing
+    session.nowPlaying `shouldReturn` Nothing
     motionOf standin `shouldReturn` Nothing
 
   it "stops it on the way to the login screen just the same" $
     withStandin $ \standin session -> do
       ends session LogOut playingDrukqs `shouldReturn` Just LoggedOut
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
 
   it "logs out of an account with nothing playing" $
     withStandin $ \standin session -> do
       ends session LogOut toDrukqs `shouldReturn` Just LoggedOut
       loaded standin `shouldReturn` []
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
 
 playbackKeys :: Spec
@@ -304,7 +303,7 @@ movingSongs = do
     withStandin $ \standin session -> do
       screen <- after session (toDrukqs <> [MoveDown, MoveDown, Descend])
       _ <- pressing session screen [NextSong]
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
 
   it "goes back a song on p, part-way through the one playing" $
@@ -380,7 +379,7 @@ keysAndTheView = do
       browsing <- after session toDrukqs
       controlled <- pressing session browsing controls
       loaded standin `shouldReturn` []
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
       shown (60, 6) controlled `shouldBe` shown (60, 6) browsing
 overlay :: Spec
@@ -406,7 +405,7 @@ whatTheOverlaySays = do
       screen <- onDrukqs standin session
       reach standin (Seconds 42)
       running <- beaten session 1 screen
-      Playback.pause session
+      session.pause
       held <- beaten session 2 running >>= beaten session 3
       stripRow held `shouldBe` "⏸ Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
 
@@ -444,7 +443,7 @@ whereTheOverlayIs = do
       started <- taking library session browsing Descend >>= beaten session 0
       ended <- ranOut standin session started 3
       onStrip ended `shouldBe` Nothing
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
       shown (60, 6) ended `shouldBe` shown (60, 6) browsing
 loadingIndicator :: Spec
 loadingIndicator = describe "a song picked with Enter, while it loads" $ do
@@ -630,7 +629,7 @@ failureInStrip = describe "a playback failure in the strip" $ do
       screen <- breaking session standin (Unreachable "the server could not be reached: it is down")
       waited <- beaten session 600 screen
       onStrip waited `shouldBe` Just (Wrong "The server could not be reached: it is down")
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
 
   it "takes it down on the next key press, which still does its usual job" $
     withStandin $ \standin session -> do
@@ -1140,11 +1139,11 @@ ends session instruction path = do
 
 -- | The song the session is playing, if it is playing one.
 playing :: Session -> IO (Maybe Song)
-playing = fmap (fmap (.song)) . nowPlaying
+playing session = fmap (fmap (.song)) session.nowPlaying
 
 -- | How far into that song the audio has come.
 elapsed :: Session -> IO (Maybe Seconds)
-elapsed = fmap (fmap (.elapsed)) . nowPlaying
+elapsed session = fmap (fmap (.elapsed)) session.nowPlaying
 
 -- | The audio runs out, so many times, with nothing pressed: only the beat the
 -- screen takes it in on. This is the whole of \"playback continues through the

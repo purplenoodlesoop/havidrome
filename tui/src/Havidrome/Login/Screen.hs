@@ -28,7 +28,6 @@ import Brick
   , Widget
   , attrMap
   , attrName
-  , defaultMain
   , emptyWidget
   , fill
   , halt
@@ -43,7 +42,7 @@ import Control.Monad.State (get, put)
 import Data.Text as T (Text)
 import Graphics.Vty qualified as Vty
 import Havidrome.Credentials qualified as Credentials
-import Havidrome.Credentials.Store qualified as Store
+import Havidrome.Credentials.Store (HasStore (getStore), Store (save))
 import Havidrome.Key.Vty (pressed)
 import Havidrome.Login
   ( Ending (Abandoned, Entered)
@@ -59,25 +58,16 @@ import Havidrome.Login
   , value
   )
 import Havidrome.Margin (margined)
-import Havidrome.Subsonic
-  ( Credentials (Credentials)
-  , Server (Server)
-  , checkCredentials
-  , newClient
-  )
+import Havidrome.Subsonic (HasSubsonic (getSubsonic), Subsonic (accepts))
+import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 
--- | The real entry: the server the typed URL names, asked over the network,
--- and the config file the accepted credentials are stored in.
-navidrome :: Entry IO
-navidrome =
+-- | The real entry: the server the typed URL names, asked through the player's
+-- own calls, and the config file the accepted credentials are stored in.
+navidrome :: (HasStore env, HasSubsonic env) => env -> Entry IO
+navidrome env =
   Entry
-    { accepts = \credentials -> do
-        client <-
-          newClient
-            (Server credentials.server)
-            (Credentials credentials.username credentials.password)
-        checkCredentials client
-    , keeps = Store.save
+    { accepts = (getSubsonic env).accepts
+    , keeps = (getStore env).save
     }
 
 -- | The name brick knows the screen by. There is one thing on it, so there is
@@ -95,9 +85,10 @@ data Screen = Screen
 
 -- | Asks for credentials, and hands back the ones a server took — stored by
 -- then — or nothing at all when the player was left.
-login :: Entry IO -> IO (Maybe Credentials.Credentials)
-login entry = do
-  final <- defaultMain (application entry) (Screen blank Nothing)
+login :: (HasTerminal env) => env -> Entry IO -> IO (Maybe Credentials.Credentials)
+login env entry = do
+  final <-
+    onTerminal (getTerminal env) Nothing (application entry) (Screen blank Nothing)
   pure $ case final.ending of
     Just (Entered credentials) -> Just credentials
     Just Abandoned -> Nothing

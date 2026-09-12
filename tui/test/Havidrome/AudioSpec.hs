@@ -147,7 +147,7 @@ breaking = describe "failing" $ do
       failed `shouldSatisfy` failing (Unreachable "the server could not be reached: unrecognized file format")
 
   it "asks the server itself, and calls a server that answers nothing a network failure" $ do
-    reach <- httpReach
+    reach <- mkHttpReach
     withPlayer reach $ \audio -> do
       audio.play (Track nowhere (Seconds 60)) (Seconds 0)
       failed <- waitForEvent audio

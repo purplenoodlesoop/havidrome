@@ -14,6 +14,7 @@
 module Havidrome.Audio
   ( -- * The backend
     Audio (..)
+  , HasAudio (..)
   , withAudio
   , withMpv
 
@@ -29,7 +30,7 @@ module Havidrome.Audio
 
     -- * Telling the two failures apart
   , Reach (..)
-  , httpReach
+  , mkHttpReach
   , failureOf
   ) where
 
@@ -102,11 +103,14 @@ data Audio = Audio
   }
   deriving stock (Generic)
 
+class HasAudio env where
+  getAudio :: env -> Audio
+
 -- | An audio backend over the mpv on @PATH@, which the Nix build supplies.
 -- The player is started when the action begins and gone when it ends.
 withAudio :: (Audio -> IO a) -> IO a
 withAudio use = do
-  reach <- httpReach
+  reach <- mkHttpReach
   withMpv "mpv" [] reach use
 
 -- | An audio backend over a named mpv, given extra options and a way to
@@ -262,8 +266,8 @@ newtype Reach = Reach
 -- | A probe that asks the server for the track's headers and nothing else, so
 -- that no audio is fetched to answer the question. Any answer at all, refusal
 -- included, means the server was reached.
-httpReach :: IO Reach
-httpReach = Reach . probe <$> newTlsManager
+mkHttpReach :: IO Reach
+mkHttpReach = Reach . probe <$> newTlsManager
 
 probe :: Manager -> Text -> IO Bool
 probe manager url = case parseRequest (T.unpack url) of

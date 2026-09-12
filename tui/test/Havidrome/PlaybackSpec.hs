@@ -34,7 +34,7 @@ picking :: Session -> [Song] -> Song -> IO ()
 picking session whole wanted =
   maybe
     (expectationFailure "the album has no such song")
-    (start session)
+    session.start
     (startingAt whole wanted.id)
 
 -- | What the backend is told when that song is played from its beginning.
@@ -48,11 +48,11 @@ runOut :: Standin -> Session -> Int -> IO [Failure]
 runOut standin session times =
   fmap concat . replicateM times $ do
     finish standin
-    attend session
+    session.attend
 
 -- | The song a session is playing, if it is playing one.
 current :: Session -> IO (Maybe Song)
-current = fmap (fmap (.song)) . nowPlaying
+current session = fmap (fmap (.song)) session.nowPlaying
 
 -- | The album every spec here plays, and its four songs by name.
 tracks :: [Song]
@@ -99,7 +99,7 @@ picked = describe "picking a song" $ do
     withStandin $ \standin session -> do
       picking session tracks third
       _ <- runOut standin session 2
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
 
 arrivals :: Spec
@@ -107,43 +107,43 @@ arrivals = describe "how the song playing came to be playing" $ do
   it "is picked for a song the album was started from, loading until its audio starts" $
     withStandin $ \standin session -> do
       picking session tracks second
-      nowPlaying session `shouldReturn` Just (Playing second (Seconds 0) Picked Loading)
+      session.nowPlaying `shouldReturn` Just (Playing second (Seconds 0) Picked Loading)
       begin standin
-      nowPlaying session `shouldReturn` Just (Playing second (Seconds 0) Picked (Sounding Running))
+      session.nowPlaying `shouldReturn` Just (Playing second (Seconds 0) Picked (Sounding Running))
 
   it "is picked, and loading, for a song picked while another still loads" $
     withStandin $ \_ session -> do
       picking session tracks second
       picking session tracks third
-      nowPlaying session `shouldReturn` Just (Playing third (Seconds 0) Picked Loading)
+      session.nowPlaying `shouldReturn` Just (Playing third (Seconds 0) Picked Loading)
 
   it "is followed for the song the album runs on to" $ withStandin $ \standin session -> do
     picking session tracks second
     begin standin
     _ <- runOut standin session 1
-    nowPlaying session `shouldReturn` Just (Playing third (Seconds 0) Followed Loading)
+    session.nowPlaying `shouldReturn` Just (Playing third (Seconds 0) Followed Loading)
 
   it "is followed for the songs next and previous move to" $
     withStandin $ \_ session -> do
       picking session tracks second
-      next session
-      nowPlaying session `shouldReturn` Just (Playing third (Seconds 0) Followed Loading)
-      previous session
-      nowPlaying session `shouldReturn` Just (Playing second (Seconds 0) Followed Loading)
+      session.next
+      session.nowPlaying `shouldReturn` Just (Playing third (Seconds 0) Followed Loading)
+      session.previous
+      session.nowPlaying `shouldReturn` Just (Playing second (Seconds 0) Followed Loading)
 
   it "is followed for the song a skipped one gives way to" $
     withStandin $ \standin session -> do
       picking session tracks second
       breakWith standin (Unplayable "the file will not play: unrecognized file format")
-      _ <- attend session
-      fmap (.arrival) <$> nowPlaying session `shouldReturn` Just Followed
+      _ <- session.attend
+      fmap (.arrival) <$> session.nowPlaying `shouldReturn` Just Followed
 
   it "leaves a picked song held while it loads held at its start once loaded" $
     withStandin $ \standin session -> do
       picking session tracks second
-      togglePause session
+      session.togglePause
       begin standin
-      nowPlaying session `shouldReturn` Just (Playing second (Seconds 0) Picked (Sounding Paused))
+      session.nowPlaying `shouldReturn` Just (Playing second (Seconds 0) Picked (Sounding Paused))
       motionOf standin `shouldReturn` Just Paused
 
 anotherAlbum :: Spec
@@ -161,21 +161,21 @@ movingOn :: Spec
 movingOn = describe "next" $ do
   it "plays the next song of the album" $ withStandin $ \standin session -> do
     picking session tracks first
-    next session
+    session.next
     current session `shouldReturn` Just second
     loaded standin `shouldReturn` fmap from [first, second]
 
   it "ends the playing on the last song" $ withStandin $ \standin session -> do
     picking session tracks fourth
-    next session
-    nowPlaying session `shouldReturn` Nothing
+    session.next
+    session.nowPlaying `shouldReturn` Nothing
     motionOf standin `shouldReturn` Nothing
 
   it "starts nothing more once it has ended the playing" $
     withStandin $ \standin session -> do
       picking session tracks fourth
-      next session
-      next session
+      session.next
+      session.next
       _ <- runOut standin session 3
       loaded standin `shouldReturn` [from fourth]
 
@@ -185,7 +185,7 @@ movingBack = describe "previous" $ do
     withStandin $ \standin session -> do
       picking session tracks third
       reach standin (Seconds 90)
-      previous session
+      session.previous
       current session `shouldReturn` Just second
       loaded standin `shouldReturn` [from third, from second]
 
@@ -193,7 +193,7 @@ movingBack = describe "previous" $ do
     withStandin $ \standin session -> do
       picking session tracks first
       reach standin (Seconds 90)
-      previous session
+      session.previous
       current session `shouldReturn` Just first
       loaded standin `shouldReturn` [from first, from first]
 
@@ -204,7 +204,7 @@ unplayable = describe "a song that will not play" $ do
       let failure = Unplayable "the file will not play: unrecognized file format"
       picking session tracks second
       breakWith standin failure
-      attend session `shouldReturn` [failure]
+      session.attend `shouldReturn` [failure]
       current session `shouldReturn` Just third
       loaded standin `shouldReturn` [from second, from third]
 
@@ -213,8 +213,8 @@ unplayable = describe "a song that will not play" $ do
       let failure = Unplayable "the file will not play: unrecognized file format"
       picking session tracks fourth
       breakWith standin failure
-      attend session `shouldReturn` [failure]
-      nowPlaying session `shouldReturn` Nothing
+      session.attend `shouldReturn` [failure]
+      session.nowPlaying `shouldReturn` Nothing
 
 unreachable :: Spec
 unreachable = describe "a server that cannot be reached" $ do
@@ -222,14 +222,14 @@ unreachable = describe "a server that cannot be reached" $ do
     let failure = Unreachable "the server could not be reached: loading failed"
     picking session tracks second
     breakWith standin failure
-    attend session `shouldReturn` [failure]
-    nowPlaying session `shouldReturn` Nothing
+    session.attend `shouldReturn` [failure]
+    session.nowPlaying `shouldReturn` Nothing
     motionOf standin `shouldReturn` Nothing
 
   it "starts no further song of the album" $ withStandin $ \standin session -> do
     picking session tracks second
     breakWith standin (Unreachable "the server could not be reached: loading failed")
-    _ <- attend session
+    _ <- session.attend
     _ <- runOut standin session 3
     loaded standin `shouldReturn` [from second]
 
@@ -239,49 +239,49 @@ held = describe "pausing, resuming and seeking" $ do
     withStandin $ \standin session -> do
       picking session tracks second
       reach standin (Seconds 60)
-      pause session
+      session.pause
       motionOf standin `shouldReturn` Just Paused
-      nowPlaying session `shouldReturn` Just (Playing second (Seconds 60) Picked Loading)
+      session.nowPlaying `shouldReturn` Just (Playing second (Seconds 60) Picked Loading)
       loaded standin `shouldReturn` [from second]
 
   it "lets it run on from where it was held" $ withStandin $ \standin session -> do
     picking session tracks second
     reach standin (Seconds 60)
-    pause session
-    resume session
+    session.pause
+    session.resume
     motionOf standin `shouldReturn` Just Running
-    nowPlaying session `shouldReturn` Just (Playing second (Seconds 60) Picked Loading)
+    session.nowPlaying `shouldReturn` Just (Playing second (Seconds 60) Picked Loading)
 
   it "holds a running song and lets a held one run on, on the one control" $
     withStandin $ \standin session -> do
       picking session tracks second
       reach standin (Seconds 60)
-      togglePause session
+      session.togglePause
       motionOf standin `shouldReturn` Just Paused
-      togglePause session
+      session.togglePause
       motionOf standin `shouldReturn` Just Running
-      nowPlaying session `shouldReturn` Just (Playing second (Seconds 60) Picked Loading)
+      session.nowPlaying `shouldReturn` Just (Playing second (Seconds 60) Picked Loading)
 
   it "holds nothing when there is nothing playing to hold" $
     withStandin $ \standin session -> do
-      togglePause session
+      session.togglePause
       motionOf standin `shouldReturn` Nothing
-      nowPlaying session `shouldReturn` Nothing
+      session.nowPlaying `shouldReturn` Nothing
 
   it "moves through the song without changing which song it is" $
     withStandin $ \standin session -> do
       picking session tracks second
       reach standin (Seconds 60)
-      seekBy session 30
-      nowPlaying session `shouldReturn` Just (Playing second (Seconds 90) Picked Loading)
+      session.seekBy 30
+      session.nowPlaying `shouldReturn` Just (Playing second (Seconds 90) Picked Loading)
       loaded standin `shouldReturn` [from second]
 
   it "leaves the rest of the album to play as it would have" $
     withStandin $ \standin session -> do
       picking session tracks second
-      pause session
-      resume session
-      seekBy session 30
+      session.pause
+      session.resume
+      session.seekBy 30
       _ <- runOut standin session 3
       loaded standin `shouldReturn` fmap from [second, third, fourth]
 
@@ -290,8 +290,8 @@ stopped = describe "stopping" $
   it "plays nothing, and leaves no album behind to carry on" $
     withStandin $ \standin session -> do
       picking session tracks second
-      stop session
-      nowPlaying session `shouldReturn` Nothing
+      session.stop
+      session.nowPlaying `shouldReturn` Nothing
       motionOf standin `shouldReturn` Nothing
       _ <- runOut standin session 3
       loaded standin `shouldReturn` [from second]

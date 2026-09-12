@@ -2,6 +2,10 @@
 -- reach, the browsing screen over its library, and the audio a song picked in
 -- it plays through.
 --
+-- This is also where every capability the player has is built, and the only
+-- place that names the record holding them: everything under it says what it
+-- touches with a @Has@ class, and so can touch nothing else.
+--
 -- A run is one account after another. Browsing an account ends either in the
 -- player being left, which ends the run, or in a logout, which forgets that
 -- account and asks the login screen for the next one — so a run browses as
@@ -18,29 +22,57 @@ module Havidrome
   , player
   ) where
 
-import Data.Functor.Compose (getCompose)
 import Data.Foldable (traverse_)
+import Data.Functor.Compose (getCompose)
 import Data.Text as T (Text)
 import Data.Text qualified as T
-import Data.Text.IO qualified as T.IO
-import Havidrome.Audio (withAudio)
+import Havidrome.Audio (Audio, HasAudio (getAudio), withAudio)
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit), browsing, opening)
+import Havidrome.Clock (Clock, HasClock (getClock), mkClock)
 import Havidrome.Credentials qualified as Credentials
-import Havidrome.Credentials.Store (Stored (Absent, Present, Unreadable))
-import Havidrome.Credentials.Store qualified as Store
+import Havidrome.Credentials.Store
+  ( HasStore (getStore)
+  , Store (discard, load)
+  , Stored (Absent, Present, Unreadable)
+  , mkStore
+  )
 import Havidrome.Library (Library (artists))
 import Havidrome.Login.Screen qualified as Login
 import Havidrome.Playback (newSession)
 import Havidrome.Subsonic
-  ( Credentials (Credentials)
-  , Server (Server)
+  ( HasSubsonic (getSubsonic)
+  , Subsonic (addresses, browses)
   , explain
-  , library
-  , newClient
-  , songAudioUrl
+  , mkSubsonic
   )
+import Havidrome.Terminal (HasTerminal (getTerminal), Terminal (says), mkTerminal)
 import System.Exit (exitFailure)
-import System.IO (stderr)
+
+-- | Every capability the player has, built by 'run' and named nowhere else.
+-- A function that took this would claim the whole world, so none does: each
+-- one asks for the capabilities it uses by constraint instead.
+data Env = Env
+  { store :: Store
+  , subsonic :: Subsonic
+  , audio :: Audio
+  , terminal :: Terminal
+  , clock :: Clock
+  }
+
+instance HasStore Env where
+  getStore env = env.store
+
+instance HasSubsonic Env where
+  getSubsonic env = env.subsonic
+
+instance HasAudio Env where
+  getAudio env = env.audio
+
+instance HasTerminal Env where
+  getTerminal env = env.terminal
+
+instance HasClock Env where
+  getClock env = env.clock
 
 -- | Where a run starts, which is settled by what the config file holds.
 data Start
@@ -66,19 +98,33 @@ start = \case
 -- Credentials that are already stored are used as they are; when there are
 -- none, the login screen asks for them, and a run left at that screen browses
 -- nothing at all.
+--
+-- Every capability is built here, once, and lasts exactly as long as the run:
+-- the player mpv makes the sound with is started before the first screen and
+-- gone after the last, and one account after another is played through it.
 run :: IO ()
 run = do
-  loaded <- Store.load
-  case start loaded of
-    Ask -> player havidrome Nothing
-    Browse credentials -> player havidrome (Just credentials)
-    Stop reason -> stop reason
+  subsonic <- mkSubsonic
+  withAudio $ \audio -> do
+    let env =
+          Env
+            { store = mkStore
+            , subsonic
+            , audio
+            , terminal = mkTerminal
+            , clock = mkClock
+            }
+    started <- start <$> (getStore env).load
+    case started of
+      Ask -> player (accounts env) Nothing
+      Browse credentials -> player (accounts env) (Just credentials)
+      Stop reason -> stop env reason
 
 -- | What a run does with an account: where it gets one, what browsing it comes
 -- to, and how it is forgotten again.
 --
 -- The player's are the login screen, the browsing screen and the config file
--- ('havidrome'); a spec's stand-in is as good an account as far as 'player' is
+-- ('accounts'); a spec's stand-in is as good an account as far as 'player' is
 -- concerned, which is what the @f@ keeps open.
 data Account f = Account
   { asks :: f (Maybe Credentials.Credentials)
@@ -91,12 +137,15 @@ data Account f = Account
 
 -- | The player's own: the login screen asks, the browsing screen browses, and
 -- the config file is what forgetting empties.
-havidrome :: Account IO
-havidrome =
+accounts ::
+  (HasAudio env, HasClock env, HasStore env, HasSubsonic env, HasTerminal env) =>
+  env ->
+  Account IO
+accounts env =
   Account
-    { asks = Login.login Login.navidrome
-    , browses = browse
-    , forgets = Store.discard
+    { asks = Login.login env (Login.navidrome env)
+    , browses = browse env
+    , forgets = (getStore env).discard
     }
 
 -- | One account after another, from the credentials a run starts with — or
@@ -117,23 +166,22 @@ player account = maybe asked entered
 -- | Opens the artist list of the server these credentials reach, hands the
 -- terminal over to it, and says how browsing it ended.
 --
--- The audio backend is started only once there is a library to browse, and is
--- gone again when browsing ends, so a run that never reaches a list never
--- reaches for a player either, and an account logged out of takes its backend
--- with it.
-browse :: Credentials.Credentials -> IO Ending
-browse credentials = do
-  client <-
-    newClient
-      (Server credentials.server)
-      (Credentials credentials.username credentials.password)
-  let browsed = library client
+-- The session that plays what is picked is this account's own, so an account
+-- logged out of leaves no album behind it, and the next one starts on nothing.
+browse ::
+  (HasAudio env, HasClock env, HasSubsonic env, HasTerminal env) =>
+  env ->
+  Credentials.Credentials ->
+  IO Ending
+browse env credentials = do
+  let subsonic = getSubsonic env
+      browsed = subsonic.browses credentials
   getCompose browsed.artists >>= \case
-    Left failure -> stop (explain failure)
-    Right artists -> withAudio $ \audio -> do
-      session <- newSession audio (songAudioUrl client)
-      browsing browsed session (opening artists)
+    Left failure -> stop env (explain failure)
+    Right artists -> do
+      session <- newSession (getAudio env) (subsonic.addresses credentials)
+      browsing env browsed session (opening artists)
 
 -- | Says why the player cannot go on, and stops.
-stop :: Text -> IO a
-stop reason = T.IO.hPutStrLn stderr ("havidrome: " <> reason) >> exitFailure
+stop :: (HasTerminal env) => env -> Text -> IO a
+stop env reason = (getTerminal env).says ("havidrome: " <> reason) >> exitFailure
