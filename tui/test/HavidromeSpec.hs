@@ -19,7 +19,7 @@ import Havidrome
   )
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit))
 import Havidrome.Credentials (Credentials (Credentials), Fault (MissingField))
-import Havidrome.Credentials.Store (Stored (Absent, Present, Unreadable), save)
+import Havidrome.Credentials.Store (Store (save), Stored (Absent, Present, Unreadable), mkStore)
 import System.Environment (setEnv, unsetEnv)
 import System.Exit (ExitCode (ExitFailure))
 import System.IO (IOMode (WriteMode), hClose, stderr, withFile)
@@ -73,7 +73,7 @@ spec = do
   describe "run" $
     it "stops instead of browsing when the artist list cannot be fetched" $
       withConfigHome $ do
-        save (Credentials nowhere "someone" "secret")
+        mkStore.save (Credentials nowhere "someone" "secret")
         quietly run `shouldThrow` (== ExitFailure 1)
 
 -- | An account to start a run with. Nothing answers at its server.

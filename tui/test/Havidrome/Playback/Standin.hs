@@ -7,7 +7,7 @@
 -- track that is no longer loaded is dropped here as it is there.
 module Havidrome.Playback.Standin
   ( Standin
-  , newStandin
+  , mkStandin
   , standinAudio
 
     -- * A session over one
@@ -41,7 +41,7 @@ import Havidrome.Audio.State
   , initial
   , step
   )
-import Havidrome.Playback (Session, newSession)
+import Havidrome.Playback (Session, mkSession)
 import Havidrome.Subsonic.Types (Seconds, SongId (SongId))
 
 data Standin = Standin
@@ -50,8 +50,8 @@ data Standin = Standin
   , events :: TChan Event
   }
 
-newStandin :: IO Standin
-newStandin = do
+mkStandin :: IO Standin
+mkStandin = do
   state <- newIORef initial
   tracks <- newIORef []
   events <- newTChanIO
@@ -74,8 +74,8 @@ standinAudio standin =
 -- ask the session for something and see what the backend was told.
 withStandin :: (Standin -> Session -> IO a) -> IO a
 withStandin use = do
-  standin <- newStandin
-  session <- newSession (standinAudio standin) address
+  standin <- mkStandin
+  session <- mkSession (standinAudio standin) address
   use standin session
 
 -- | Where a song's audio lives, as the Subsonic client would say.

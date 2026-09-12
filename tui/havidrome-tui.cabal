@@ -43,6 +43,7 @@ library
         Havidrome
         Havidrome.Audio
         Havidrome.Browse.Screen
+        Havidrome.Clock
         Havidrome.Credentials.Store
         Havidrome.Key.Vty
         Havidrome.Login.Screen
@@ -50,6 +51,7 @@ library
         Havidrome.Playback
         Havidrome.Subsonic
         Havidrome.Subsonic.Transport
+        Havidrome.Terminal
 
     build-depends:
         -- The standard library.
@@ -119,8 +121,8 @@ test-suite havidrome-tui-test
         Havidrome.Login.ScreenSpec
         Havidrome.Playback.Standin
         Havidrome.PlaybackSpec
-        Havidrome.Subsonic.ClientSpec
         Havidrome.Subsonic.TransportSpec
+        Havidrome.SubsonicSpec
         HavidromeSpec
         Terminal
 
