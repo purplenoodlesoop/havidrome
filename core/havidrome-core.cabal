@@ -51,6 +51,7 @@ library
         Havidrome.Key.Media
         Havidrome.Library
         Havidrome.Login
+        Havidrome.Moment
         Havidrome.Playback.Playing
         Havidrome.Playback.Queue
         Havidrome.Subsonic.Protocol

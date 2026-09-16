@@ -102,9 +102,18 @@ import Havidrome.Browse
   , picked
   )
 import Havidrome.Browse qualified as Browse
-import Havidrome.Browse.Row (Carried (Awaited), Mark (..), Row, line, marking, row)
+import Havidrome.Browse.Row
+  ( Carried (Awaited)
+  , Mark (..)
+  , Row
+  , Turn
+  , line
+  , marking
+  , row
+  , turn
+  )
 import Havidrome.Browse.Strip qualified as Strip
-import Havidrome.Clock (Clock (now), HasClock (getClock))
+import Havidrome.Clock (Clock (now), HasClock (getClock), Moment (Moment))
 import Havidrome.Divide (quotientRemainder)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Key.Vty (pressed)
@@ -127,9 +136,9 @@ data Name
   deriving stock (Eq, Ord, Show)
 
 {- | Everything on screen: the level being browsed, whether the level under it
-is still on its way, the strip along the bottom that says what the audio is
-doing and what last went wrong, the song the audio is on, and how browsing
-ended, once it has ended.
+is still on its way, the moment the beat last struck, the strip along the
+bottom that says what the audio is doing and what last went wrong, the song
+the audio is on, and how browsing ended, once it has ended.
 -}
 data Screen = Screen
   { browse :: Browse
@@ -137,6 +146,11 @@ data Screen = Screen
   {- ^ Whether a level asked for has yet to arrive, which is what the row it
   was asked for says with the loading symbol, and what holds the keys that
   move, descend and go back.
+  -}
+  , at :: Moment
+  {- ^ The moment of the last beat, which is the clock the loading symbol's
+  turn is read off. It is the screen's and not each waiting row's, so every
+  row waiting at the same moment is drawn on the same turn.
   -}
   , strip :: Strip.Strip
   , marked :: Maybe Mark
@@ -148,14 +162,16 @@ data Screen = Screen
   }
   deriving stock (Show)
 
-{- | The screen a run opens on: the artist list, nothing on its way, nothing
-playing, nothing wrong yet, and browsing still going on.
+{- | The screen a run opens on: the artist list, nothing on its way, the clock
+not yet read, nothing playing, nothing wrong yet, and browsing still going
+on.
 -}
 opening :: [Artist] -> Screen
 opening artists =
   Screen
     { browse = atArtists artists
     , awaiting = False
+    , at = Moment 0
     , strip = Strip.quiet
     , marked = Nothing
     , ending = Nothing
@@ -353,12 +369,12 @@ arrived answer screen
 in: the beat the player hears between key presses, a media key pressed
 somewhere on the machine, and the answer to a level it asked for.
 
-A beat carries the moment it happened at, which is both when what the audio
-has done is taken in and the clock a line with a few seconds to live is
-measured against.
+A beat carries the moment it happened at, which is when what the audio has
+done is taken in, the clock a line with a few seconds to live is measured
+against, and the clock the loading symbol's turn is read off.
 -}
 data Pulse
-  = Beat Strip.Moment
+  = Beat Moment
   | Pressed Media
   | Arrived (Either SubsonicError Browse)
   deriving stock (Eq, Show)
@@ -372,14 +388,18 @@ true: the overlay's elapsed time moves on with the audio, and a failure the
 audio reports lands on the strip in place of the overlay's contents. The mark
 moves with the audio too — onto the song an album moved on to or a skip
 landed on, and off every song once the playing has ended.
+
+It is also what moves the loading symbol: the screen takes the moment down
+and every row waiting at it is drawn on the turn that moment is on.
 -}
-onBeat :: Session -> Strip.Moment -> Screen -> IO Screen
+onBeat :: Session -> Moment -> Screen -> IO Screen
 onBeat session at screen = do
   failures <- session.attend
   playing <- session.nowPlaying
   pure
     screen
-      { strip = Strip.beat at playing failures screen.strip
+      { at
+      , strip = Strip.beat at playing failures screen.strip
       , marked = markOf playing
       }
 
@@ -516,7 +536,7 @@ draw :: Screen -> [Widget Name]
 draw screen =
   [ margined $
       vBox
-        [ levels screen.awaiting screen.marked screen.browse
+        [ levels (turn screen.at) screen.awaiting screen.marked screen.browse
         , maybe emptyWidget (padTop (Pad 1) . bottom) (Strip.showing screen.strip)
         ]
   ]
@@ -546,9 +566,13 @@ loading symbol: that row is the one the keys are on, in the level being
 browsed, since nothing can move them while it is on its way. No other row of
 an artist or an album column ever carries a symbol — a column to the left
 has already opened, and a song's own mark is the song list's business.
+
+The turn is the one the last beat is on, and it is the same turn for every
+row of every column that is waiting for anything, so a row waiting for its
+level and a song waiting for its audio go round together.
 -}
-levels :: Bool -> Maybe Mark -> Browse -> Widget Name
-levels waiting on = \case
+levels :: Turn -> Bool -> Maybe Mark -> Browse -> Widget Name
+levels at waiting on = \case
   AtArtists artists ->
     columns [browsed ArtistList "Artists" artists]
   AtAlbums artists albums ->
@@ -560,14 +584,14 @@ levels waiting on = \case
     columns
       [ above ArtistList "Artists" artists
       , above AlbumList "Albums" albums
-      , column True SongList "Songs" (const (marking on)) songs
+      , column True SongList "Songs" (const (marking at on)) songs
       ]
  where
   browsed, above :: (Row a) => Name -> Text -> Rows a -> Widget Name
   browsed name heading = column True name heading waited
   above name heading = column False name heading (const row)
   waited :: (Row a) => Bool -> a -> Text
-  waited here = line (if waiting && here then Just Awaited else Nothing)
+  waited here = line (if waiting && here then Just (Awaited at) else Nothing)
 
 {- | One level's column: its heading, a line across the column under that, and
 its list under the line, each item reading as the text given for it, and
