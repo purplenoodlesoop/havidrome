@@ -11,6 +11,7 @@ import Havidrome.Browse.StripTest qualified as StripTest
 import Havidrome.BrowseTest qualified as BrowseTest
 import Havidrome.CredentialsTest qualified as CredentialsTest
 import Havidrome.DivideTest qualified as DivideTest
+import Havidrome.Key.MediaTest qualified as MediaTest
 import Havidrome.LoginTest qualified as LoginTest
 import Havidrome.Playback.QueueTest qualified as QueueTest
 import Havidrome.Subsonic.ProtocolTest qualified as ProtocolTest
@@ -26,6 +27,7 @@ groups :: [Group]
 groups =
   [ DivideTest.tests
   , WidthTest.tests
+  , MediaTest.tests
   , CredentialsTest.tests
   , TypesTest.tests
   , ProtocolTest.tests

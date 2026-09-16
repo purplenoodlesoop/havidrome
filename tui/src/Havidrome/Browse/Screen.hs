@@ -8,6 +8,11 @@ being browsed. What that audio is doing is what the bottom strip says, and
 the song it is on carries a mark of its own in the song list, wherever the
 selection is.
 
+The machine's own media keys reach the screen here too, alongside the beat
+and the terminal's key presses. Each stands for one of the keys the screen
+already binds and is obeyed as that key, so a media key moves the audio, the
+strip and the mark exactly as pressing that key would.
+
 Browsing ends in exactly one of two ways, and the audio is stopped either
 way: the player was left, or the account was. The second hands the run back
 to the login screen, where another account can be entered.
@@ -23,11 +28,12 @@ module Havidrome.Browse.Screen
     -- * The keys
   , Command (..)
   , command
+  , media
   , Ending (..)
   , step
 
-    -- * The beat the audio is carried on
-  , Beat (..)
+    -- * What reaches the screen without a key being pressed on it
+  , Pulse (..)
   , onBeat
 
     -- * What it looks like
@@ -89,6 +95,7 @@ import Havidrome.Key.Vty (pressed)
 import Havidrome.Library (Library)
 import Havidrome.Margin (margined)
 import Havidrome.Playback (Playing (..), Session (..), startingAt)
+import Havidrome.Remote (HasRemote (getRemote), Media, Remote (awaits), stands)
 import Havidrome.Subsonic (Artist, Song (..), SongId, explain)
 import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 import Havidrome.Width qualified as Width
@@ -186,6 +193,14 @@ nudge, stride :: Int
 nudge = 5
 stride = 30
 
+{- | What a media key means: whatever the key it stands for means, held with
+nothing. The screen has one key map, and a media key reaches it through the
+key it stands for rather than through a second map of its own, so the two
+cannot come to disagree.
+-}
+media :: Media -> Maybe Command
+media = flip command [] . stands
+
 -- | How browsing ended.
 data Ending
   = -- | The player was left.
@@ -257,11 +272,17 @@ step library session instruction screen = case instruction of
   toAudio act = act >> stays taken
   ends ended = session.stop >> pure (Left ended)
 
-{- | The beat the player hears between key presses: the moment it happened at,
-which is both when what the audio has done is taken in and the clock a line
-with a few seconds to live is measured against.
+{- | What reaches the screen with no key pressed on the terminal it is drawn
+in: the beat the player hears between key presses, and a media key pressed
+somewhere on the machine.
+
+A beat carries the moment it happened at, which is both when what the audio
+has done is taken in and the clock a line with a few seconds to live is
+measured against.
 -}
-newtype Beat = Beat Strip.Moment
+data Pulse
+  = Beat Strip.Moment
+  | Pressed Media
   deriving stock (Eq, Show)
 
 {- | What the player takes in on a beat: everything the audio has done since
@@ -289,34 +310,49 @@ markOf :: Maybe Playing -> Maybe SongId
 markOf = fmap (Optics.view (#song Optics.% #id))
 
 {- | Hands the terminal to the browsing screen, takes it back when browsing
-ends, and says how it ended. The beat runs for exactly as long as the screen
-is up.
+ends, and says how it ended. The beat and the listening for a media key both
+run for exactly as long as the screen is up, and reach it on one channel
+between them.
 -}
 browsing
-  :: (HasClock env, HasTerminal env)
+  :: (HasClock env, HasRemote env, HasTerminal env)
   => env
   -> Library IO
   -> Session
   -> Screen
   -> IO Ending
 browsing env library session screen = do
-  beats <- newBChan 1
-  bracket (forkIO (beating env beats)) killThread $ \_ -> do
+  pulses <- newBChan 1
+  alongside (beating env pulses) . alongside (listening env pulses) $ do
     final <-
-      onTerminal (getTerminal env) (Just beats) (application library session) screen
+      onTerminal (getTerminal env) (Just pulses) (application library session) screen
     -- Only the two commands that end browsing take the screen down, and each
     -- writes down which of them it was; a screen that is gone for any other
     -- reason is one the player was left at.
     pure (fromMaybe Quit final.ending)
 
+{- | Runs something for exactly as long as the screen is up, on a thread of
+its own, and takes that thread down with the screen.
+-}
+alongside :: IO () -> IO a -> IO a
+alongside act use = bracket (forkIO act) killThread (const use)
+
 {- | A beat, then the next, for as long as it is left running. Each is struck
 at the moment the clock says, which is the moment it carries.
 -}
-beating :: (HasClock env) => env -> BChan Beat -> IO ()
-beating env beats = forever $ do
+beating :: (HasClock env) => env -> BChan Pulse -> IO ()
+beating env pulses = forever $ do
   at <- (getClock env).now
-  writeBChan beats (Beat at)
+  writeBChan pulses (Beat at)
   threadDelay interval
+
+{- | Every media key the machine reports, for as long as the screen is up,
+carried to it on the same channel the beat is. A press that arrives while
+no screen is up is heard by the next one, with nothing playing for it to
+reach — which is exactly what the three keys it stands for do then.
+-}
+listening :: (HasRemote env) => env -> BChan Pulse -> IO ()
+listening env pulses = forever ((getRemote env).awaits >>= writeBChan pulses . Pressed)
 
 {- | How long a beat lasts, in microseconds: short enough that one song follows
 another without a silence to hear, long enough that the player is idle
@@ -328,7 +364,7 @@ interval = 100_000
 {- | The player, browsing the library it is given until it is left, over the
 session that plays what is picked in it.
 -}
-application :: Library IO -> Session -> App Screen Beat Name
+application :: Library IO -> Session -> App Screen Pulse Name
 application library session =
   App
     { appDraw = draw
@@ -341,20 +377,23 @@ application library session =
 handle
   :: Library IO
   -> Session
-  -> BrickEvent Name Beat
+  -> BrickEvent Name Pulse
   -> EventM Name Screen ()
 handle library session = \case
   VtyEvent (Vty.EvKey key modifiers) ->
-    case pressed key modifiers >>= uncurry command of
-      Nothing -> pure ()
-      Just instruction -> do
-        screen <- get
-        stepped <- liftIO (step library session instruction screen)
-        case stepped of
-          Left ended -> put screen{ending = Just ended} >> halt
-          Right stepping -> put stepping
+    obey (pressed key modifiers >>= uncurry command)
+  AppEvent (Pressed key) -> obey (media key)
   AppEvent (Beat at) -> get >>= liftIO . onBeat session at >>= put
   _ -> pure ()
+ where
+  obey = \case
+    Nothing -> pure ()
+    Just instruction -> do
+      screen <- get
+      stepped <- liftIO (step library session instruction screen)
+      case stepped of
+        Left ended -> put screen{ending = Just ended} >> halt
+        Right stepping -> put stepping
 
 {- | The whole screen, inside the margin every screen has: every level browsed
 into, side by side, filling everything above the one-line strip along the

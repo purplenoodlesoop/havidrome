@@ -39,6 +39,7 @@ import Havidrome.Journal (HasJournal (getJournal), Journal, mkJournal)
 import Havidrome.Library (Library (artists))
 import Havidrome.Login.Screen qualified as Login
 import Havidrome.Playback (newSession)
+import Havidrome.Remote (HasRemote (getRemote), Remote)
 import Havidrome.Subsonic
   ( HasSubsonic (getSubsonic)
   , Subsonic (addresses, browses)
@@ -56,6 +57,7 @@ data Env = Env
   { store :: Store
   , subsonic :: Subsonic
   , audio :: Audio
+  , remote :: Remote
   , terminal :: Terminal
   , clock :: Clock
   , journal :: Journal
@@ -69,6 +71,9 @@ instance HasSubsonic Env where
 
 instance HasAudio Env where
   getAudio env = env.audio
+
+instance HasRemote Env where
+  getRemote env = env.remote
 
 instance HasTerminal Env where
   getTerminal env = env.terminal
@@ -106,6 +111,8 @@ nothing at all.
 Every capability is built here, once, and lasts exactly as long as the run:
 the player mpv makes the sound with is started before the first screen and
 gone after the last, and one account after another is played through it.
+The machine's media keys come from that same mpv, which is what the machine
+hands them to, so they last exactly as long as the sound does.
 The journal is built before anything else, because the capabilities that
 recover from an exception write to it and so are built on top of it: a
 journal is the smallest environment that has one.
@@ -114,12 +121,13 @@ run :: IO ()
 run = do
   journal <- mkJournal
   subsonic <- mkSubsonic journal
-  withAudio journal $ \audio -> do
+  withAudio journal $ \audio remote -> do
     let env =
           Env
             { store = mkStore journal
             , subsonic
             , audio
+            , remote
             , terminal = mkTerminal
             , clock = mkClock
             , journal
@@ -150,7 +158,7 @@ data Account f = Account
 the config file is what forgetting empties.
 -}
 accounts
-  :: (HasAudio env, HasClock env, HasStore env, HasSubsonic env, HasTerminal env)
+  :: (HasAudio env, HasClock env, HasRemote env, HasStore env, HasSubsonic env, HasTerminal env)
   => env
   -> Account IO
 accounts env =
@@ -183,7 +191,7 @@ The session that plays what is picked is this account's own, so an account
 logged out of leaves no album behind it, and the next one starts on nothing.
 -}
 browse
-  :: (HasAudio env, HasClock env, HasSubsonic env, HasTerminal env)
+  :: (HasAudio env, HasClock env, HasRemote env, HasSubsonic env, HasTerminal env)
   => env
   -> Credentials.Credentials
   -> IO Ending

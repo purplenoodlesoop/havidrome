@@ -9,6 +9,13 @@ spec's second choice, a player binary the build provides, is the one taken.
 mpv is spoken to over its JSON IPC, on a socket handed to it as its standard
 input, so no socket file is left anywhere on disk.
 
+mpv is also the player's ear for the machine's own media keys, and so this
+module builds the 'Remote' as well: a machine hands its media keys to
+whatever it takes to be playing, and what is playing is this mpv, not the
+terminal the player is drawn in. mpv is told to hand each of them straight
+back rather than act on it, so that the one thing deciding what a key does
+is still the browsing screen.
+
 'Audio' is a record of operations rather than a handle, so that everything
 built on top of it can be exercised against a stand-in that makes no sound.
 -}
@@ -46,7 +53,7 @@ import Data.Foldable (traverse_)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Havidrome.Audio.Ipc (Notice (..), observePosition, quit, readNotice, render)
+import Havidrome.Audio.Ipc (Notice (..), bindMedia, observePosition, press, quit, readNotice, render)
 import Havidrome.Audio.State
   ( Command (..)
   , Effect (..)
@@ -61,6 +68,7 @@ import Havidrome.Audio.State
   , step
   )
 import Havidrome.Journal (HasJournal (getJournal), Journal (writes))
+import Havidrome.Remote (Media, Remote (..))
 import Havidrome.Subsonic.Types (Seconds (..))
 import Network.HTTP.Client (HttpException, Manager, httpNoBody, method, parseRequest)
 import Network.HTTP.Client.TLS (newTlsManager)
@@ -112,17 +120,18 @@ data Audio = Audio
 class HasAudio env where
   getAudio :: env -> Audio
 
-{- | An audio backend over the mpv on @PATH@, which the Nix build supplies.
-The player is started when the action begins and gone when it ends.
+{- | An audio backend over the mpv on @PATH@, which the Nix build supplies,
+and the machine's media keys as that same mpv hears them. The player is
+started when the action begins and gone when it ends.
 -}
-withAudio :: (HasJournal env) => env -> (Audio -> IO a) -> IO a
+withAudio :: (HasJournal env) => env -> (Audio -> Remote -> IO a) -> IO a
 withAudio env use = do
   reach <- mkHttpReach env
   withMpv env "mpv" [] reach use
 
-{- | An audio backend over a named mpv, given extra options and a way to
-probe the server. The tests use it to run mpv on a null audio output,
-where there is no device to play to.
+{- | The same over a named mpv, given extra options and a way to probe the
+server. The tests use it to run mpv on a null audio output, where there is
+no device to play to.
 -}
 withMpv
   :: (HasJournal env)
@@ -130,17 +139,20 @@ withMpv
   -> FilePath
   -> [Text]
   -> Reach
-  -> (Audio -> IO a)
+  -> (Audio -> Remote -> IO a)
   -> IO a
 withMpv env program options reach use =
-  bracket (start env program options reach) (end env) (use . audio env)
+  bracket (start env program options reach) (end env) $ \mpv ->
+    use (audio env mpv) (remote env mpv)
 
-{- | A mpv player: the state it is in, what it has to report, the line to
-it, and the process and reader thread behind it.
+{- | A mpv player: the state it is in, what it has to report, the media keys
+it has been told were pressed, the line to it, and the process and reader
+thread behind it.
 -}
 data Player = Player
   { state :: MVar State
   , events :: TChan Event
+  , pressed :: TChan Media
   , line :: Handle
   , reach :: Reach
   }
@@ -155,7 +167,10 @@ data Mpv = Mpv
 
 {- | How mpv is run: no window, no terminal, none of the user's own mpv
 configuration, and its IPC on the socket it is given as standard input. It
-stays idle between tracks instead of exiting.
+stays idle between tracks instead of exiting, and it takes the machine's
+media keys, which is how they reach the player at all — said out loud
+rather than left to mpv's default, so that what the player can hear does
+not turn on what mpv happens to be shipped with.
 -}
 arguments :: [Text]
 arguments =
@@ -164,6 +179,7 @@ arguments =
   , "--no-video"
   , "--idle=yes"
   , "--input-ipc-client=fd://0"
+  , "--input-media-keys=yes"
   ]
 
 start :: (HasJournal env) => env -> FilePath -> [Text] -> Reach -> IO Mpv
@@ -174,8 +190,9 @@ start env program options reach = do
   process <- spawn program (arguments <> options) theirs
   state <- newMVar initial
   events <- newTChanIO
-  let player = Player state events line reach
-  send env player observePosition
+  pressed <- newTChanIO
+  let player = Player state events pressed line reach
+  traverse_ (send env player) (observePosition : bindMedia)
   reader <- forkIO (drain env player)
   pure (Mpv player process reader)
 
@@ -214,6 +231,19 @@ audio env mpv =
     , nowPlaying = readMVar player.state
     , nextEvent = atomically (tryReadTChan player.events)
     , awaitEvent = atomically (readTChan player.events)
+    }
+ where
+  player = mpv.player
+
+{- | The machine's media keys, as this mpv hears them. A press that arrives
+while nobody is listening waits here until somebody is: it is heard in the
+order it was pressed, and never dropped for being early.
+-}
+remote :: (HasJournal env) => env -> Mpv -> Remote
+remote env mpv =
+  Remote
+    { awaits = atomically (readTChan player.pressed)
+    , presses = send env player . press
     }
  where
   player = mpv.player
@@ -265,6 +295,7 @@ react env player heard = case heard of
   Underway -> perform env player Began
   RanOut -> perform env player Ended
   Broken detail -> broke env player detail
+  Pressed media -> atomically (writeTChan player.pressed media)
 
 {- | Which of the two failures a broken track is, decided by asking the server
 whether it is still there.

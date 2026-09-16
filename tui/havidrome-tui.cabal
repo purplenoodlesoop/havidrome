@@ -50,6 +50,7 @@ library
         Havidrome.Login.Screen
         Havidrome.Margin
         Havidrome.Playback
+        Havidrome.Remote
         Havidrome.Subsonic
         Havidrome.Subsonic.Transport
         Havidrome.Terminal
@@ -155,6 +156,8 @@ test-suite havidrome-tui-test
         http-client,
         -- The status codes those responses carry.
         http-types,
+        -- Asks the real player which keys it knows by name.
+        process,
         -- Records what the stand-in audio backend was told to do.
         stm,
         -- Gives each config test a directory of its own.

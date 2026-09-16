@@ -11,18 +11,23 @@ module Havidrome.AudioTest (tests) where
 import Control.Concurrent (threadDelay)
 import Data.ByteString.Builder qualified as Builder
 import Data.ByteString.Lazy qualified as Lazy
+import Data.Foldable (toList, traverse_)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Data.Word (Word32)
 import Havidrome.Audio
+import Havidrome.Audio.Ipc (mediaKeys)
 import Havidrome.Check (Checks, example)
 import Havidrome.Journal.Fake (silent)
+import Havidrome.Key.Media (Media)
+import Havidrome.Remote (Remote (awaits, presses))
 import Hedgehog (Group (Group), PropertyT, annotate, assert, evalIO, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 import System.Directory (findExecutable)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
+import System.Process (readProcess)
 import System.Timeout (timeout)
 
 tests :: Group
@@ -35,6 +40,7 @@ tests =
         <> seeks
         <> stopping
         <> complaints
+        <> media
     )
 
 -- | Which of the two failures a complaint from the player is read as.
@@ -193,13 +199,55 @@ complaints =
         . driving
           ( do
               reach <- mkHttpReach silent
-              withPlayer reach $ \audio -> do
+              withPlayer reach $ \audio _ -> do
                 audio.play (Track nowhere (Seconds 60)) (Seconds 0)
                 waitForEvent audio
           )
         $ \failed -> assert (case failed of Just (Failed (Unreachable _)) -> True; _ -> False)
     )
   ]
+
+{- | The machine's media keys, against the real player they arrive at. There
+is no machine here to press one on, so each is pressed inside the player
+itself — which is where a machine's press lands too, so the whole of the
+path a real press takes is driven: the player's own binding for the key,
+the message that binding makes it say, and the reading of that message
+back.
+-}
+media :: Checks
+media =
+  [
+    ( "every key a media key arrives as is a key the player knows by that name"
+    , example . driving keyList $ \known ->
+        filter (`notElem` known) (foldMap (toList . mediaKeys) everyMedia) === []
+    )
+  ,
+    ( "a media key pressed inside the player is heard back as the key it is"
+    , example . driving pressingEach $ \heard ->
+        heard === fmap Just everyMedia
+    )
+  ]
+
+-- | Every media key there is, in the order they are pressed below.
+everyMedia :: [Media]
+everyMedia = [minBound ..]
+
+{- | Every media key pressed inside a real player, one after another, and what
+it handed back for each — nothing for a key it said nothing about before
+the waiting was up.
+-}
+pressingEach :: IO (Maybe [Maybe Media])
+pressingEach = withPlayer (answering True) $ \_ remote -> do
+  traverse_ remote.presses everyMedia
+  traverse (const (timeout 10000000 remote.awaits)) everyMedia
+
+{- | Every key name the player knows, or nothing at all where there is no
+player to ask.
+-}
+keyList :: IO (Maybe [Text])
+keyList =
+  findExecutable "mpv"
+    >>= traverse (\mpv -> T.lines . T.pack <$> readProcess mpv ["--input-keylist"] "")
 
 {- | Checks what a real player did, or says there was none to drive and lets
 the check pass: outside Nix there may be no mpv, and inside it there always
@@ -255,10 +303,10 @@ withTrack content duration reach from use =
     let file = dir </> "track"
     Lazy.writeFile file content
     let track = Track (T.pack file) duration
-    withPlayer reach $ \audio -> audio.play track from >> use audio track
+    withPlayer reach $ \audio _ -> audio.play track from >> use audio track
 
 -- | mpv on a null output, or nothing at all where there is no mpv to run.
-withPlayer :: Reach -> (Audio -> IO a) -> IO (Maybe a)
+withPlayer :: Reach -> (Audio -> Remote -> IO a) -> IO (Maybe a)
 withPlayer reach use =
   findExecutable "mpv" >>= \case
     Nothing -> pure Nothing

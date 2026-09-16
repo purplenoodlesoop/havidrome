@@ -5,17 +5,22 @@ module Havidrome.Audio.IpcTest (tests) where
 
 import Data.Aeson (Value (Number))
 import Data.Aeson qualified as Aeson
-import Data.Aeson.Types (Pair)
+import Data.Aeson.Types (Pair, parseMaybe, withObject)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.Foldable (traverse_)
+import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Data.Word (Word8)
 import Havidrome.Audio.Ipc
-  ( Notice (Broken, Fetching, RanOut, Reached, Underway)
+  ( Notice (Broken, Fetching, Pressed, RanOut, Reached, Underway)
+  , bindMedia
+  , mediaKeys
   , observePosition
+  , press
   , quit
   , readNotice
   , render
@@ -26,13 +31,17 @@ import Havidrome.Audio.State
   , Failure (Unplayable, Unreachable)
   )
 import Havidrome.Check (Checks, example)
+import Havidrome.Key.Media (Media (NextTrack, PlayPause, PreviousTrack))
 import Havidrome.Subsonic.Types (Seconds (..))
-import Hedgehog (Gen, Group (Group), PropertyT, forAll, property, (===))
+import Hedgehog (Gen, Group (Group), PropertyT, evalMaybe, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 
 tests :: Group
-tests = Group "Havidrome.Audio.Ipc" (orders <> notices <> underway <> whatever)
+tests =
+  Group
+    "Havidrome.Audio.Ipc"
+    (orders <> bindings <> presses <> notices <> underway <> whatever)
 
 -- | The lines the player is sent to make it do something.
 orders :: Checks
@@ -88,6 +97,85 @@ orders =
     , example
         ( (Aeson.decodeStrict quit :: Maybe Value)
             === Aeson.decodeStrict "{\"command\":[\"quit\"]}"
+        )
+    )
+  ]
+
+-- | The keys the player binds in mpv, and the messages it binds them to.
+bindings :: Checks
+bindings =
+  [
+    ( "the player binds every key a media key arrives as, and no other"
+    , example (fmap fst bound === ["PLAY", "PLAYONLY", "PAUSEONLY", "NEXT", "PREV"])
+    )
+  ,
+    ( "a bound key tells the player to say who bound it and which key it was"
+    , example
+        ( fmap Aeson.decodeStrict (take 1 bindMedia)
+            === [ Aeson.decodeStrict
+                    "{\"command\":[\"keybind\",\"PLAY\",\"script-message havidrome play-pause\"]}"
+                    :: Maybe Value
+                ]
+        )
+    )
+  ,
+    ( "every bound key tells the player to pass a message on to its clients"
+    , example
+        (fmap (fst . snd) bound === replicate (length bound) "script-message")
+    )
+  ,
+    ( "every key a media key arrives as is bound, and a press of it reads back as that key"
+    , property do
+        key <- forAll anyMedia
+        name <- forAll (Gen.element (NonEmpty.toList (mediaKeys key)))
+        said <- evalMaybe (lookup name bound)
+        heard (messageLine (snd said)) === Just (Pressed key)
+    )
+  ]
+
+-- | A media key pressed, whether by the machine or by the player itself.
+presses :: Checks
+presses =
+  [
+    ( "a media key pressed by the player itself is pressed by the name the machine presses"
+    , example
+        ( (Aeson.decodeStrict (press NextTrack) :: Maybe Value)
+            === Aeson.decodeStrict "{\"command\":[\"keypress\",\"NEXT\"]}"
+        )
+    )
+  ,
+    ( "the player presses a media key by a name it has bound"
+    , property do
+        key <- forAll anyMedia
+        ordered (press key) === Just ["keypress", named key]
+    )
+  ,
+    ( "a press of the play/pause key is read"
+    , example
+        ( heard "{\"event\":\"client-message\",\"args\":[\"havidrome\",\"play-pause\"]}"
+            === Just (Pressed PlayPause)
+        )
+    )
+  ,
+    ( "a press of the next and previous keys is read"
+    , example do
+        heard "{\"event\":\"client-message\",\"args\":[\"havidrome\",\"next\"]}"
+          === Just (Pressed NextTrack)
+        heard "{\"event\":\"client-message\",\"args\":[\"havidrome\",\"previous\"]}"
+          === Just (Pressed PreviousTrack)
+    )
+  ,
+    ( "nothing is heard in a message another client of the player sent"
+    , example
+        ( heard "{\"event\":\"client-message\",\"args\":[\"osc\",\"play-pause\"]}"
+            === Nothing
+        )
+    )
+  ,
+    ( "nothing is heard in a message of the player's own that is no key press"
+    , example
+        ( heard "{\"event\":\"client-message\",\"args\":[\"havidrome\",\"louder\"]}"
+            === Nothing
         )
     )
   ]
@@ -175,9 +263,12 @@ whatever =
     ( "every order for the player is a line, and the whole of one"
     , property do
         order <- forAll anyOrder
+        key <- forAll anyMedia
         traverse_ oneLine (render order)
         oneLine observePosition
         oneLine quit
+        oneLine (press key)
+        traverse_ oneLine bindMedia
     )
   ,
     ( "what the caller is told is no order for the player, whatever it is"
@@ -225,6 +316,40 @@ the fields happen to be laid out.
 -}
 sent :: Effect -> Maybe Value
 sent effect = render effect >>= Aeson.decodeStrict
+
+-- | The words of a command the player is sent, if it is one at all.
+ordered :: ByteString -> Maybe [Text]
+ordered line = Aeson.decodeStrict line >>= parseMaybe (withObject "order" (Aeson..: "command"))
+
+{- | Every key the player binds in mpv, and the command each is bound to: what
+that command is called, and what it is given.
+-}
+bound :: [(Text, (Text, [Text]))]
+bound = [(key, spoken (T.words said)) | Just ["keybind", key, said] <- fmap ordered bindMedia]
+
+{- | The name the player presses a media key by: the first of the names it
+arrives as.
+-}
+named :: Media -> Text
+named key = name
+ where
+  name :| _ = mediaKeys key
+
+-- | A command as it is written in a binding: its name, and its arguments.
+spoken :: [Text] -> (Text, [Text])
+spoken = \case
+  name : arguments -> (name, arguments)
+  [] -> ("", [])
+
+{- | The line mpv says when a key bound to a message is pressed: it passes the
+message's arguments on to every client it has.
+-}
+messageLine :: [Text] -> ByteString
+messageLine said =
+  saying ["event" Aeson..= ("client-message" :: Text), "args" Aeson..= said]
+
+anyMedia :: Gen Media
+anyMedia = Gen.enumBounded
 
 -- | What the backend makes of one line the player said.
 heard :: ByteString -> Maybe Notice
@@ -289,7 +414,8 @@ anySecond = Gen.int (Range.linear 0 6000)
 made of.
 -}
 actedOn :: [Text]
-actedOn = ["property-change", "start-file", "playback-restart", "end-file"]
+actedOn =
+  ["property-change", "start-file", "playback-restart", "end-file", "client-message"]
 
 -- | The line the player says a position in.
 positionLine :: Double -> ByteString
