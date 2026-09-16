@@ -23,8 +23,7 @@ tests =
   Group
     "Havidrome.Playback"
     ( picking
-        <> asPicked
-        <> followed
+        <> sounding
         <> replacing
         <> walking
         <> skips
@@ -75,46 +74,43 @@ picking =
     )
   ]
 
--- | The picked song a session reports, and how far it has loaded.
-asPicked :: Checks
-asPicked =
+{- | How far the song a session reports has loaded, and what holding it while
+it loads leaves behind.
+-}
+sounding :: Checks
+sounding =
   [
-    ( "is picked for a song the album was started from, loading until its audio starts"
+    ( "a song the album was started from is loading until its audio starts"
     , example do
-        (loading, sounding) <- driving $ \standin session -> do
+        (loading, started) <- driving $ \standin session -> do
           startAt session tracks 1
           loading <- session.nowPlaying
           begin standin
           (,) loading <$> session.nowPlaying
-        loading === Just (Playing (trackAt 1) (Seconds 0) Picked Loading)
-        sounding === Just (Playing (trackAt 1) (Seconds 0) Picked (Sounding Running))
+        loading === Just (Playing (trackAt 1) (Seconds 0) Loading)
+        started === Just (Playing (trackAt 1) (Seconds 0) (Sounding Running))
     )
   ,
-    ( "is picked, and loading, for a song picked while another still loads"
+    ( "a song picked while another still loads is the one loading"
     , example do
         now <- driving $ \_ session -> do
           startAt session tracks 1
           startAt session tracks 2
           session.nowPlaying
-        now === Just (Playing (trackAt 2) (Seconds 0) Picked Loading)
+        now === Just (Playing (trackAt 2) (Seconds 0) Loading)
     )
   ,
-    ( "is followed for the song the album runs on to"
+    ( "the song the album runs on to is loading in its turn"
     , example do
         now <- driving $ \standin session -> do
           startAt session tracks 1
           begin standin
           _ <- runOut standin session 1
           session.nowPlaying
-        now === Just (Playing (trackAt 2) (Seconds 0) Followed Loading)
+        now === Just (Playing (trackAt 2) (Seconds 0) Loading)
     )
-  ]
-
--- | The song the album runs on to, and a picked one held while it loads.
-followed :: Checks
-followed =
-  [
-    ( "is followed for the songs next and previous move to"
+  ,
+    ( "so is the song next or previous moves to"
     , example do
         (onward, back) <- driving $ \_ session -> do
           startAt session tracks 1
@@ -122,28 +118,18 @@ followed =
           onward <- session.nowPlaying
           session.previous
           (,) onward <$> session.nowPlaying
-        onward === Just (Playing (trackAt 2) (Seconds 0) Followed Loading)
-        back === Just (Playing (trackAt 1) (Seconds 0) Followed Loading)
+        onward === Just (Playing (trackAt 2) (Seconds 0) Loading)
+        back === Just (Playing (trackAt 1) (Seconds 0) Loading)
     )
   ,
-    ( "is followed for the song a skipped one gives way to"
-    , example do
-        arrival <- driving $ \standin session -> do
-          startAt session tracks 1
-          breakWith standin (Unplayable "the file will not play: unrecognized file format")
-          _ <- session.attend
-          fmap (.arrival) <$> session.nowPlaying
-        arrival === Just Followed
-    )
-  ,
-    ( "leaves a picked song held while it loads held at its start once loaded"
+    ( "a song held while it loads is left held at its start once loaded"
     , example do
         (now, motion) <- driving $ \standin session -> do
           startAt session tracks 1
           session.togglePause
           begin standin
           (,) <$> session.nowPlaying <*> motionOf standin
-        now === Just (Playing (trackAt 1) (Seconds 0) Picked (Sounding Paused))
+        now === Just (Playing (trackAt 1) (Seconds 0) (Sounding Paused))
         motion === Just Paused
     )
   ]
@@ -287,7 +273,7 @@ holding =
           session.pause
           (,,) <$> motionOf standin <*> session.nowPlaying <*> loaded standin
         motion === Just Paused
-        now === Just (Playing (trackAt 1) (Seconds 60) Picked Loading)
+        now === Just (Playing (trackAt 1) (Seconds 60) Loading)
         told === [from (trackAt 1)]
     )
   ,
@@ -300,7 +286,7 @@ holding =
           session.resume
           (,) <$> motionOf standin <*> session.nowPlaying
         motion === Just Running
-        now === Just (Playing (trackAt 1) (Seconds 60) Picked Loading)
+        now === Just (Playing (trackAt 1) (Seconds 60) Loading)
     )
   ,
     ( "one control holds a running song and lets a held one run on"
@@ -314,7 +300,7 @@ holding =
           (,,) held <$> motionOf standin <*> session.nowPlaying
         held === Just Paused
         running === Just Running
-        now === Just (Playing (trackAt 1) (Seconds 60) Picked Loading)
+        now === Just (Playing (trackAt 1) (Seconds 60) Loading)
     )
   ,
     ( "it holds nothing when there is nothing playing to hold"
@@ -337,7 +323,7 @@ seeks =
           reach standin (Seconds 60)
           session.seekBy 30
           (,) <$> session.nowPlaying <*> loaded standin
-        now === Just (Playing (trackAt 1) (Seconds 90) Picked Loading)
+        now === Just (Playing (trackAt 1) (Seconds 90) Loading)
         told === [from (trackAt 1)]
     )
   ,
