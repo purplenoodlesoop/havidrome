@@ -184,13 +184,21 @@ let
       mainProgram = "havidrome";
     };
 
-  # The audio comes out of mpv, and the build is what supplies it: the
-  # installed player carries its own on its PATH, so a machine with no mpv
-  # installed still plays.
+  # The mpv this build supplies, by the path it will be run at.
+  player = "${mpv-unwrapped}/bin/mpv";
+
+  # The audio comes out of mpv, and the build is what supplies it: that path
+  # is handed to the installed player, and to its test suite, in the variable
+  # both read it from. Neither searches the machine it runs on, so a machine
+  # with no mpv installed still plays, and a build that handed over none would
+  # fail its tests rather than run nothing.
   withPlayer = overrideCabal (drv: {
     buildTools = (drv.buildTools or [ ]) ++ [ pkgs.makeBinaryWrapper ];
+    preCheck = (drv.preCheck or "") + ''
+      export HAVIDROME_MPV=${player}
+    '';
     postInstall = (drv.postInstall or "") + ''
-      wrapProgram $out/bin/havidrome --prefix PATH : ${lib.makeBinPath [ mpv-unwrapped ]}
+      wrapProgram $out/bin/havidrome --set HAVIDROME_MPV ${player}
     '';
   });
 

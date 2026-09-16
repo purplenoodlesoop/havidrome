@@ -92,9 +92,10 @@ a first one does.
 ## Audio
 
 Sound comes from [mpv](https://mpv.io), which the build supplies: the installed
-executable carries one on its `PATH`, so nothing has to be installed to play.
-It runs with no window, no terminal and none of your own mpv configuration, and
-is driven over its JSON IPC.
+executable is handed the one built with it, by path, and looks for none on your
+machine, so nothing has to be installed to play. It runs with no window, no
+terminal and none of your own mpv configuration, and is driven over its JSON
+IPC.
 
 ## Tests
 
@@ -103,7 +104,8 @@ nix flake check      # builds both packages and runs both test suites
 ```
 
 The tests that drive a real player run it on a null audio output, so they need
-no sound device.
+no sound device. The player they drive is the one the build supplies; a build
+that supplied none fails them rather than passing with nothing run.
 
 ## Development
 

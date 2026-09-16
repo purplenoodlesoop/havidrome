@@ -1,6 +1,7 @@
 {- | The backend against the player it really drives. mpv is run on a null
-audio output, so these tests need no audio device — only the mpv the Nix
-build supplies; without one they say so and pass rather than failing.
+audio output, so these tests need no audio device — only the mpv the build
+supplies; a build that supplied none fails them rather than letting them
+pass having driven nothing.
 
 Each of them drives a real process through one scenario, so each is
 genuinely one case. What takes an input at all is the wording a failure
@@ -17,10 +18,9 @@ import Data.Word (Word32)
 import Havidrome.Audio
 import Havidrome.Check (Checks, example)
 import Havidrome.Journal.Fake (silent)
-import Hedgehog (Group (Group), PropertyT, annotate, assert, evalIO, forAll, property, (===))
+import Hedgehog (Group (Group), PropertyT, annotate, assert, evalIO, failure, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
-import System.Directory (findExecutable)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Timeout (timeout)
@@ -191,9 +191,9 @@ complaints =
     ( "asks the server itself, and calls a server that answers nothing a network failure"
     , example
         . driving
-          ( do
+          ( \player -> do
               reach <- mkHttpReach silent
-              withPlayer reach $ \audio -> do
+              withPlayer player reach $ \audio -> do
                 audio.play (Track nowhere (Seconds 60)) (Seconds 0)
                 waitForEvent audio
           )
@@ -201,13 +201,15 @@ complaints =
     )
   ]
 
-{- | Checks what a real player did, or says there was none to drive and lets
-the check pass: outside Nix there may be no mpv, and inside it there always
-is one.
+{- | Checks what a real player did. The player is the one the build supplied,
+and a build that supplied none fails the check here rather than letting it
+pass having driven nothing.
 -}
-driving :: IO (Maybe a) -> (a -> PropertyT IO ()) -> PropertyT IO ()
+driving :: (Supplied -> IO a) -> (a -> PropertyT IO ()) -> PropertyT IO ()
 driving scenario check =
-  evalIO scenario >>= maybe (annotate "no mpv on PATH; the Nix build supplies one") check
+  evalIO supplied >>= \case
+    Nothing -> annotate (T.unpack unsupplied) >> failure
+    Just player -> evalIO (scenario player) >>= check
 
 {- | An invented address nothing answers on, so that a track fetched from it
 fails the way a track fails against a server that cannot be reached.
@@ -219,15 +221,23 @@ nowhere = "http://nowhere.example/stream"
 tone :: Seconds
 tone = Seconds 6
 
+{- | The file a scenario drives the player over: the bytes written to it, and
+how long the track made of it says it is.
+-}
+data Song = Song
+  { content :: Lazy.ByteString
+  , duration :: Seconds
+  }
+
 -- | A tone playing from this point on, and what a scenario made of it.
-playing :: Seconds -> (Audio -> Track -> IO a) -> IO (Maybe a)
-playing = withTrack (silence tone) tone (answering True)
+playing :: Seconds -> (Audio -> Track -> IO a) -> Supplied -> IO a
+playing = withTrack (Song (silence tone) tone) (answering True)
 
 {- | A tone held one second in and seeked by this much, and what a scenario
 made of it. It is held first so that the position a seek leaves is the one
 read back, and not one the audio has moved past.
 -}
-seeking :: Int -> (Audio -> Track -> IO a) -> IO (Maybe a)
+seeking :: Int -> (Audio -> Track -> IO a) -> Supplied -> IO a
 seeking by use = playing (Seconds 1) $ \audio track -> do
   audio.pause
   settle
@@ -237,32 +247,29 @@ seeking by use = playing (Seconds 1) $ \audio track -> do
 {- | Not audio at all, which mpv refuses to play, against a server that
 answers or does not.
 -}
-garbage :: Bool -> (Audio -> Track -> IO a) -> IO (Maybe a)
-garbage answers = withTrack "this is not a song" (Seconds 3) (answering answers) (Seconds 0)
+garbage :: Bool -> (Audio -> Track -> IO a) -> Supplied -> IO a
+garbage answers = withTrack (Song "this is not a song" (Seconds 3)) (answering answers) (Seconds 0)
 
 {- | Runs a scenario against a real mpv over a track in a file of its own,
 told to play it from this point on.
 -}
 withTrack
-  :: Lazy.ByteString
-  -> Seconds
+  :: Song
   -> Reach
   -> Seconds
   -> (Audio -> Track -> IO a)
-  -> IO (Maybe a)
-withTrack content duration reach from use =
+  -> Supplied
+  -> IO a
+withTrack song reach from use player =
   withSystemTempDirectory "havidrome-audio" $ \dir -> do
     let file = dir </> "track"
-    Lazy.writeFile file content
-    let track = Track (T.pack file) duration
-    withPlayer reach $ \audio -> audio.play track from >> use audio track
+    Lazy.writeFile file song.content
+    let track = Track (T.pack file) song.duration
+    withPlayer player reach $ \audio -> audio.play track from >> use audio track
 
--- | mpv on a null output, or nothing at all where there is no mpv to run.
-withPlayer :: Reach -> (Audio -> IO a) -> IO (Maybe a)
-withPlayer reach use =
-  findExecutable "mpv" >>= \case
-    Nothing -> pure Nothing
-    Just mpv -> Just <$> withMpv silent mpv ["--ao=null"] reach use
+-- | The supplied mpv, run on a null output.
+withPlayer :: Supplied -> Reach -> (Audio -> IO a) -> IO a
+withPlayer player = withMpv silent player ["--ao=null"]
 
 -- | A server that answers, or does not, whatever it is asked about.
 answering :: Bool -> Reach
