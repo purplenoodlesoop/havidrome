@@ -5,9 +5,7 @@
   ...
 }:
 let
-  inherit (pkgs) mpv-unwrapped;
   inherit (pkgs.haskell.lib.compose)
-    addTestToolDepends
     appendConfigureFlag
     doCheck
     ;
@@ -26,11 +24,13 @@ in
 {
   # `nix flake check` builds both packages with their test suites enabled, on
   # every system they exist for. The shell's tests drive a real player on a
-  # null audio output: no device, but no stand-in either. The core's drive
-  # nothing, which is the point of it.
+  # null audio output: no device, but no stand-in either. That player is the
+  # one the package itself is handed, so the gate and an install run the same
+  # tests over the same mpv. The core's tests drive nothing, which is the
+  # point of it.
   flake.output.checks = lib.optionalAttrs (config.flake.packages ? havidrome) {
     havidrome-core-test = tested config.flake.packages.havidrome-core;
 
-    havidrome-tui-test = tested (addTestToolDepends [ mpv-unwrapped ] config.flake.packages.havidrome);
+    havidrome-tui-test = tested config.flake.packages.havidrome;
   };
 }

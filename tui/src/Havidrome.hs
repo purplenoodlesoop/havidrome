@@ -26,7 +26,7 @@ module Havidrome
 
 import Data.Foldable (traverse_)
 import Data.Text as T (Text)
-import Havidrome.Audio (Audio, HasAudio (getAudio), withAudio)
+import Havidrome.Audio (Audio, HasAudio (getAudio), supplied, unsupplied, withAudio)
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit), browsing, opening)
 import Havidrome.Clock (Clock, HasClock (getClock), mkClock)
 import Havidrome.Credentials qualified as Credentials
@@ -142,28 +142,34 @@ hands them to, so they last exactly as long as the sound does.
 The journal is built before anything else, because the capabilities that
 recover from an exception write to it and so are built on top of it: a
 journal is the smallest environment that has one.
+
+The mpv is the one the build supplied and no other. A build that supplied
+none has no audio to give, which is as much a reason a run cannot open a
+library as an unreadable config file is, so the run says so and stops.
 -}
 run :: IO ()
 run = do
   journal <- mkJournal
   subsonic <- mkSubsonic journal
-  withAudio journal $ \audio remote -> do
-    let env =
-          Env
-            { store = mkStore journal
-            , subsonic
-            , audio
-            , remote
-            , terminal = mkTerminal
-            , clock = mkClock
-            , journal
-            }
-    started <- start <$> (getStore env).load
-    opened <- case started of
-      Right (Browse credentials) ->
-        checked credentials <$> (getSubsonic env).accepts credentials
-      settled -> pure settled
-    either (stop env) (player (accounts env)) opened
+  supplied >>= \case
+    Nothing -> stop mkTerminal unsupplied
+    Just program -> withAudio journal program $ \audio remote -> do
+      let env =
+            Env
+              { store = mkStore journal
+              , subsonic
+              , audio
+              , remote
+              , terminal = mkTerminal
+              , clock = mkClock
+              , journal
+              }
+      started <- start <$> (getStore env).load
+      opened <- case started of
+        Right (Browse credentials) ->
+          checked credentials <$> (getSubsonic env).accepts credentials
+        settled -> pure settled
+      either (stop env) (player (accounts env)) opened
 
 {- | What a run does with an account: where it gets one, what browsing it comes
 to, and how it is forgotten again.

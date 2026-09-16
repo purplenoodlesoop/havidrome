@@ -19,6 +19,16 @@ let
   ghc = haskellPackages.ghcWithPackages (
     _: dependencies config.flake.packages.havidrome-core ++ dependencies config.flake.packages.havidrome
   );
+
+  # The build names the player it supplies in a variable rather than leaving
+  # it to be searched for, so a shell is a build like any other: entering one
+  # sets that variable to the same mpv the package is wrapped around, and
+  # `cabal run` and `cabal test` in here drive it.
+  player = pkgs.makeSetupHook { name = "havidrome-player-hook"; } (
+    pkgs.writeText "havidrome-player-hook.sh" ''
+      export HAVIDROME_MPV=${mpv-unwrapped}/bin/mpv
+    ''
+  );
 in
 {
   # A shell to develop in exists where there is something to develop: on a
@@ -26,8 +36,6 @@ in
   flake.shell = lib.optionals (config.flake.packages ? havidrome) [
     ghc
     haskellPackages.cabal-install
-    # The same player the built executable carries, so `cabal run` and
-    # `cabal test` in the shell make sound the same way.
-    mpv-unwrapped
+    player
   ];
 }

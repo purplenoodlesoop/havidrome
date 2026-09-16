@@ -34,6 +34,13 @@ data Terminal = Terminal
 class HasTerminal env where
   getTerminal :: env -> Terminal
 
+{- | The terminal itself is the smallest environment that has one, which is
+what a run that cannot build the rest of its capabilities says its last
+word through.
+-}
+instance HasTerminal Terminal where
+  getTerminal = id
+
 {- | The terminal the player was started in. It holds nothing open of its own
 — every screen opens a terminal and puts it down again — so it is not in
 'IO'.

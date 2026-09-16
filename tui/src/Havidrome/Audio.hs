@@ -2,12 +2,17 @@
 controls over it. It knows a track's address and its length and nothing
 else — not what album the track belongs to, not what plays next.
 
-The sound is made by mpv, which the Nix build supplies and puts on the
-player's @PATH@: nothing in Haskell decodes what a Navidrome library holds
+The sound is made by mpv, which the Nix build supplies and names to the
+player outright: nothing in Haskell decodes what a Navidrome library holds
 — FLAC, Opus, whatever the file is — and puts it on an audio device, so the
 spec's second choice, a player binary the build provides, is the one taken.
 mpv is spoken to over its JSON IPC, on a socket handed to it as its standard
 input, so no socket file is left anywhere on disk.
+
+The only mpv that can be driven is the one the build supplied, because the
+only way to name one is 'supplied': nothing is searched for on the machine
+the player runs on, and a build that supplied none makes no sound at all
+rather than reaching for whatever happens to be installed.
 
 mpv is also the player's ear for the machine's own media keys, and so this
 module builds the 'Remote' as well: a machine hands its media keys to
@@ -25,6 +30,11 @@ module Havidrome.Audio
   , HasAudio (..)
   , withAudio
   , withMpv
+
+    -- * The player the build supplies
+  , Supplied (..)
+  , supplied
+  , unsupplied
 
     -- * What it plays, and what it says
   , Track (..)
@@ -75,6 +85,7 @@ import Network.HTTP.Client.TLS (newTlsManager)
 import Network.Socket (Family (AF_UNIX), Socket, SocketType (Stream), defaultProtocol, socketPair, socketToHandle)
 import Optics.Core (view)
 import Optics.Core qualified as Optics
+import System.Environment (lookupEnv)
 import System.IO (BufferMode (LineBuffering), Handle, IOMode (ReadWriteMode), hClose, hFlush, hSetBuffering)
 import System.Process
   ( CreateProcess (std_err, std_in, std_out)
@@ -120,23 +131,41 @@ data Audio = Audio
 class HasAudio env where
   getAudio :: env -> Audio
 
-{- | An audio backend over the mpv on @PATH@, which the Nix build supplies,
-and the machine's media keys as that same mpv hears them. The player is
-started when the action begins and gone when it ends.
+{- | The mpv this run drives: the path the build that supplied it handed
+over, which is the only way one is ever named.
 -}
-withAudio :: (HasJournal env) => env -> (Audio -> Remote -> IO a) -> IO a
-withAudio env use = do
-  reach <- mkHttpReach env
-  withMpv env "mpv" [] reach use
+newtype Supplied = Supplied {path :: FilePath}
+  deriving stock (Eq, Show, Generic)
 
-{- | The same over a named mpv, given extra options and a way to probe the
-server. The tests use it to run mpv on a null audio output, where there is
-no device to play to.
+-- | The variable a build sets to the path of the mpv it supplies.
+variable :: Text
+variable = "HAVIDROME_MPV"
+
+-- | The mpv this build supplied, or nothing where it supplied none.
+supplied :: IO (Maybe Supplied)
+supplied = fmap Supplied <$> lookupEnv (T.unpack variable)
+
+-- | Why a run that was supplied no player cannot go on.
+unsupplied :: Text
+unsupplied = "no player was supplied to this build: " <> variable <> " is unset"
+
+{- | An audio backend over the mpv the build supplied, and the machine's media
+keys as that same mpv hears them. The player is started when the action
+begins and gone when it ends.
+-}
+withAudio :: (HasJournal env) => env -> Supplied -> (Audio -> Remote -> IO a) -> IO a
+withAudio env program use = do
+  reach <- mkHttpReach env
+  withMpv env program [] reach use
+
+{- | The same over the supplied mpv, given extra options and a way to probe
+the server. The tests use it to run mpv on a null audio output, where there
+is no device to play to.
 -}
 withMpv
   :: (HasJournal env)
   => env
-  -> FilePath
+  -> Supplied
   -> [Text]
   -> Reach
   -> (Audio -> Remote -> IO a)
@@ -182,12 +211,12 @@ arguments =
   , "--input-media-keys=yes"
   ]
 
-start :: (HasJournal env) => env -> FilePath -> [Text] -> Reach -> IO Mpv
+start :: (HasJournal env) => env -> Supplied -> [Text] -> Reach -> IO Mpv
 start env program options reach = do
   (ours, theirs) <- socketPair AF_UNIX Stream defaultProtocol
   line <- socketToHandle ours ReadWriteMode
   hSetBuffering line LineBuffering
-  process <- spawn program (arguments <> options) theirs
+  process <- spawn program.path (arguments <> options) theirs
   state <- newMVar initial
   events <- newTChanIO
   pressed <- newTChanIO
