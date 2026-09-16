@@ -85,6 +85,18 @@ that variable is unset), one `field=value` line each and the password in the
 clear — no keyring, no encryption. The file is the user's own, readable by
 nobody else; deleting it discards the credentials.
 
+A server URL with neither `http://` nor `https://` in front of it is read as
+`https://` and what was given, so `music.example.org` reaches the same server
+`https://music.example.org` does; one that carries a scheme is used exactly as
+it stands, `http://` included.
+
+A run that opens with stored credentials puts them to the server first. A
+server that refuses them opens the login screen instead, its three fields empty
+and the refusal on it, and the run goes on from there; the refused credentials
+stay in the file until ones a server accepts replace them. A server that cannot
+be reached, or a file that is not credentials at all, still leaves the player
+saying why and stopping.
+
 `l` while browsing logs out: the audio stops, the file goes, and the login
 screen comes back for another server or account. Later runs then ask again, as
 a first one does.

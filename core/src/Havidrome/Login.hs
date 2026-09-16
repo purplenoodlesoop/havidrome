@@ -13,6 +13,7 @@ module Havidrome.Login
   , Field (..)
   , fields
   , blank
+  , opened
   , value
   , ahead
   , back
@@ -88,6 +89,14 @@ blank =
     , focus = minBound
     , trouble = Nothing
     }
+
+{- | The form the screen opens on when something has already been said about
+credentials the screen never asked for — the ones a run found stored and a
+server refused. The three fields are 'blank' all the same: what was refused
+is not offered back to be corrected, only replaced.
+-}
+opened :: Maybe Text -> Form
+opened said = blank{trouble = said}
 
 -- | What stands in one field.
 value :: Field -> Form -> Text
