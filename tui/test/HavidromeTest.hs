@@ -16,7 +16,8 @@ import Data.Text.Encoding qualified as T
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Havidrome
   ( Account (Account, asks, browses, forgets)
-  , Start (Ask, Browse, Stop)
+  , Start (Ask, Browse)
+  , checked
   , player
   , run
   , start
@@ -24,8 +25,15 @@ import Havidrome
 import Havidrome.Browse.Screen (Ending (LoggedOut, Quit))
 import Havidrome.Check (Checks, example)
 import Havidrome.Credentials (Credentials (Credentials), Fault (MissingField))
-import Havidrome.Credentials.Store (Store (file, save), Stored (Absent, Present, Unreadable), mkStore)
+import Havidrome.Credentials.Store
+  ( Store (file, load, save)
+  , Stored (Absent, Present, Unreadable)
+  , mkStore
+  )
 import Havidrome.Journal.Fake (silent)
+import Havidrome.Subsonic
+  ( SubsonicError (AuthRejected, MalformedResponse, NetworkFailure, ServerFailure)
+  )
 import Hedgehog (Gen, Group (Group), annotateShow, assert, evalIO, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -42,6 +50,7 @@ tests =
   Group
     "Havidrome"
     ( starting
+        <> checking
         <> opening
         <> logouts
         <> always
@@ -52,18 +61,50 @@ tests =
 starting :: Checks
 starting =
   [
-    ( "start asks for credentials when none are stored"
-    , example (start Absent === Ask)
+    ( "start asks for credentials when none are stored, with nothing said yet"
+    , example (start Absent === Right (Ask Nothing))
     )
   ,
-    ( "start browses with the credentials that are stored, asking nothing"
-    , example (start (Present someone) === Browse someone)
+    ( "start takes up the credentials that are stored"
+    , example (start (Present someone) === Right (Browse someone))
     )
   ,
     ( "start stops when what is stored cannot be read as credentials"
     , example do
         start (Unreadable (MissingField "password"))
-          === Stop "the stored credentials could not be read: MissingField \"password\""
+          === Left "the stored credentials could not be read: MissingField \"password\""
+    )
+  ]
+
+{- | What the server's answer about the stored credentials makes of a run: a
+refusal is a login screen, and anything else in the way is a stop.
+-}
+checking :: Checks
+checking =
+  [
+    ( "credentials the server takes are the ones a run browses with"
+    , example (checked someone (Right ()) === Right (Browse someone))
+    )
+  ,
+    ( "credentials the server refuses put up the login screen, carrying the refusal"
+    , example do
+        checked someone (Left (AuthRejected "Wrong username or password"))
+          === Right
+            (Ask (Just "The server refused these credentials: Wrong username or password"))
+    )
+  ,
+    ( "a server that cannot be reached stops the run instead"
+    , example do
+        checked someone (Left (NetworkFailure "no route to host"))
+          === Left "The server could not be reached: no route to host"
+    )
+  ,
+    ( "a server that answers with anything else stops the run too"
+    , example do
+        checked someone (Left (ServerFailure 500 "sorry"))
+          === Left "The server answered with an error (500): sorry"
+        checked someone (Left (MalformedResponse "not JSON"))
+          === Left "The server's answer could not be read: not JSON"
     )
   ]
 
@@ -72,15 +113,37 @@ opening :: Checks
 opening =
   [
     ( "browses the account a run starts with, asking for none"
-    , example (ran [] [Quit] (Just someone) === [Browsed someone])
+    , example (ran [] [Quit] (Browse someone) === [Browsed someone])
     )
   ,
     ( "asks for an account when a run starts with none"
-    , example (ran [Just someone] [Quit] Nothing === [Asked, Browsed someone])
+    , example do
+        ran [Just someone] [Quit] (Ask Nothing) === [Asked Nothing, Browsed someone]
     )
   ,
     ( "browses nothing when the login screen is left"
-    , example (ran [Nothing] [] Nothing === [Asked])
+    , example (ran [Nothing] [] (Ask Nothing) === [Asked Nothing])
+    )
+  ,
+    ( "opens the login screen on the refusal, and browses what is entered there"
+    , example do
+        ran [Just anyone] [Quit] (Ask (Just refusal))
+          === [Asked (Just refusal), Browsed anyone]
+    )
+  ,
+    ( "leaves the refused credentials stored when that login screen is left"
+    , example (ran [Nothing] [] (Ask (Just refusal)) === [Asked (Just refusal)])
+    )
+  ,
+    ( "asks the screens after that one with nothing said"
+    , example do
+        ran [Just anyone, Just someone] [LoggedOut, Quit] (Ask (Just refusal))
+          === [ Asked (Just refusal)
+              , Browsed anyone
+              , Forgot
+              , Asked Nothing
+              , Browsed someone
+              ]
     )
   ]
 
@@ -90,26 +153,27 @@ logouts =
   [
     ( "forgets the account on a logout, and browses whatever is entered next"
     , example do
-        ran [Just anyone] [LoggedOut, Quit] (Just someone)
-          === [Browsed someone, Forgot, Asked, Browsed anyone]
+        ran [Just anyone] [LoggedOut, Quit] (Browse someone)
+          === [Browsed someone, Forgot, Asked Nothing, Browsed anyone]
     )
   ,
     ( "goes on doing so, logout after logout"
     , example do
-        ran [Just anyone, Just someone] [LoggedOut, LoggedOut, Quit] (Just someone)
+        ran [Just anyone, Just someone] [LoggedOut, LoggedOut, Quit] (Browse someone)
           === [ Browsed someone
               , Forgot
-              , Asked
+              , Asked Nothing
               , Browsed anyone
               , Forgot
-              , Asked
+              , Asked Nothing
               , Browsed someone
               ]
     )
   ,
     ( "has forgotten the account already when that login screen is left"
     , example do
-        ran [Nothing] [LoggedOut] (Just someone) === [Browsed someone, Forgot, Asked]
+        ran [Nothing] [LoggedOut] (Browse someone)
+          === [Browsed someone, Forgot, Asked Nothing]
     )
   ]
 
@@ -135,7 +199,7 @@ always =
     , property do
         taken <- forAll script
         annotateShow taken.steps
-        let handed = foldMap pure taken.started <> takeWhileJust taken.answering
+        let handed = opened taken.started <> takeWhileJust taken.answering
         assert (browsed taken.steps `isPrefixOfList` handed)
     )
   ,
@@ -151,12 +215,22 @@ always =
 stopping :: Checks
 stopping =
   [
-    ( "run stops instead of browsing when the artist list cannot be fetched"
+    ( "run stops instead of browsing when the stored credentials reach no server"
     , example do
         (_, stopped) <- evalIO . withOwnDirectories $ do
           (mkStore silent).save (Credentials nowhere "someone" "secret")
           complaining run
         stopped === Left (ExitFailure 1)
+    )
+  ,
+    ( "run leaves the credentials it could not reach a server with stored"
+    , example do
+        let stored = Credentials nowhere "someone" "secret"
+        found <- evalIO . withOwnDirectories $ do
+          (mkStore silent).save stored
+          _ <- complaining run
+          (mkStore silent).load
+        found === Present stored
     )
   ,
     ( "run says on the terminal why it cannot go on, and leaves that line behind"
@@ -179,10 +253,16 @@ someone = Credentials nowhere "someone" "secret"
 anyone :: Credentials
 anyone = Credentials "http://elsewhere.example" "anyone" "hunter2"
 
+{- | What a server has already said about the credentials a run found stored,
+which is what the login screen it opens on carries.
+-}
+refusal :: Text
+refusal = "The server refused these credentials: Wrong username or password"
+
 -- | One thing a run did with an account, written down as it did it.
 data Step
-  = -- | The login screen was asked for an account.
-    Asked
+  = -- | The login screen was asked for an account, carrying this.
+    Asked (Maybe Text)
   | -- | This account's library was browsed.
     Browsed Credentials
   | -- | The stored credentials were thrown away.
@@ -207,7 +287,7 @@ screen is left, and browsing quits.
 scripted :: Account (State Script)
 scripted =
   Account
-    { asks = note Asked >> nextAnswer
+    { asks = \said -> note (Asked said) >> nextAnswer
     , browses = \credentials -> note (Browsed credentials) >> nextEnding
     , forgets = note Forgot
     }
@@ -233,30 +313,39 @@ note doing = state (\given -> ((), given{taken = doing : given.taken}))
 started with, against a login screen that answers so and browsing that ends
 so.
 -}
-ran :: [Maybe Credentials] -> [Ending] -> Maybe Credentials -> [Step]
+ran :: [Maybe Credentials] -> [Ending] -> Start -> [Step]
 ran answered ended from =
   reverse (execState (player scripted from) (Script answered ended [])).taken
 
-{- | A run to be made: what it starts with, what the login screen will answer,
-how browsing will end each time, and the steps it took when it was made.
+{- | A run to be made: where it starts, what the login screen will answer, how
+browsing will end each time, and the steps it took when it was made.
 -}
 data Run = Run
-  { started :: Maybe Credentials
+  { started :: Start
   , answering :: [Maybe Credentials]
   , steps :: [Step]
   }
   deriving stock (Show)
 
-{- | Runs of every shape: started with an account or without one, answered
-with accounts and with a login screen left, and browsed to as many logouts
-as the endings hold.
+{- | Runs of every shape: started on an account, on a login screen and on one
+carrying a refusal, answered with accounts and with a login screen left, and
+browsed to as many logouts as the endings hold.
 -}
 script :: Gen Run
 script = do
-  from <- Gen.maybe anAccount
+  from <- anyStart
   answers <- Gen.list (Range.linear 0 5) (Gen.maybe anAccount)
   endings <- Gen.list (Range.linear 0 5) (Gen.element [LoggedOut, Quit])
   pure Run{started = from, answering = answers, steps = ran answers endings from}
+
+-- | Where a run might start: at either login screen, or on an account.
+anyStart :: Gen Start
+anyStart =
+  Gen.choice
+    [ pure (Ask Nothing)
+    , pure (Ask (Just refusal))
+    , Browse <$> anAccount
+    ]
 
 -- | The accounts a run might be handed, told apart by their username.
 anAccount :: Gen Credentials
@@ -272,18 +361,30 @@ following steps = zip steps (drop1 steps)
 it.
 -}
 forgotten :: (Step, Step) -> Bool
-forgotten (before, after) = after /= Asked || before == Forgot
+forgotten (before, after) = not (asked after) || before == Forgot
 
 -- | Whether a forgetting is on the way to a login screen.
 asking :: (Step, Step) -> Bool
-asking (before, after) = before /= Forgot || after == Asked
+asking (before, after) = before /= Forgot || asked after
 
 -- | Whether two steps in a row are not the same kind of step twice.
 apart :: (Step, Step) -> Bool
 apart = \case
-  (Asked, Asked) -> False
+  (Asked _, Asked _) -> False
   (Browsed _, Browsed _) -> False
   _ -> True
+
+-- | Whether a step is a login screen, whatever it carried.
+asked :: Step -> Bool
+asked = \case
+  Asked _ -> True
+  _ -> False
+
+-- | The account a run opens on, when it opens on one at all.
+opened :: Start -> [Credentials]
+opened = \case
+  Browse credentials -> [credentials]
+  Ask _ -> []
 
 -- | The accounts a run browsed, in the order it browsed them.
 browsed :: [Step] -> [Credentials]

@@ -17,6 +17,9 @@ the server stores it in.
   progress bar, and the elapsed and total time.
 - `space` pauses and resumes, `n` and `p` go to the next and previous song, and
   the left and right arrows seek by 5 seconds, or by 30 with shift.
+- On a Mac, the keyboard's own play/pause, next and previous keys do what
+  `space`, `n` and `p` do, from anywhere on the machine — whatever application
+  is in front, whatever tmux session is attached.
 - Browsing stays live while a song plays, and the playing song is marked in its
   album's list.
 - Log in once; `l` logs out, to another server or account, and Ctrl+C quits.
@@ -84,6 +87,18 @@ kept in `$XDG_CONFIG_HOME/havidrome/config` (`~/.config/havidrome/config` when
 that variable is unset), one `field=value` line each and the password in the
 clear — no keyring, no encryption. The file is the user's own, readable by
 nobody else; deleting it discards the credentials.
+
+A server URL with neither `http://` nor `https://` in front of it is read as
+`https://` and what was given, so `music.example.org` reaches the same server
+`https://music.example.org` does; one that carries a scheme is used exactly as
+it stands, `http://` included.
+
+A run that opens with stored credentials puts them to the server first. A
+server that refuses them opens the login screen instead, its three fields empty
+and the refusal on it, and the run goes on from there; the refused credentials
+stay in the file until ones a server accepts replace them. A server that cannot
+be reached, or a file that is not credentials at all, still leaves the player
+saying why and stopping.
 
 `l` while browsing logs out: the audio stops, the file goes, and the login
 screen comes back for another server or account. Later runs then ask again, as

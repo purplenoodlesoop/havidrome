@@ -23,6 +23,7 @@ tests =
   Group
     "Havidrome.Subsonic"
     ( accepting
+        <> scheming
         <> listings
         <> audio
         <> anyCall
@@ -50,6 +51,29 @@ accepting =
         let down = NetworkFailure "could not reach the server"
         answer <- evalIO (answering (Left down) (\subsonic -> subsonic.accepts account))
         answer === Left down
+    )
+  ]
+
+{- | The server an account's calls come out at, when the URL it names carries
+no scheme of its own.
+-}
+scheming :: Checks
+scheming =
+  [
+    ( "reaches over https a server the account names with no scheme in front of it"
+    , example do
+        requested <- evalIO do
+          (subsonic, asked) <- stub (Right pingAnswer)
+          _ <- subsonic.accepts (accountAt "music.example.org")
+          readIORef asked
+        assert ("https://music.example.org/rest/ping?" `T.isPrefixOf` requested)
+    )
+  ,
+    ( "asks for a song's audio under that scheme too"
+    , example do
+        (subsonic, _) <- evalIO (stub (Right pingAnswer))
+        subsonic.addresses (accountAt "music.example.org") (SongId "s1")
+          === subsonic.addresses account (SongId "s1")
     )
   ]
 
@@ -177,9 +201,13 @@ answering answer use = stub answer >>= use . fst
 credentials, in the shape the config file holds them.
 -}
 account :: Credentials.Credentials
-account =
+account = accountAt testServer.url
+
+-- | That same account, naming its server by this URL.
+accountAt :: Text -> Credentials.Credentials
+accountAt server =
   Credentials.Credentials
-    { server = testServer.url
+    { server
     , username = testCredentials.user
     , password = testCredentials.password
     }

@@ -25,8 +25,10 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 
 {- | The base address of a Navidrome server, as typed at the login screen —
-@https:\/\/music.example.org@, with or without a trailing slash. Nothing is
-hardcoded to a particular server.
+@https:\/\/music.example.org@, with or without a trailing slash, and with
+or without a scheme in front of it. What a URL missing its scheme is read
+as is 'Havidrome.Subsonic.Protocol.baseUrl'\''s. Nothing is hardcoded to a
+particular server.
 -}
 newtype Server = Server {url :: Text}
   deriving stock (Eq, Show)

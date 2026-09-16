@@ -10,6 +10,7 @@ module Havidrome.Subsonic.Protocol
 
     -- * Requests
   , Endpoint (..)
+  , baseUrl
   , endpointUrl
   , audioUrl
 
@@ -122,9 +123,26 @@ audioUrl server credentials salt (SongId song) =
   restUrl server "stream" $
     [("id", encodeUtf8 song), ("format", "raw")] <> authQuery credentials salt
 
+{- | The address every call to a server is made under: the URL the server was
+named by, with a scheme in front of it and no trailing slash behind it.
+
+A URL named with neither @http:\/\/@ nor @https:\/\/@ in front of it is read
+as @https:\/\/@ and what was named, so a bare host name reaches the server
+the full URL reaches. One that already carries a scheme is used exactly as
+it stands, @http:\/\/@ included — and a scheme is case-insensitive, so it
+counts as one however it is written.
+-}
+baseUrl :: Server -> Text
+baseUrl server = prefix <> T.dropWhileEnd (== '/') server.url
+ where
+  schemes = ["http://", "https://"]
+  prefix
+    | any (`T.isPrefixOf` T.toLower server.url) schemes = ""
+    | otherwise = "https://"
+
 restUrl :: Server -> Text -> [(ByteString, ByteString)] -> Text
 restUrl server name query =
-  T.dropWhileEnd (== '/') server.url
+  baseUrl server
     <> "/rest/"
     <> name
     <> T.decodeUtf8 (renderSimpleQuery True query)

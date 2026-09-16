@@ -35,6 +35,7 @@ import Havidrome.Subsonic.Protocol
   ( Endpoint (GetAlbum, GetArtist, GetArtists, Ping)
   , Salt
   , audioUrl
+  , baseUrl
   , byAlbumYear
   , byArtistName
   , byTrackOrder
@@ -57,7 +58,7 @@ import Havidrome.Subsonic.Types
   , SongId (SongId)
   , SubsonicError (AuthRejected, MalformedResponse, ServerFailure)
   )
-import Hedgehog (Gen, Group (Group), assert, forAll, property, (===))
+import Hedgehog (Gen, Group (Group), assert, forAll, property, (/==), (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 
@@ -68,6 +69,7 @@ tests =
     ( signing
         <> addressing
         <> serverAddress
+        <> serverScheme
         <> audio
         <> reading
         <> readingSongs
@@ -168,6 +170,64 @@ serverAddress =
                 `T.isInfixOf` endpointUrl testServer (Credentials "some one&x" "hunter2") testSalt Ping
             )
         )
+    )
+  ]
+
+-- | The scheme a request is made under, and where a URL missing one is read.
+serverScheme :: Checks
+serverScheme =
+  [
+    ( "a server named without a scheme is reached over https"
+    , example do
+        baseUrl (Server "music.example.org") === "https://music.example.org"
+        endpointUrl (Server "music.example.org") testCredentials testSalt Ping
+          === url Ping
+    )
+  ,
+    ( "a server named with a scheme is reached under exactly that scheme"
+    , example do
+        baseUrl (Server "http://music.example.org") === "http://music.example.org"
+        baseUrl (Server "https://music.example.org") === "https://music.example.org"
+    )
+  ,
+    ( "a scheme counts as one however it is written"
+    , example do
+        baseUrl (Server "HTTP://music.example.org") === "HTTP://music.example.org"
+        baseUrl (Server "Https://music.example.org") === "Https://music.example.org"
+    )
+  ,
+    ( "a host named bare reaches the server the https URL reaches, however either ends"
+    , property do
+        host <- forAll anyHost
+        slashes <- forAll (Gen.int (Range.linear 0 3))
+        credentials <- forAll anyCredentials
+        salt <- forAll anySalt
+        endpoint <- forAll anyEndpoint
+        let asked address =
+              endpointUrl (Server (address <> T.replicate slashes "/")) credentials salt endpoint
+        asked host === asked ("https://" <> host)
+        assert (("https://" <> host <> "/rest/") `T.isPrefixOf` asked host)
+    )
+  ,
+    ( "a host named under http is left under http, and reaches elsewhere"
+    , property do
+        host <- forAll anyHost
+        credentials <- forAll anyCredentials
+        salt <- forAll anySalt
+        endpoint <- forAll anyEndpoint
+        let asked address = endpointUrl (Server address) credentials salt endpoint
+        assert (("http://" <> host <> "/rest/") `T.isPrefixOf` asked ("http://" <> host))
+        asked ("http://" <> host) /== asked host
+    )
+  ,
+    ( "a song's audio is under the same scheme the calls are"
+    , property do
+        host <- forAll anyHost
+        credentials <- forAll anyCredentials
+        salt <- forAll anySalt
+        song <- forAll (SongId <$> anyId)
+        audioUrl (Server host) credentials salt song
+          === audioUrl (Server ("https://" <> host)) credentials salt song
     )
   ]
 
@@ -454,9 +514,11 @@ anyName :: Gen Text
 anyName = Gen.text (Range.linear 1 12) Gen.unicode
 
 anyServer :: Gen Server
-anyServer = do
-  host <- Gen.text (Range.linear 1 10) Gen.alphaNum
-  pure (Server ("https://" <> host <> ".example.org"))
+anyServer = Server . ("https://" <>) <$> anyHost
+
+-- | A server named by its host alone, with no scheme in front of it.
+anyHost :: Gen Text
+anyHost = (<> ".example.org") <$> Gen.text (Range.linear 1 10) Gen.alphaNum
 
 {- | Someone to ask as. The password is longer than anything else a request
 carries and begins outside the hex a hash is written in, so it cannot turn

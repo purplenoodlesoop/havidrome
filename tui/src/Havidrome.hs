@@ -17,6 +17,7 @@ module Havidrome
     -- * Where a run starts
   , Start (..)
   , start
+  , checked
 
     -- * One account after another
   , Account (..)
@@ -39,9 +40,11 @@ import Havidrome.Journal (HasJournal (getJournal), Journal, mkJournal)
 import Havidrome.Library (Library (artists))
 import Havidrome.Login.Screen qualified as Login
 import Havidrome.Playback (newSession)
+import Havidrome.Remote (HasRemote (getRemote), Remote)
 import Havidrome.Subsonic
   ( HasSubsonic (getSubsonic)
-  , Subsonic (addresses, browses)
+  , Subsonic (accepts, addresses, browses)
+  , SubsonicError (AuthRejected)
   , explain
   , mkSubsonic
   )
@@ -56,6 +59,7 @@ data Env = Env
   { store :: Store
   , subsonic :: Subsonic
   , audio :: Audio
+  , remote :: Remote
   , terminal :: Terminal
   , clock :: Clock
   , journal :: Journal
@@ -70,6 +74,9 @@ instance HasSubsonic Env where
 instance HasAudio Env where
   getAudio env = env.audio
 
+instance HasRemote Env where
+  getRemote env = env.remote
+
 instance HasTerminal Env where
   getTerminal env = env.terminal
 
@@ -79,33 +86,59 @@ instance HasClock Env where
 instance HasJournal Env where
   getJournal env = env.journal
 
--- | Where a run starts, which is settled by what the config file holds.
+{- | Where a run starts, once the config file has been read and, when it held
+credentials, the server has been asked about them.
+-}
 data Start
-  = -- | Nothing is stored: the login screen asks for it.
-    Ask
-  | -- | These are stored: browse the server they reach, asking nothing.
+  = {- | The login screen asks for an account, carrying what the server said
+    about the stored credentials, when there were any and it said anything.
+    -}
+    Ask (Maybe Text)
+  | -- | These are stored and the server takes them: browse, asking nothing.
     Browse Credentials.Credentials
-  | -- | Something is stored that is not credentials, and the run cannot go on.
-    Stop Text
   deriving stock (Eq, Show)
 
--- | What a run does with what the config file held.
-start :: Stored -> Start
+{- | What a run does with what the config file held: where it starts, or —
+'Left' — the reason it cannot start at all, in the line it says before it
+stops.
+
+Credentials that are stored are not browsed on sight: 'checked' asks the
+server about them first.
+-}
+start :: Stored -> Either Text Start
 start = \case
-  Absent -> Ask
-  Present credentials -> Browse credentials
-  Unreadable fault -> Stop (Credentials.explain fault)
+  Absent -> Right (Ask Nothing)
+  Present credentials -> Right (Browse credentials)
+  Unreadable fault -> Left (Credentials.explain fault)
+
+{- | What a run does with the server's answer about the credentials it found
+stored.
+
+A refusal is not the end of the run: it puts up the login screen with the
+refusal on it, and another account can be entered there. Every other answer
+is a server the run cannot browse, and it says why and stops. Nothing here
+throws the refused credentials away — only a logout does that — so they
+stay stored until ones a server takes replace them.
+-}
+checked :: Credentials.Credentials -> Either SubsonicError () -> Either Text Start
+checked credentials = \case
+  Right () -> Right (Browse credentials)
+  Left refusal@(AuthRejected _) -> Right (Ask (Just (explain refusal)))
+  Left failure -> Left (explain failure)
 
 {- | Runs the player to completion: the library the credentials reach, browsed
 until the user quits, and every library logged into after it.
 
-Credentials that are already stored are used as they are; when there are
-none, the login screen asks for them, and a run left at that screen browses
-nothing at all.
+Credentials that are already stored are put to the server they name before
+anything is browsed with them; when there are none, or the server refuses
+the ones there are, the login screen asks for them, and a run left at that
+screen browses nothing at all.
 
 Every capability is built here, once, and lasts exactly as long as the run:
 the player mpv makes the sound with is started before the first screen and
 gone after the last, and one account after another is played through it.
+The machine's media keys come from that same mpv, which is what the machine
+hands them to, so they last exactly as long as the sound does.
 The journal is built before anything else, because the capabilities that
 recover from an exception write to it and so are built on top of it: a
 journal is the smallest environment that has one.
@@ -120,21 +153,23 @@ run = do
   subsonic <- mkSubsonic journal
   supplied >>= \case
     Nothing -> stop mkTerminal unsupplied
-    Just program -> withAudio journal program $ \audio -> do
+    Just program -> withAudio journal program $ \audio remote -> do
       let env =
             Env
               { store = mkStore journal
               , subsonic
               , audio
+              , remote
               , terminal = mkTerminal
               , clock = mkClock
               , journal
               }
       started <- start <$> (getStore env).load
-      case started of
-        Ask -> player (accounts env) Nothing
-        Browse credentials -> player (accounts env) (Just credentials)
-        Stop reason -> stop env reason
+      opened <- case started of
+        Right (Browse credentials) ->
+          checked credentials <$> (getSubsonic env).accepts credentials
+        settled -> pure settled
+      either (stop env) (player (accounts env)) opened
 
 {- | What a run does with an account: where it gets one, what browsing it comes
 to, and how it is forgotten again.
@@ -144,8 +179,10 @@ The player's are the login screen, the browsing screen and the config file
 concerned, which is what the @f@ keeps open.
 -}
 data Account f = Account
-  { asks :: f (Maybe Credentials.Credentials)
-  -- ^ Credentials a server took, or nothing when the player was left instead.
+  { asks :: Maybe Text -> f (Maybe Credentials.Credentials)
+  {- ^ Credentials a server took, or nothing when the player was left instead,
+  asked for on a screen carrying what a server has already said.
+  -}
   , browses :: Credentials.Credentials -> f Ending
   -- ^ Browse the library these credentials reach, until browsing ends.
   , forgets :: f ()
@@ -156,7 +193,7 @@ data Account f = Account
 the config file is what forgetting empties.
 -}
 accounts
-  :: (HasAudio env, HasClock env, HasStore env, HasSubsonic env, HasTerminal env)
+  :: (HasAudio env, HasClock env, HasRemote env, HasStore env, HasSubsonic env, HasTerminal env)
   => env
   -> Account IO
 accounts env =
@@ -166,21 +203,25 @@ accounts env =
     , forgets = (getStore env).discard
     }
 
-{- | One account after another, from the credentials a run starts with — or
-from none, which is the login screen asking for the first.
+{- | One account after another, from where the run starts: the credentials it
+opens with, or the login screen asking for the first.
 
 A logout forgets the account before the next is asked for, so that a run cut
-short at that login screen leaves nothing stored behind it. Leaving the
+short at that login screen leaves nothing stored behind it. Only a logout
+forgets anything: a login screen a run opens on because its stored
+credentials were refused leaves them exactly where they are. Leaving the
 player, at the login screen or under it, ends the run there and then.
 -}
-player :: (Monad f) => Account f -> Maybe Credentials.Credentials -> f ()
-player account = maybe asked entered
+player :: (Monad f) => Account f -> Start -> f ()
+player account = \case
+  Ask said -> asked said
+  Browse credentials -> entered credentials
  where
-  asked = account.asks >>= traverse_ entered
+  asked said = account.asks said >>= traverse_ entered
   entered credentials =
     account.browses credentials >>= \case
       Quit -> pure ()
-      LoggedOut -> account.forgets >> asked
+      LoggedOut -> account.forgets >> asked Nothing
 
 {- | Opens the artist list of the server these credentials reach, hands the
 terminal over to it, and says how browsing it ended.
@@ -189,7 +230,7 @@ The session that plays what is picked is this account's own, so an account
 logged out of leaves no album behind it, and the next one starts on nothing.
 -}
 browse
-  :: (HasAudio env, HasClock env, HasSubsonic env, HasTerminal env)
+  :: (HasAudio env, HasClock env, HasRemote env, HasSubsonic env, HasTerminal env)
   => env
   -> Credentials.Credentials
   -> IO Ending
