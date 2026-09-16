@@ -1,6 +1,6 @@
 cabal-version:   3.4
 name:            havidrome-tui
-version:         1.0.0.0
+version:         1.1.0.0
 synopsis:        The terminal, network and player shell of havidrome.
 build-type:      Simple
 
