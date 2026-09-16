@@ -26,15 +26,13 @@ module Havidrome.Browse.Strip
   , Showing (..)
   , showing
   , overlaid
+  , held
   , clock
 
     -- * What puts things on it
   , beat
   , wrong
   , pressed
-
-    -- * The clock a few seconds are measured against
-  , Moment (..)
   ) where
 
 import Data.Maybe (fromMaybe)
@@ -47,23 +45,13 @@ import Havidrome.Audio.State
   , explain
   )
 import Havidrome.Divide (quotient, quotientRemainder)
+import Havidrome.Moment (Moment (Moment), after)
 import Havidrome.Playback.Playing
   ( Playing (..)
   , Sound (Loading, Sounding)
   )
 import Havidrome.Subsonic.Types (Seconds (Seconds), Song (..))
 import Havidrome.Width qualified as Width
-
-{- | A moment on the player's own clock, in seconds. Only the distance between
-two of them means anything: the clock never goes backwards, so a line put
-up at one moment is reliably taken down at a later one.
--}
-newtype Moment = Moment Double
-  deriving stock (Eq, Ord, Show)
-
--- | The moment this many seconds after another.
-after :: Double -> Moment -> Moment
-after seconds (Moment at) = Moment (at + seconds)
 
 {- | How long a skipped track's reason holds the strip before the next song's
 line takes it back: the spec's few seconds.
@@ -151,7 +139,14 @@ symbol :: Sound -> Text
 symbol = \case
   Loading -> " "
   Sounding Running -> "⏵"
-  Sounding Paused -> "⏸"
+  Sounding Paused -> held
+
+{- | The symbol a song whose audio is held is shown by. The song list carries
+this very character on that song, so that the strip and the list read as one
+thing said in two places rather than two things to be told apart.
+-}
+held :: Text
+held = "⏸"
 
 {- | A bar this many columns wide, filled for the part of the total that has
 elapsed. Only whole columns fill, so the bar is empty until a column's worth

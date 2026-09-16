@@ -33,7 +33,16 @@ import Havidrome.Browse.Fixtures
   , library
   , untitled
   )
-import Havidrome.Browse.Row (Carried (Awaited), mark, row, symbol)
+import Havidrome.Browse.Row
+  ( Carried (Awaited)
+  , Turn
+  , cells
+  , mark
+  , row
+  , symbol
+  , turn
+  , turns
+  )
 import Havidrome.Browse.Screen
   ( Asking (Asking, ask)
   , Command
@@ -59,12 +68,13 @@ import Havidrome.Browse.Screen
   , step
   , theme
   )
-import Havidrome.Browse.Strip (Moment (Moment), Showing (Wrong), showing)
+import Havidrome.Browse.Strip (Showing (Wrong), showing)
 import Havidrome.Check (Checks, example)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
 import Havidrome.Key.Media (Media (NextTrack, PlayPause, PreviousTrack), stands)
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
+import Havidrome.Moment (Moment (Moment))
 import Havidrome.Playback (Playing (..), Session (..))
 import Havidrome.Playback.Playing qualified as Playing
 import Havidrome.Playback.Standin
@@ -107,6 +117,7 @@ tests =
         <> remote
         <> stepping
         <> onTheWay
+        <> spinning
         <> settling
         <> notTaken
         <> reaching
@@ -342,9 +353,58 @@ onTheWay =
     )
   ,
     ( "the symbol is the one a loading song carries in the song list"
-    , example (awaited === symbol (mark Playing.Loading))
+    , example (awaited === symbol (mark begun Playing.Loading))
     )
   ]
+
+{- | The loading symbol going round, wherever it is: a step every tenth of a
+second, and the step read off the player's clock rather than off the moment
+the row it is on began waiting.
+-}
+spinning :: Checks
+spinning =
+  [
+    ( "an artist's row waiting for its column steps through the dot's ten turns, ten a second"
+    , example do
+        steps <- driving \_ session -> onItsWay session [] >>= goingRound onKeys session . fst
+        steps === twiceRound
+    )
+  ,
+    ( "an album's row waiting for its column steps through the same turns"
+    , example do
+        steps <- driving \_ session ->
+          onItsWay session [MoveDown, Descend] >>= goingRound onKeys session . fst
+        steps === twiceRound
+    )
+  ,
+    ( "a song waiting for its audio steps through the same turns, whatever started it"
+    , example do
+        picked <- driving \_ session -> loadingDrukqs session >>= goingRound carrying session
+        forward <- driving \standin session ->
+          onDrukqs standin session
+            >>= flip (pressing session) [NextSong]
+            >>= goingRound carrying session
+        back <- driving \_ session ->
+          after session (toDrukqs <> [MoveDown, Descend, PreviousSong])
+            >>= goingRound carrying session
+        movedOn <- driving \standin session -> do
+          started <- onDrukqs standin session
+          ranOut standin session started 1 >>= goingRound carrying session
+        [picked, forward, back, movedOn] === replicate 4 twiceRound
+    )
+  ,
+    ( "a row waiting for a level and a song waiting for audio are on one turn at one moment"
+    , example do
+        level <- driving \_ session -> do
+          (screen, _) <- onItsWay session []
+          beaten session 0.05 screen >>= beaten session 0.35 >>= beaten session 1.35
+        audio <- driving \_ session -> loadingDrukqs session >>= beaten session 1.35
+        turning (onKeys level) === turning (carrying audio)
+        turning (onKeys level) /== []
+    )
+  ]
+ where
+  twiceRound = fmap (pure . symbol . Awaited) (turns <> turns)
 
 -- | What the level arriving leaves of that.
 settling :: Checks
@@ -496,7 +556,7 @@ picking =
           browsing <- after session toDrukqs
           (,) browsing <$> taking library session browsing Descend
         unmarked (shown (60, 6) picked) === shown (60, 6) browsing
-        onKeys picked === ["    ⋯ Btoum Roumada"]
+        onKeys picked === ["    ⠋ Btoum Roumada"]
     )
   ,
     ( "picking a song then plays the rest of its album, with nothing more pressed"
@@ -1272,7 +1332,7 @@ saying =
           begin standin
           running <- beaten session 1 picked
           pure (fmap carrying [picked, running])
-        symbols === [["    ⋯ Btoum Roumada"], ["    ▶ Btoum Roumada"]]
+        symbols === [["    ⠋ Btoum Roumada"], ["    ▶ Btoum Roumada"]]
     )
   ,
     ( "space gives it the paused symbol, and space again the playing one"
@@ -1282,7 +1342,7 @@ saying =
           held <- pressing session running [PauseOrResume] >>= beaten session 1
           again <- pressing session held [PauseOrResume] >>= beaten session 2
           (,) (fmap carrying [held, again]) <$> motionOf standin
-        symbols === [["    ‖ Btoum Roumada"], ["    ▶ Btoum Roumada"]]
+        symbols === [["    ⏸ Btoum Roumada"], ["    ▶ Btoum Roumada"]]
         motion === Just Running
     )
   ,
@@ -1295,9 +1355,9 @@ saying =
           held <- pressing session running [PauseOrResume] >>= beaten session 2
           pure (fmap carrying [moved, running, held])
         symbols
-          === [ ["  1 ⋯ Jynweythek"]
+          === [ ["  1 ⠋ Jynweythek"]
               , ["  1 ▶ Jynweythek"]
-              , ["  1 ‖ Jynweythek"]
+              , ["  1 ⏸ Jynweythek"]
               ]
     )
   ]
@@ -1335,33 +1395,33 @@ moving =
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= \started -> ranOut standin session started 1
-        carrying screen === ["  1 ⋯ Jynweythek"]
+        carrying screen === ["  1 ⠋ Jynweythek"]
     )
   ,
     ( "the mark moves to the next song on n"
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= flip (pressing session) [NextSong]
-        carrying screen === ["  1 ⋯ Jynweythek"]
+        carrying screen === ["  1 ⠋ Jynweythek"]
     )
   ,
     ( "the mark moves to the previous song on p"
     , example do
         screen <- driving (\_ session -> after session (toDrukqs <> [MoveDown, Descend, PreviousSong]))
-        carrying screen === ["    ⋯ Btoum Roumada"]
+        carrying screen === ["    ⠋ Btoum Roumada"]
     )
   ,
     ( "the mark moves past a skipped track onto the song that plays instead"
     , example do
         screen <- driving (breaking (Unplayable "the file will not play: it is corrupt"))
-        carrying screen === ["  1 ⋯ Jynweythek"]
+        carrying screen === ["  1 ⠋ Jynweythek"]
     )
   ,
     ( "the mark moves to another song picked with Enter"
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= flip (pressing session) [MoveDown, MoveDown, Descend]
-        carrying screen === ["  2 ⋯ Vordhosbn"]
+        carrying screen === ["  2 ⠋ Vordhosbn"]
     )
   ]
 
@@ -1996,12 +2056,13 @@ give the first song of Drukqs a bar of 16 columns, one for every 6s of its
 stripRow :: Screen -> Text
 stripRow = mconcat . drop 4 . shown (46, 5)
 
-{- | Which of the strip's two symbols, the playing one and the paused one, are
-anywhere on a terminal wide and tall enough to show every column and the
-strip.
+{- | Which of the strip's two symbols, the playing one and the paused one, the
+strip itself shows on a terminal wide and tall enough for every column and
+for it. The strip is the bottom row there, and it is read on its own because
+the paused symbol is the song list's as well.
 -}
 standing :: Screen -> [Text]
-standing screen = filter (\glyph -> any (T.isInfixOf glyph) (wide 8 screen)) ["⏵", "⏸"]
+standing screen = filter (`T.isInfixOf` mconcat (take 1 (reverse (wide 8 screen)))) ["⏵", "⏸"]
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
@@ -2061,12 +2122,12 @@ rightwards, each column's top to bottom: the row picked in each column left
 of the one being browsed, and the row the keys are on in that one.
 -}
 trail :: Screen -> [[Text]]
-trail = fmap catMaybes . transpose . fmap (fmap highlit . cells . concatMap letters) . runs . within (120, 6)
+trail = fmap catMaybes . transpose . fmap (fmap highlit . divided . concatMap letters) . runs . within (120, 6)
  where
   letters (look, said) = fmap (reversed look,) (T.unpack said)
-  cells characters = case break ((== '│') . snd) characters of
+  divided characters = case break ((== '│') . snd) characters of
     (cell, []) -> [cell]
-    (cell, _ : rest) -> cell : cells rest
+    (cell, _ : rest) -> cell : divided rest
   highlit cell = case [character | (True, character) <- cell] of
     [] -> Nothing
     lit -> Just (T.stripEnd (T.pack lit))
@@ -2111,36 +2172,63 @@ ambientColumns =
   , across ["", "", ""]
   ]
 
+{- | The rows the columns are drawn on, on a terminal wide enough to leave
+every row whole: everything above the blank row and the strip, which are
+where no list has a row and where the strip shows symbols of its own.
+-}
+columned :: Screen -> [Text]
+columned = take 6 . wide 8
+
 {- | The rows that carry a mark, whichever of its symbols they carry, as the
-column each is in reads them, on a terminal wide enough to leave every row
-whole.
+column each is in reads them.
 -}
 carrying :: Screen -> [Text]
-carrying = concatMap (filter carries . fmap T.stripEnd . T.splitOn "│") . wide 8
+carrying = concatMap (filter carries . fmap T.stripEnd . T.splitOn "│") . columned
 
 {- | The same, of the artists column and the albums column alone: the rows the
 song playing is never on, and that carry a symbol only while the level under
 them is on its way.
 -}
 carryingAbove :: Screen -> [Text]
-carryingAbove = concatMap (filter carries . take 2 . fmap T.stripEnd . T.splitOn "│") . wide 8
+carryingAbove = concatMap (filter carries . take 2 . fmap T.stripEnd . T.splitOn "│") . columned
 
 -- | Whether a row carries a symbol at all.
 carries :: Text -> Bool
 carries said = any (`T.isInfixOf` said) marks
 
+{- | The turn the loading symbol is on wherever these tests do not step it:
+every beat they strike but the stepping ones is on a whole second, and a
+whole second is where the dot's round begins.
+-}
+begun :: Turn
+begun = turn (Moment 0)
+
 -- | The symbol a row carries while what it was asked for is on its way.
 awaited :: Text
-awaited = symbol Awaited
+awaited = symbol (Awaited begun)
 
-{- | The three symbols a row can carry: the loading one, the playing one and
-the held one.
+{- | Every symbol a row can carry: each turn of the loading one, the playing
+one and the held one.
 -}
 marks :: [Text]
-marks =
-  fmap
-    (symbol . mark)
-    [Playing.Loading, Playing.Sounding Running, Playing.Sounding Paused]
+marks = fmap symbol cells
+
+{- | Which turns of the dot's round these rows are on between them, so that a
+row is read for the turn it is showing and not for the rest of its line.
+-}
+turning :: [Text] -> [Text]
+turning said =
+  filter (\dot -> any (dot `T.isInfixOf`) said) (fmap (symbol . Awaited) turns)
+
+{- | The turn each of twenty beats a tenth of a second apart leaves the rows
+this reads of a screen on, which is the dot's round twice over if it goes
+round. Each beat is struck half a tenth into its tenth, so a tenth's turn is
+read and not the rounding at its edge.
+-}
+goingRound :: (Screen -> [Text]) -> Session -> Screen -> IO [[Text]]
+goingRound reading session screen =
+  forM [0 .. 19] \tenth ->
+    turning . reading <$> beaten session (fromIntegral (tenth :: Int) / 10 + 0.05) screen
 
 {- | Rows with whichever symbol they carry given back the space it stands in,
 which is what they read as with nothing playing.

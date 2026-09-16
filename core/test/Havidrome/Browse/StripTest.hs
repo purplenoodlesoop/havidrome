@@ -13,8 +13,7 @@ import Havidrome.Audio.State (Failure (Unplayable, Unreachable), Motion (Paused,
 import Havidrome.Browse.Fixtures (bar, filledIn, unnumbered)
 import Havidrome.Browse.Fixtures qualified as Fixtures
 import Havidrome.Browse.Strip
-  ( Moment (Moment)
-  , Showing (Overlay, Wrong)
+  ( Showing (Overlay, Wrong)
   , Strip
   , beat
   , clock
@@ -26,6 +25,7 @@ import Havidrome.Browse.Strip
   )
 import Havidrome.Check (Checks, example)
 import Havidrome.Divide (quotient)
+import Havidrome.Moment (Moment (Moment))
 import Havidrome.Playback.Playing
   ( Playing (Playing)
   , Sound (Loading, Sounding)
