@@ -63,6 +63,7 @@ import Havidrome.Key.Media (Media (NextTrack, PlayPause, PreviousTrack), stands)
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
 import Havidrome.Playback (Playing (..), Session (..))
+import Havidrome.Playback.Playing qualified as Playing
 import Havidrome.Playback.Standin
   ( Standin
   , address
@@ -122,6 +123,7 @@ tests =
         <> onceLoaded
         <> noSymbol
         <> marking
+        <> saying
         <> elsewhere
         <> moving
         <> gone
@@ -319,7 +321,7 @@ picking =
           browsing <- after session toDrukqs
           (,) browsing <$> taking library session browsing Descend
         unmarked (shown (60, 6) picked) === shown (60, 6) browsing
-        onKeys picked === ["    ▶ Btoum Roumada"]
+        onKeys picked === ["    ⋯ Btoum Roumada"]
     )
   ,
     ( "picking a song then plays the rest of its album, with nothing more pressed"
@@ -1069,28 +1071,53 @@ marking =
         onKeys screen === ["  2   Vordhosbn"]
     )
   ,
-    ( "the mark is on a picked song from Enter, while it is still loading"
-    , example do
-        screen <- driving (\_ session -> after session playingDrukqs)
-        carrying screen === ["    ▶ Btoum Roumada"]
-    )
-  ,
-    ( "the mark stays where it is when the song is paused"
-    , example do
-        (screen, motion) <- driving $ \standin session -> do
-          screen <-
-            onDrukqs standin session >>= flip (pressing session) [PauseOrResume] >>= beaten session 1
-          (,) screen <$> motionOf standin
-        motion === Just Paused
-        carrying screen === ["    ▶ Btoum Roumada"]
-    )
-  ,
     ( "the mark is still there after Esc out of its album and Enter back into it"
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= flip (pressing session) [Ascend, Descend]
         songsOf screen === Just ("Aphex Twin", "2001  Drukqs")
         carrying screen === ["    ▶ Btoum Roumada"]
+    )
+  ]
+
+-- | What the symbol on the playing song says it is doing.
+saying :: Checks
+saying =
+  [
+    ( "the symbol is the loading one from Enter, the playing one once its audio runs"
+    , example do
+        symbols <- driving $ \standin session -> do
+          picked <- after session playingDrukqs
+          begin standin
+          running <- beaten session 1 picked
+          pure (fmap carrying [picked, running])
+        symbols === [["    ⋯ Btoum Roumada"], ["    ▶ Btoum Roumada"]]
+    )
+  ,
+    ( "space gives it the paused symbol, and space again the playing one"
+    , example do
+        (symbols, motion) <- driving $ \standin session -> do
+          running <- onDrukqs standin session
+          held <- pressing session running [PauseOrResume] >>= beaten session 1
+          again <- pressing session held [PauseOrResume] >>= beaten session 2
+          (,) (fmap carrying [held, again]) <$> motionOf standin
+        symbols === [["    ‖ Btoum Roumada"], ["    ▶ Btoum Roumada"]]
+        motion === Just Running
+    )
+  ,
+    ( "a song the album moved on to by itself says the same three as it loads, runs and is held"
+    , example do
+        symbols <- driving $ \standin session -> do
+          moved <- onDrukqs standin session >>= \started -> ranOut standin session started 1
+          begin standin
+          running <- beaten session 1 moved
+          held <- pressing session running [PauseOrResume] >>= beaten session 2
+          pure (fmap carrying [moved, running, held])
+        symbols
+          === [ ["  1 ⋯ Jynweythek"]
+              , ["  1 ▶ Jynweythek"]
+              , ["  1 ‖ Jynweythek"]
+              ]
     )
   ]
 
@@ -1116,7 +1143,10 @@ elsewhere =
     )
   ]
 
--- | Where the mark moves as the playing does.
+{- | Where the mark moves as the playing does. Every move starts a song
+loading, so the song it moves to carries the loading symbol however it was
+reached.
+-}
 moving :: Checks
 moving =
   [
@@ -1124,33 +1154,33 @@ moving =
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= \started -> ranOut standin session started 1
-        carrying screen === ["  1 ▶ Jynweythek"]
+        carrying screen === ["  1 ⋯ Jynweythek"]
     )
   ,
     ( "the mark moves to the next song on n"
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= flip (pressing session) [NextSong]
-        carrying screen === ["  1 ▶ Jynweythek"]
+        carrying screen === ["  1 ⋯ Jynweythek"]
     )
   ,
     ( "the mark moves to the previous song on p"
     , example do
         screen <- driving (\_ session -> after session (toDrukqs <> [MoveDown, Descend, PreviousSong]))
-        carrying screen === ["    ▶ Btoum Roumada"]
+        carrying screen === ["    ⋯ Btoum Roumada"]
     )
   ,
     ( "the mark moves past a skipped track onto the song that plays instead"
     , example do
         screen <- driving (breaking (Unplayable "the file will not play: it is corrupt"))
-        carrying screen === ["  1 ▶ Jynweythek"]
+        carrying screen === ["  1 ⋯ Jynweythek"]
     )
   ,
     ( "the mark moves to another song picked with Enter"
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= flip (pressing session) [MoveDown, MoveDown, Descend]
-        carrying screen === ["  2 ▶ Vordhosbn"]
+        carrying screen === ["  2 ⋯ Vordhosbn"]
     )
   ]
 
@@ -1801,17 +1831,26 @@ ambientColumns =
   , across ["", "", ""]
   ]
 
-{- | The rows that carry the playing mark, as the column each is in reads them,
-on a terminal wide enough to leave every row whole.
+{- | The rows that carry a mark, whichever of its symbols they carry, as the
+column each is in reads them, on a terminal wide enough to leave every row
+whole.
 -}
 carrying :: Screen -> [Text]
-carrying = concatMap (filter (T.isInfixOf mark) . fmap T.stripEnd . T.splitOn "│") . wide 8
+carrying = concatMap (filter carries . fmap T.stripEnd . T.splitOn "│") . wide 8
+ where
+  carries said = any (`T.isInfixOf` said) marks
 
-{- | The same rows with the mark given back the space it stands in, which is
-what they read as with nothing playing.
+{- | The three symbols a marked song can carry: the loading one, the playing
+one and the held one.
+-}
+marks :: [Text]
+marks = fmap mark [Playing.Loading, Playing.Sounding Running, Playing.Sounding Paused]
+
+{- | Rows with whichever symbol they carry given back the space it stands in,
+which is what they read as with nothing playing.
 -}
 unmarked :: [Text] -> [Text]
-unmarked = fmap (T.replace mark " ")
+unmarked = fmap (\said -> foldr (`T.replace` " ") said marks)
 
 {- | The artist and the album whose songs are the column being browsed, as
 their rows read, when songs are what is being browsed.
