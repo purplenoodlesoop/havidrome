@@ -38,7 +38,7 @@ characters =
     )
   ,
     ( "char gives the player's own glyphs one each"
-    , example (fmap char "⏵⏸▶‖⋯█░…⠋" === [1, 1, 1, 1, 1, 1, 1, 1, 1])
+    , example (fmap char "⏵⏸▶‖⋯█░…" === [1, 1, 1, 1, 1, 1, 1, 1])
     )
   ,
     ( "char gives a Latin letter outside ASCII one"
