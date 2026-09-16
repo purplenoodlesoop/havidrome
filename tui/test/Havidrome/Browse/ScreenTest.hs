@@ -9,9 +9,10 @@ names, so that nothing waits on a clock.
 -}
 module Havidrome.Browse.ScreenTest (tests) where
 
-import Control.Monad (foldM, forM)
+import Control.Monad (foldM, foldM_, forM)
 import Data.Either (fromRight)
 import Data.Foldable (toList)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.List (group, transpose)
 import Data.Maybe (catMaybes, isNothing)
 import Data.Text as T (Text)
@@ -32,22 +33,24 @@ import Havidrome.Browse.Fixtures
   , library
   , untitled
   )
-import Havidrome.Browse.Row (Row (row), mark)
+import Havidrome.Browse.Row (Carried (Awaited), mark, row, symbol)
 import Havidrome.Browse.Screen
-  ( Command
-      ( Ascend
-      , Descend
-      , Leave
-      , LogOut
-      , MoveDown
-      , MoveUp
-      , NextSong
-      , PauseOrResume
-      , PreviousSong
-      , Seek
-      )
+  ( Asking (Asking, ask)
+  , Command
+    ( Ascend
+    , Descend
+    , Leave
+    , LogOut
+    , MoveDown
+    , MoveUp
+    , NextSong
+    , PauseOrResume
+    , PreviousSong
+    , Seek
+    )
   , Ending (LoggedOut, Quit)
   , Screen (browse, strip)
+  , arrived
   , command
   , draw
   , media
@@ -103,6 +106,10 @@ tests =
         <> ignoring
         <> remote
         <> stepping
+        <> onTheWay
+        <> settling
+        <> notTaken
+        <> reaching
         <> picking
         <> silent
         <> browsingOn
@@ -270,21 +277,21 @@ stepping =
     ( "step descends into the level the library holds"
     , example do
         screen <- driving (\_ session -> after session [Descend])
-        onKeys screen === ["2016  Hopelessness"]
+        onKeys screen === ["2016   Hopelessness"]
     )
   ,
     ( "step returns to the level above, still on what was descended into"
     , example do
         screen <- driving (\_ session -> after session [MoveDown, Descend, Ascend])
         wide 6 screen === wide 6 start
-        onKeys screen === ["Aphex Twin"]
+        onKeys screen === ["   Aphex Twin"]
     )
   ,
     ( "step keeps the level it is on when the library will not answer"
     , example do
         screen <- driving (\_ session -> stumbling session [Descend])
         take 5 (wide 7 screen) === take 5 (wide 7 start)
-        onKeys screen === ["anohni"]
+        onKeys screen === ["   anohni"]
     )
   ,
     ( "step says in the strip why the library did not answer"
@@ -299,6 +306,174 @@ stepping =
           screen <- stumbling session [Descend]
           taking library session screen MoveDown
         showing cleared.strip === Nothing
+    )
+  ]
+
+-- | The row a level was asked for, for as long as that level is on its way.
+onTheWay :: Checks
+onTheWay =
+  [
+    ( "Enter on an artist leaves its row carrying the loading symbol, its column not there yet"
+    , example do
+        screen <- driving (\_ session -> fst <$> onItsWay session [])
+        wide 6 screen
+          === [ "Artists"
+              , rules 1
+              , " " <> awaited <> " anohni"
+              , "   Aphex Twin"
+              , "   zebra"
+              , ""
+              ]
+        onKeys screen === [" " <> awaited <> " anohni"]
+    )
+  ,
+    ( "Enter on an album leaves its row carrying it, its column not there yet"
+    , example do
+        screen <- driving (\_ session -> fst <$> onItsWay session [MoveDown, Descend])
+        wide 6 screen
+          === [ across ["Artists", "Albums"]
+              , rules 2
+              , across ["   anohni", "     " <> awaited <> " Sketches"]
+              , across ["   Aphex Twin", "1992   Selected Ambient Works 85-92"]
+              , across ["   zebra", "2001   Drukqs"]
+              , across ["", ""]
+              ]
+        onKeys screen === ["     " <> awaited <> " Sketches"]
+    )
+  ,
+    ( "the symbol is the one a loading song carries in the song list"
+    , example (awaited === symbol (mark Playing.Loading))
+    )
+  ]
+
+-- | What the level arriving leaves of that.
+settling :: Checks
+settling =
+  [
+    ( "the row carries nothing once its column is there, and that column is the level asked for"
+    , example do
+        screen <- driving $ \_ session -> do
+          (asking', slot) <- onItsWay session []
+          arriving slot asking'
+        wide 6 screen
+          === [ across ["Artists", "Albums"]
+              , rules 2
+              , across ["   anohni", "2016   Hopelessness"]
+              , across ["   Aphex Twin", "2017   Paradise"]
+              , across ["   zebra", ""]
+              , across ["", ""]
+              ]
+        carryingAbove screen === []
+    )
+  ,
+    ( "an answer nobody is waiting for leaves the screen as it was"
+    , example do
+        (there, again) <- driving $ \_ session -> do
+          (screen, slot) <- onItsWay session []
+          settled <- arriving slot screen
+          pure (looks settled, looks (arrived (Left (NetworkFailure "down")) settled))
+        again === there
+    )
+  ,
+    ( "an artist and an album carry a symbol while the level under them is on its way, and at no other moment"
+    , example do
+        carried <- driving $ \standin session ->
+          forM [minBound ..] $ \situation ->
+            (,) situation . carryingAbove <$> screenIn situation standin session
+        carried
+          === [ (Opened, [])
+              , (Browsing, [])
+              , (Coming, [" " <> awaited <> " anohni"])
+              , (Loading, [])
+              , (Sounding, [])
+              , (Broken, [])
+              ]
+    )
+  ]
+
+{- | What the keys that move within a column, descend a level and go back one
+do while a column is on its way: nothing at all, until it is there.
+-}
+notTaken :: Checks
+notTaken =
+  [
+    ( "they change nothing on screen while a column is on its way"
+    , example do
+        (coming, pressed) <- driving $ \_ session -> do
+          (screen, slot) <- onItsWay session []
+          (,) (looks screen) . looks <$> foldM (sending slot session) screen frozen
+        pressed === coming
+    )
+  ,
+    ( "they ask the server for no further level while one is on its way"
+    , example do
+        (over, answered) <- driving $ \_ session -> do
+          (screen, slot) <- onItsWay session []
+          foldM_ (sending slot session) screen frozen
+          (,) <$> asked slot <*> fmap length (answers slot)
+        (over, answered) === (0, 1)
+    )
+  ,
+    ( "each of them does what it did before once the column is there"
+    , example do
+        (waited, straight) <- driving $ \_ session -> do
+          (screen, slot) <- onItsWay session []
+          there <- arriving slot screen
+          straightaway <- after session [Descend]
+          (,)
+            <$> forM frozen (fmap looks . taking library session there)
+            <*> forM frozen (fmap looks . taking library session straightaway)
+        waited === straight
+    )
+  ,
+    ( "l leaves the account and Ctrl+C the player while a column is on its way"
+    , example do
+        ended <- driving $ \_ session -> forM [LogOut, Leave] $ \instruction -> do
+          (screen, slot) <- onItsWay session []
+          either Just (const Nothing)
+            <$> step (asking slot) (aside slot) session instruction screen
+        ended === [Just LoggedOut, Just Quit]
+    )
+  ,
+    ( "a level the server will not answer for ends the wait as its arrival would"
+    , example do
+        (waiting', refused, again) <- driving $ \_ session -> do
+          screen <- after session []
+          slot <- waiting
+          asking' <- fromRight screen <$> step (failing down) (aside slot) session Descend screen
+          refused <- arriving slot asking'
+          (,,) (carryingAbove asking') refused <$> taking library session refused MoveDown
+        carryingAbove refused === []
+        waiting' === [" " <> awaited <> " anohni"]
+        showing refused.strip === Just (Wrong "The server could not be reached: down")
+        onKeys again === ["   Aphex Twin"]
+    )
+  ]
+ where
+  down = NetworkFailure "down"
+
+{- | What the keys that reach past the lists to the song being played do while
+a column is on its way: exactly what they do at any other time.
+-}
+reaching :: Checks
+reaching =
+  [
+    ( "space, n, p and the seek keys act on the playing song while a column is on its way"
+    , example do
+        alike <- forM controls $ \instruction -> do
+          coming <- driving (reachingWhile True (Just instruction))
+          there <- driving (reachingWhile False (Just instruction))
+          pure (coming == there)
+        alike === replicate (length controls) True
+    )
+  ,
+    ( "the machine's own media keys do the same while a column is on its way"
+    , example do
+        alike <- forM [minBound ..] $ \key -> do
+          byMedia <- driving (reachingWhile True (media key))
+          byKey <- driving (reachingWhile True (command (stands key) []))
+          pure (byMedia == byKey)
+        alike === replicate 3 True
     )
   ]
 
@@ -384,7 +559,7 @@ browsingOn =
           screen <-
             resuming session playingDrukqs [MoveDown, MoveUp, Ascend, Ascend, MoveDown, Descend]
           (,,,) screen <$> loaded standin <*> playing session <*> motionOf standin
-        trail screen === [["zebra"], []]
+        trail screen === [["   zebra"], []]
         told === [from btoumRoumada]
         song === Just btoumRoumada
         motion === Just Running
@@ -1060,9 +1235,9 @@ marking =
         wide 7 screen
           === [ across ["Artists", "Albums", "Songs"]
               , rules 3
-              , across ["anohni", "      Sketches", "    ▶ Btoum Roumada"]
-              , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1   Jynweythek"]
-              , across ["zebra", "2001  Drukqs", "  2   Vordhosbn"]
+              , across ["   anohni", "       Sketches", "    ▶ Btoum Roumada"]
+              , across ["   Aphex Twin", "1992   Selected Ambient Works 85-92", "  1   Jynweythek"]
+              , across ["   zebra", "2001   Drukqs", "  2   Vordhosbn"]
               , ""
               , "⏵ Btoum Roumada  " <> bar 0 90 <> "  0:00 / 1:36"
               ]
@@ -1081,7 +1256,7 @@ marking =
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= flip (pressing session) [Ascend, Descend]
-        songsOf screen === Just ("Aphex Twin", "2001  Drukqs")
+        songsOf screen === Just ("   Aphex Twin", "2001   Drukqs")
         carrying screen === ["    ▶ Btoum Roumada"]
     )
   ]
@@ -1135,7 +1310,7 @@ elsewhere =
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= flip (pressing session) toSketches
-        songsOf screen === Just ("Aphex Twin", "      Sketches")
+        songsOf screen === Just ("   Aphex Twin", "       Sketches")
         carrying screen === []
     )
   ,
@@ -1144,7 +1319,7 @@ elsewhere =
         screen <- driving $ \standin session ->
           onDrukqs standin session
             >>= flip (pressing session) [Ascend, Ascend, MoveUp, Descend, MoveDown, Descend]
-        songsOf screen === Just ("anohni", "2017  Paradise")
+        songsOf screen === Just ("   anohni", "2017   Paradise")
         carrying screen === []
     )
   ]
@@ -1198,7 +1373,7 @@ gone =
     , example do
         screen <- driving $ \standin session ->
           onDrukqs standin session >>= \started -> ranOut standin session started 3
-        songsOf screen === Just ("Aphex Twin", "2001  Drukqs")
+        songsOf screen === Just ("   Aphex Twin", "2001   Drukqs")
         carrying screen === []
     )
   ,
@@ -1240,15 +1415,15 @@ columns =
   [
     ( "the columns open on the artist list alone, one column at the left"
     , example do
-        wide 6 start === ["Artists", rules 1, "anohni", "Aphex Twin", "zebra", ""]
+        wide 6 start === ["Artists", rules 1, "   anohni", "   Aphex Twin", "   zebra", ""]
         assert (all ((<= 40) . T.length) (wide 6 start))
     )
   ,
     ( "the columns put the keys on the first artist, and on no other row"
     , example do
         screen <- driving (\_ session -> after session [MoveDown])
-        onKeys start === ["anohni"]
-        onKeys screen === ["Aphex Twin"]
+        onKeys start === ["   anohni"]
+        onKeys screen === ["   Aphex Twin"]
     )
   ,
     ( "the columns put an artist's albums in a second, the artist highlighted in the first"
@@ -1257,19 +1432,19 @@ columns =
         wide 6 screen
           === [ across ["Artists", "Albums"]
               , rules 2
-              , across ["anohni", "      Sketches"]
-              , across ["Aphex Twin", "1992  Selected Ambient Works 85-92"]
-              , across ["zebra", "2001  Drukqs"]
+              , across ["   anohni", "       Sketches"]
+              , across ["   Aphex Twin", "1992   Selected Ambient Works 85-92"]
+              , across ["   zebra", "2001   Drukqs"]
               , across ["", ""]
               ]
-        trail screen === [["Aphex Twin"], ["      Sketches"]]
+        trail screen === [["   Aphex Twin"], ["       Sketches"]]
     )
   ,
     ( "the columns put an album's songs in a third, the artist and the album highlighted"
     , example do
         screen <- driving (\_ session -> after session toDrukqs)
         wide 6 screen === drukqsColumns
-        trail screen === [["Aphex Twin"], ["2001  Drukqs"], ["      Btoum Roumada"]]
+        trail screen === [["   Aphex Twin"], ["2001   Drukqs"], ["      Btoum Roumada"]]
     )
   ]
 
@@ -1284,20 +1459,20 @@ rowPicked =
           movedSongs <- pressing session songs [MoveDown, MoveDown, MoveUp]
           albums <- after session [MoveDown, Descend]
           (,) movedSongs <$> pressing session albums [MoveDown, MoveDown]
-        trail movedSongs === [["Aphex Twin"], ["2001  Drukqs"], ["  1   Jynweythek"]]
-        trail movedAlbums === [["Aphex Twin"], ["2001  Drukqs"]]
+        trail movedSongs === [["   Aphex Twin"], ["2001   Drukqs"], ["  1   Jynweythek"]]
+        trail movedAlbums === [["   Aphex Twin"], ["2001   Drukqs"]]
     )
   ,
     ( "the rows picked left of the keys are drawn just as the keys' row, and none of them bold"
     , example do
         (albums, songs) <- driving $ \_ session ->
           (,) <$> after session [MoveDown, Descend] <*> after session toDrukqs
-        fmap reversed (drawnAs "      Sketches" albums) === [True]
-        drawnAs "Aphex Twin" albums === drawnAs "      Sketches" albums
+        fmap reversed (drawnAs "       Sketches" albums) === [True]
+        drawnAs "   Aphex Twin" albums === drawnAs "       Sketches" albums
         emboldened albums === ["Artists", "Albums"]
         fmap reversed (drawnAs "      Btoum Roumada" songs) === [True]
-        drawnAs "Aphex Twin" songs === drawnAs "      Btoum Roumada" songs
-        drawnAs "2001  Drukqs" songs === drawnAs "      Btoum Roumada" songs
+        drawnAs "   Aphex Twin" songs === drawnAs "      Btoum Roumada" songs
+        drawnAs "2001   Drukqs" songs === drawnAs "      Btoum Roumada" songs
         emboldened songs === ["Artists", "Albums", "Songs"]
     )
   ]
@@ -1324,7 +1499,7 @@ returning =
     , example do
         screen <- driving (\_ session -> after session (toDrukqs <> [Ascend, MoveUp, Descend]))
         wide 6 screen === ambientColumns
-        trail screen === [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
+        trail screen === [["   Aphex Twin"], ["1992   Selected Ambient Works 85-92"], ["  1   Xtal"]]
     )
   ]
 
@@ -1354,20 +1529,20 @@ scrolling =
           artistsScrolled <- crowding many [MoveDown, MoveDown, MoveDown, MoveDown]
           albums <- crowding artistsScrolled [Descend]
           (,,) artistsScrolled albums <$> crowding albums [MoveDown, MoveDown, MoveDown]
-        wide 5 artistsScrolled === ["Artists", rules 1, "three", "four", "five"]
+        wide 5 artistsScrolled === ["Artists", rules 1, "   three", "   four", "   five"]
         wide 5 albums
           === [ across ["Artists", "Albums"]
               , rules 2
-              , across ["three", "2001  First"]
-              , across ["four", "2002  Second"]
-              , across ["five", "2003  Third"]
+              , across ["   three", "2001   First"]
+              , across ["   four", "2002   Second"]
+              , across ["   five", "2003   Third"]
               ]
         wide 5 albumsScrolled
           === [ across ["Artists", "Albums"]
               , rules 2
-              , across ["three", "2002  Second"]
-              , across ["four", "2003  Third"]
-              , across ["five", "2004  Fourth"]
+              , across ["   three", "2002   Second"]
+              , across ["   four", "2003   Third"]
+              , across ["   five", "2004   Fourth"]
               ]
     )
   ]
@@ -1385,14 +1560,14 @@ alongside =
         wide 6 screen
           === [ across ["Artists", "Albums"]
               , rules 2
-              , across ["anohni", ""]
-              , across ["Aphex Twin", ""]
-              , across ["zebra", ""]
+              , across ["   anohni", ""]
+              , across ["   Aphex Twin", ""]
+              , across ["   zebra", ""]
               , across ["", ""]
               ]
         onKeys screen === []
         looks back === looks leftAtArtists
-        onKeys back === ["zebra"]
+        onKeys back === ["   zebra"]
     )
   ,
     ( "the columns all behave the same with a song playing, which plays on"
@@ -1406,9 +1581,9 @@ alongside =
         let showing' = "⏵ Btoum Roumada  " <> bar 0 90 <> "  0:00 / 1:36"
         wide 8 caught === ambientColumns <> ["", showing']
         emboldened caught === ["Artists", "Albums", "Songs", showing']
-        trail caught === [["Aphex Twin"], ["1992  Selected Ambient Works 85-92"], ["  1   Xtal"]]
+        trail caught === [["   Aphex Twin"], ["1992   Selected Ambient Works 85-92"], ["  1   Xtal"]]
         take 5 (wide 7 artistsAlone) === take 5 (wide 7 start)
-        onKeys artistsAlone === ["Aphex Twin"]
+        onKeys artistsAlone === ["   Aphex Twin"]
         song === Just btoumRoumada
         motion === Just Running
     )
@@ -1424,13 +1599,13 @@ shortened =
         shown (24, 6) screen
           === [ "Artists │Albums │Songs"
               , "────────│───────│───────"
-              , "anohni  │      …│      …"
-              , "Aphex T…│1992  …│  1   …"
-              , "zebra   │2001  …│  2   …"
+              , "   anoh…│      …│      …"
+              , "   Aphe…│1992  …│  1   …"
+              , "   zebra│2001  …│  2   …"
               , "        │       │"
               ]
         let broken = opening [artist "x" "one\ntwo", artist "y" "three"]
-        wide 4 broken === ["Artists", rules 1, "one two", "three"]
+        wide 4 broken === ["Artists", rules 1, "   one two", "   three"]
     )
   ,
     ( "a strip on screen has a blank row between it and the columns, at every size"
@@ -1448,7 +1623,7 @@ headings :: Checks
 headings =
   [
     ( "the Artists heading has a line under it, the first artist on the row below"
-    , example (take 3 (wide 6 start) === ["Artists", rules 1, "anohni"])
+    , example (take 3 (wide 6 start) === ["Artists", rules 1, "   anohni"])
     )
   ,
     ( "each of the three headings has a line under it, all on the one row"
@@ -1457,7 +1632,7 @@ headings =
         take 3 (wide 6 screen)
           === [ across ["Artists", "Albums", "Songs"]
               , rules 3
-              , across ["anohni", "      Sketches", "      Btoum Roumada"]
+              , across ["   anohni", "       Sketches", "      Btoum Roumada"]
               ]
     )
   ,
@@ -1540,6 +1715,8 @@ data Situation
     Opened
   | -- | An artist's albums, with nothing playing.
     Browsing
+  | -- | An artist's albums asked for and still on their way.
+    Coming
   | -- | A song picked with Enter, still loading.
     Loading
   | -- | A song playing, its overlay in the strip.
@@ -1553,6 +1730,7 @@ screenIn :: Situation -> Standin -> Session -> IO Screen
 screenIn situation standin session = case situation of
   Opened -> pure start
   Browsing -> after session [MoveDown, Descend]
+  Coming -> fst <$> onItsWay session []
   Loading -> loadingDrukqs session
   Sounding -> onDrukqs standin session
   Broken -> breaking (Unplayable "the file will not play: it is corrupt") standin session
@@ -1608,6 +1786,12 @@ controls :: [Command]
 controls =
   [PauseOrResume, PauseOrResume, NextSong, PreviousSong, Seek 5, Seek (-30)]
 
+{- | The keys a column on its way holds: the ones that move within a column,
+descend a level and go back one.
+-}
+frozen :: [Command]
+frozen = [MoveUp, MoveDown, Descend, Ascend]
+
 {- | The keys that walk from the songs of Drukqs to the songs of Sketches, the
 other album of the same artist.
 -}
@@ -1637,12 +1821,101 @@ resuming session already next = do
 walking :: Library IO -> Session -> [Command] -> IO Screen
 walking held session = foldM (taking held session) start
 
-{- | The screen one key press leaves behind. A key that ends browsing leaves
-none, and for that the screen it was pressed on stands.
+{- | Where the levels a screen asks for wait to be answered, and the library
+they are answered out of, counting every level it is asked for: what a test
+needs to hold a column on its way and to see that no second one was asked
+for.
+-}
+data Waiting = Waiting
+  { questions :: IORef [IO (Either SubsonicError Browse)]
+  , asks :: IORef Int
+  }
+
+-- | One to ask through, with nothing asked for yet.
+waiting :: IO Waiting
+waiting = Waiting <$> newIORef [] <*> newIORef 0
+
+-- | Where a screen's questions are put, for the test to answer when it likes.
+aside :: Waiting -> Asking
+aside slot = Asking{ask = \question -> modifyIORef' slot.questions (<> [question])}
+
+-- | The stand-in library those questions are asked of, counting each one.
+asking :: Waiting -> Library IO
+asking slot =
+  Library
+    { Library.artists = counted library.artists
+    , Library.albums = fmap counted library.albums
+    , Library.songs = fmap counted library.songs
+    }
+ where
+  counted :: IO a -> IO a
+  counted ask = modifyIORef' slot.asks (+ 1) >> ask
+
+{- | Every level asked for and not yet answered, asked of the library now, in
+the order the screen asked for them.
+-}
+answers :: Waiting -> IO [Either SubsonicError Browse]
+answers slot = do
+  pending <- readIORef slot.questions
+  writeIORef slot.questions []
+  sequence pending
+
+-- | How many levels the library has been asked for so far.
+asked :: Waiting -> IO Int
+asked slot = readIORef slot.asks
+
+{- | The screen one key press leaves behind, with whatever level it asks for
+left on its way, unanswered.
+-}
+sending :: Waiting -> Session -> Screen -> Command -> IO Screen
+sending slot session screen instruction =
+  fromRight screen <$> step (asking slot) (aside slot) session instruction screen
+
+{- | Enter pressed on this screen, with the level it asks for left on its way,
+and where that level waits.
+-}
+descending :: Session -> Screen -> IO (Screen, Waiting)
+descending session screen = do
+  slot <- waiting
+  stepped <- sending slot session screen Descend
+  pure (stepped, slot)
+
+-- | The same, on the level these keys walk to from the screen a run opens on.
+onItsWay :: Session -> [Command] -> IO (Screen, Waiting)
+onItsWay session path = after session path >>= descending session
+
+{- | The strip, the song the audio is on and what it is doing with it, after
+this key is pressed on a song that is running part way through — its
+album's songs either on their way or already there, which is what makes one
+comparable with the other.
+-}
+reachingWhile
+  :: Bool -> Maybe Command -> Standin -> Session -> IO (Text, Maybe Song, Maybe Motion)
+reachingWhile coming instruction standin session = do
+  running <- onDrukqs standin session
+  reach standin (Seconds 48)
+  albums <- pressing session running [Ascend]
+  (asking', slot) <- descending session albums
+  ready <- if coming then pure asking' else arriving slot asking'
+  pressed <- foldM (sending slot session) ready (toList instruction)
+  settled <- beaten session 1 pressed
+  (,,) (stripRow settled) <$> playing session <*> motionOf standin
+
+{- | The screen a level on its way leaves behind once it has come: every level
+asked for and not yet answered is answered, and the screen told.
+-}
+arriving :: Waiting -> Screen -> IO Screen
+arriving slot screen = foldl' (flip arrived) screen <$> answers slot
+
+{- | The screen one key press leaves behind, with the level it asks for come
+back at once. Only the tests about the wait itself hold a level on its way;
+every other one is about what the screen does with the level there.
 -}
 taking :: Library IO -> Session -> Screen -> Command -> IO Screen
-taking held session screen instruction =
-  fromRight screen <$> step held session instruction screen
+taking held session screen instruction = do
+  slot <- waiting
+  stepped <- fromRight screen <$> step held (aside slot) session instruction screen
+  arriving slot stepped
 
 {- | How this key ends browsing, pressed after those ones — and nothing at all
 when it leaves browsing going on.
@@ -1650,7 +1923,8 @@ when it leaves browsing going on.
 ends :: Session -> Command -> [Command] -> IO (Maybe Ending)
 ends session instruction path = do
   screen <- after session path
-  either Just (const Nothing) <$> step library session instruction screen
+  slot <- waiting
+  either Just (const Nothing) <$> step library (aside slot) session instruction screen
 
 -- | The song the session is playing, if it is playing one.
 playing :: Session -> IO (Maybe Song)
@@ -1727,7 +2001,7 @@ anywhere on a terminal wide and tall enough to show every column and the
 strip.
 -}
 standing :: Screen -> [Text]
-standing screen = filter (\symbol -> any (T.isInfixOf symbol) (wide 8 screen)) ["⏵", "⏸"]
+standing screen = filter (\glyph -> any (T.isInfixOf glyph) (wide 8 screen)) ["⏵", "⏸"]
 
 -- | What the backend is told when that song is played from its beginning.
 from :: Song -> (Text, Seconds)
@@ -1818,9 +2092,9 @@ drukqsColumns :: [Text]
 drukqsColumns =
   [ across ["Artists", "Albums", "Songs"]
   , rules 3
-  , across ["anohni", "      Sketches", "      Btoum Roumada"]
-  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  1   Jynweythek"]
-  , across ["zebra", "2001  Drukqs", "  2   Vordhosbn"]
+  , across ["   anohni", "       Sketches", "      Btoum Roumada"]
+  , across ["   Aphex Twin", "1992   Selected Ambient Works 85-92", "  1   Jynweythek"]
+  , across ["   zebra", "2001   Drukqs", "  2   Vordhosbn"]
   , across ["", "", ""]
   ]
 
@@ -1831,9 +2105,9 @@ ambientColumns :: [Text]
 ambientColumns =
   [ across ["Artists", "Albums", "Songs"]
   , rules 3
-  , across ["anohni", "      Sketches", "  1   Xtal"]
-  , across ["Aphex Twin", "1992  Selected Ambient Works 85-92", "  2   Tha"]
-  , across ["zebra", "2001  Drukqs", "  3   Silence"]
+  , across ["   anohni", "       Sketches", "  1   Xtal"]
+  , across ["   Aphex Twin", "1992   Selected Ambient Works 85-92", "  2   Tha"]
+  , across ["   zebra", "2001   Drukqs", "  3   Silence"]
   , across ["", "", ""]
   ]
 
@@ -1843,14 +2117,30 @@ whole.
 -}
 carrying :: Screen -> [Text]
 carrying = concatMap (filter carries . fmap T.stripEnd . T.splitOn "│") . wide 8
- where
-  carries said = any (`T.isInfixOf` said) marks
 
-{- | The three symbols a marked song can carry: the loading one, the playing
-one and the held one.
+{- | The same, of the artists column and the albums column alone: the rows the
+song playing is never on, and that carry a symbol only while the level under
+them is on its way.
+-}
+carryingAbove :: Screen -> [Text]
+carryingAbove = concatMap (filter carries . take 2 . fmap T.stripEnd . T.splitOn "│") . wide 8
+
+-- | Whether a row carries a symbol at all.
+carries :: Text -> Bool
+carries said = any (`T.isInfixOf` said) marks
+
+-- | The symbol a row carries while what it was asked for is on its way.
+awaited :: Text
+awaited = symbol Awaited
+
+{- | The three symbols a row can carry: the loading one, the playing one and
+the held one.
 -}
 marks :: [Text]
-marks = fmap mark [Playing.Loading, Playing.Sounding Running, Playing.Sounding Paused]
+marks =
+  fmap
+    (symbol . mark)
+    [Playing.Loading, Playing.Sounding Running, Playing.Sounding Paused]
 
 {- | Rows with whichever symbol they carry given back the space it stands in,
 which is what they read as with nothing playing.
