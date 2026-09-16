@@ -1,14 +1,16 @@
 {- | What an item reads as on its line: the text an artist, an album or a song
-gives its column, and the mark the song playback is on carries.
+gives its column, and the symbol the song playback is on carries.
 -}
 module Havidrome.Browse.RowTest (tests) where
 
-import Data.Text qualified as T
+import Havidrome.Audio.State (Motion (Paused, Running))
 import Havidrome.Browse.Fixtures (album, artist, song)
-import Havidrome.Browse.Row (Row (row), mark, marking)
+import Havidrome.Browse.Row (Mark (Mark), Row (row), mark, marking)
 import Havidrome.Check (example)
+import Havidrome.Playback.Playing (Sound (Loading, Sounding))
 import Havidrome.Subsonic.Types (SongId (SongId))
-import Hedgehog (Group (Group), (===))
+import Havidrome.Width qualified as Width
+import Hedgehog (Group (Group), (/==), (===))
 
 tests :: Group
 tests =
@@ -35,22 +37,34 @@ tests =
       , example (row (song "s" "Btoum Roumada" 96 Nothing) === "      Btoum Roumada")
       )
     ,
-      ( "marking puts the mark and one space before the name of the song playback is on"
-      , example (marking (Just (SongId "s")) vordhosbn === "  2 " <> mark <> " Vordhosbn")
+      ( "marking says what playback is doing with the song, one space before its name"
+      , example do
+          marked Loading === "  2 " <> mark Loading <> " Vordhosbn"
+          marked (Sounding Running) === "  2 " <> mark (Sounding Running) <> " Vordhosbn"
+          marked (Sounding Paused) === "  2 " <> mark (Sounding Paused) <> " Vordhosbn"
       )
     ,
-      ( "marking keeps the name in line with the unmarked rows around it"
+      ( "the symbol is a different one for each of the three"
+      , example do
+          mark Loading /== mark (Sounding Running)
+          mark (Sounding Running) /== mark (Sounding Paused)
+          mark (Sounding Paused) /== mark Loading
+      )
+    ,
+      ( "marking keeps the name in line with the unmarked rows around it, whichever symbol it is"
       , example
-          ( T.length (marking (Just (SongId "s")) vordhosbn)
-              === T.length (row vordhosbn)
+          ( fmap (Width.text . marked) sounds
+              === fmap (const (Width.text (row vordhosbn))) sounds
           )
       )
     ,
       ( "marking leaves every other song as its row"
       , example do
-          marking (Just (SongId "t")) vordhosbn === "  2   Vordhosbn"
+          marking (Just (Mark (SongId "t") (Sounding Running))) vordhosbn === "  2   Vordhosbn"
           marking Nothing vordhosbn === "  2   Vordhosbn"
       )
     ]
  where
   vordhosbn = song "s" "Vordhosbn" 293 (Just 2)
+  marked sound = marking (Just (Mark (SongId "s") sound)) vordhosbn
+  sounds = [Loading, Sounding Running, Sounding Paused]

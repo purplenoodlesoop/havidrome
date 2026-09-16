@@ -86,7 +86,7 @@ import Havidrome.Browse
   , picked
   )
 import Havidrome.Browse qualified as Browse
-import Havidrome.Browse.Row (Row (row), marking)
+import Havidrome.Browse.Row (Mark (..), Row (row), marking)
 import Havidrome.Browse.Strip qualified as Strip
 import Havidrome.Clock (Clock (now), HasClock (getClock))
 import Havidrome.Divide (quotientRemainder)
@@ -96,7 +96,7 @@ import Havidrome.Library (Library)
 import Havidrome.Margin (margined)
 import Havidrome.Playback (Playing (..), Session (..), startingAt)
 import Havidrome.Remote (HasRemote (getRemote), Media, Remote (awaits), stands)
-import Havidrome.Subsonic (Artist, Song (..), SongId, explain)
+import Havidrome.Subsonic (Artist, Song (..), explain)
 import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 import Havidrome.Width qualified as Width
 import Optics.Core qualified as Optics
@@ -117,9 +117,10 @@ audio is on, and how browsing ended, once it has ended.
 data Screen = Screen
   { browse :: Browse
   , strip :: Strip.Strip
-  , marked :: Maybe SongId
-  {- ^ The song playback is on, which carries the mark in whichever song list
-  it is in; nothing while nothing is playing.
+  , marked :: Maybe Mark
+  {- ^ The song playback is on and what the audio is doing with it, which is
+  what the symbol on that song says in whichever song list it is in;
+  nothing while nothing is playing.
   -}
   , ending :: Maybe Ending
   }
@@ -305,9 +306,13 @@ onBeat session at screen = do
       , marked = markOf playing
       }
 
--- | The song that carries the mark: the one being played, if any is.
-markOf :: Maybe Playing -> Maybe SongId
-markOf = fmap (Optics.view (#song Optics.% #id))
+{- | What the song list marks: the song being played and what the audio is
+doing with it, and nothing at all while nothing is playing.
+-}
+markOf :: Maybe Playing -> Maybe Mark
+markOf =
+  fmap \playing ->
+    Mark{song = Optics.view (#song Optics.% #id) playing, sound = playing.sound}
 
 {- | Hands the terminal to the browsing screen, takes it back when browsing
 ends, and says how it ended. The beat and the listening for a media key both
@@ -429,7 +434,7 @@ highlighted as the row the keys are on is. The
 song playback is on carries its mark in the song column, if that column is
 on screen and the song is in it.
 -}
-levels :: Maybe SongId -> Browse -> Widget Name
+levels :: Maybe Mark -> Browse -> Widget Name
 levels on = \case
   AtArtists artists ->
     columns [browsed ArtistList "Artists" row artists]
