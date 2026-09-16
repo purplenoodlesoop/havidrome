@@ -11,6 +11,7 @@ module Havidrome.Browse.ScreenTest (tests) where
 
 import Control.Monad (foldM, forM)
 import Data.Either (fromRight)
+import Data.Foldable (toList)
 import Data.List (group, transpose)
 import Data.Maybe (catMaybes, isNothing)
 import Data.Text as T (Text)
@@ -49,6 +50,7 @@ import Havidrome.Browse.Screen
   , Screen (browse, strip)
   , command
   , draw
+  , media
   , onBeat
   , opening
   , step
@@ -57,6 +59,7 @@ import Havidrome.Browse.Screen
 import Havidrome.Browse.Strip (Moment (Moment), Showing (Wrong), showing)
 import Havidrome.Check (Checks, example)
 import Havidrome.Key (Key (..), Modifier (Ctrl, Shift))
+import Havidrome.Key.Media (Media (NextTrack, PlayPause, PreviousTrack), stands)
 import Havidrome.Library (Library (Library))
 import Havidrome.Library qualified as Library
 import Havidrome.Playback (Playing (..), Session (..))
@@ -97,6 +100,7 @@ tests =
     "Havidrome.Browse.Screen"
     ( keys
         <> ignoring
+        <> remote
         <> stepping
         <> picking
         <> silent
@@ -204,6 +208,35 @@ ignoring =
     , property do
         letter <- forAll Gen.alpha
         command (Character letter) [] /== Just Leave
+    )
+  ]
+
+{- | The machine's own media keys, each of them the key of the player's it
+stands for and nothing besides.
+-}
+remote :: Checks
+remote =
+  [
+    ( "a media key means what the key it stands for means"
+    , example do
+        media PlayPause === Just PauseOrResume
+        media NextTrack === Just NextSong
+        media PreviousTrack === Just PreviousSong
+    )
+  ,
+    ( "a media key is read through the key it stands for, and through no map of its own"
+    , property do
+        key <- forAll (Gen.enumBounded :: Gen Media)
+        media key === command (stands key) []
+    )
+  ,
+    ( "the screen a media key leaves is the screen the key it stands for leaves"
+    , example do
+        alike <- forM [minBound ..] $ \key -> do
+          byMedia <- driving (obeying (media key))
+          byKey <- driving (obeying (command (stands key) []))
+          pure (byMedia == byKey)
+        alike === replicate 3 True
     )
   ]
 
@@ -1598,6 +1631,18 @@ album\".
 ranOut :: Standin -> Session -> Screen -> Int -> IO Screen
 ranOut standin session screen times =
   foldM (\sofar _ -> finish standin >> beaten session 0 sofar) screen [1 .. times]
+
+{- | Everything the player has to show after this command is obeyed on a song
+that is running, the beat that takes the audio in struck afterwards: the
+whole of the terminal — the strip's symbol, its elapsed time, its bar, and
+the mark in the song list among it — and the song the audio is on.
+-}
+obeying :: Maybe Command -> Standin -> Session -> IO ([Text], Maybe Song)
+obeying instruction standin session = do
+  screen <- onDrukqs standin session
+  obeyed <- pressing session screen (toList instruction)
+  settled <- beaten session 0 obeyed
+  (,) (wide 8 settled) <$> playing session
 
 {- | The screen one beat leaves behind, struck at this moment on the player's
 clock. Every test here strikes its own beats, so none of them waits.

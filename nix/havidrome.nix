@@ -171,6 +171,7 @@ let
         hedgehog
         http-client
         http-types
+        process
         stm
         temporary
         text

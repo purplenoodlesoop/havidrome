@@ -17,6 +17,9 @@ the server stores it in.
   progress bar, and the elapsed and total time.
 - `space` pauses and resumes, `n` and `p` go to the next and previous song, and
   the left and right arrows seek by 5 seconds, or by 30 with shift.
+- On a Mac, the keyboard's own play/pause, next and previous keys do what
+  `space`, `n` and `p` do, from anywhere on the machine — whatever application
+  is in front, whatever tmux session is attached.
 - Browsing stays live while a song plays, and the playing song is marked in its
   album's list.
 - Log in once; `l` logs out, to another server or account, and Ctrl+C quits.
