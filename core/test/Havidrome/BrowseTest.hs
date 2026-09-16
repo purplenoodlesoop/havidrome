@@ -1,7 +1,11 @@
 -- | Walking the three levels, over a library held in the tests.
 module Havidrome.BrowseTest (tests) where
 
+import Control.Monad.Trans.State.Strict (State, execState, modify')
+import Data.Either (fromRight)
+import Data.Functor (($>))
 import Data.Functor.Identity (runIdentity)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text as T (Text)
 import Havidrome.Browse
   ( Browse (AtAlbums, AtArtists, AtSongs)
@@ -19,6 +23,8 @@ import Havidrome.Browse.Fixtures
   , library
   )
 import Havidrome.Check (Checks, example)
+import Havidrome.Library (Library (Library))
+import Havidrome.Library qualified as Library
 import Havidrome.Subsonic.Types (Album (..), Artist (..), Song (..), SubsonicError)
 import Hedgehog (Group (Group), forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
@@ -76,10 +82,20 @@ descending =
     , example (fmap items (into (moveDown (moveDown opening))) === Right [])
     )
   ,
-    ( "descend stays on a song, which has no level below it"
+    ( "descend asks for nothing on a song, which has no level below it"
     , example do
         let songs = into (moveDown opening) >>= into . moveDown . moveDown
-        fmap items (songs >>= into) === fmap items songs
+        fmap (isJust . asked) songs === Right False
+    )
+  ,
+    ( "descend asks for nothing on a level with nothing selected to descend into"
+    , example do
+        let empty = into (moveDown (moveDown opening))
+        fmap (isJust . asked) empty === Right False
+    )
+  ,
+    ( "descend asks the library for the level only once the question is answered"
+    , example (fmap (`execState` 0) (descend counted (moveDown opening)) === Just 1)
     )
   ]
 
@@ -136,9 +152,32 @@ ends =
 opening :: Browse
 opening = atArtists artists
 
--- | One level down, as the stand-in library answers it.
+{- | The question Enter asks the stand-in library here, answered on the spot,
+and nothing at all where it asks for no level.
+-}
+asked :: Browse -> Maybe (Either SubsonicError Browse)
+asked = fmap runIdentity . descend library
+
+{- | One level down, as the stand-in library answers it, and the level itself
+where Enter asks for nothing.
+-}
 into :: Browse -> Either SubsonicError Browse
-into = runIdentity . descend library
+into browse = fromMaybe (Right browse) (asked browse)
+
+{- | A library that counts what it has been asked, so that a question built
+and left unasked reads differently from one that was asked.
+-}
+counted :: Library (State Int)
+counted =
+  Library
+    { Library.artists = tally (Right artists)
+    , Library.albums = tally . Right . albumsOf
+    , Library.songs = tally . Right . songsOf
+    }
+ where
+  tally answer = modify' (+ 1) $> answer
+  albumsOf wanted = fromRight [] (runIdentity (library.albums wanted))
+  songsOf wanted = fromRight [] (runIdentity (library.songs wanted))
 
 -- | How the level on screen reads, item by item.
 items :: Browse -> [Text]

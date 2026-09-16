@@ -100,29 +100,31 @@ shift :: Int -> Rows a -> Rows a
 shift distance level =
   level{place = clamp (0, max 0 (length level.items - 1)) (level.place + distance)}
 
-{- | One level down, into the list the library holds under the selected item,
-or the failure that stopped the library answering it. A level that will not
-open is no level at all: the failure comes back whole, for the caller to say
-so, rather than a half-filled list reaching the screen.
+{- | The question Enter asks the library, and 'Nothing' where it asks none.
+
+The answer is one level down, into the list the library holds under the
+selected item, or the failure that stopped the library answering it. A level
+that will not open is no level at all: the failure comes back whole, for the
+caller to say so, rather than a half-filled list reaching the screen.
 
 A song has no level below it — picking one starts playback, which is not
 browsing's business — and an empty level has nothing selected to descend
-into; both stay where they are, asking the library for nothing, so neither
-can fail.
+into; neither asks the library anything, so neither can fail.
+
+The question comes back unasked, for the caller to have answered where it
+chooses: a library takes a moment to answer, and nothing here says the
+caller must stand still while it does.
 -}
-descend :: (Applicative f) => Library f -> Browse -> f (Either SubsonicError Browse)
+descend
+  :: (Functor f) => Library f -> Browse -> Maybe (f (Either SubsonicError Browse))
 descend library = \case
   AtArtists artists ->
-    case selected artists of
-      Nothing -> stays (AtArtists artists)
-      Just artist -> fmap (AtAlbums artists . rows) <$> library.albums artist.id
+    under (library.albums . (.id)) (AtAlbums artists) <$> selected artists
   AtAlbums artists albums ->
-    case selected albums of
-      Nothing -> stays (AtAlbums artists albums)
-      Just album -> fmap (AtSongs artists albums . rows) <$> library.songs album.id
-  AtSongs artists albums songs -> stays (AtSongs artists albums songs)
+    under (library.songs . (.id)) (AtSongs artists albums) <$> selected albums
+  AtSongs{} -> Nothing
  where
-  stays = pure . Right
+  under ask level item = fmap (fmap (level . rows)) (ask item)
 
 {- | One level up, to the list it was descended from, still selecting the item
 that was descended into. The artist list has nothing above it, so there this

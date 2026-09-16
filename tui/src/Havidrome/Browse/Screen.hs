@@ -8,6 +8,12 @@ being browsed. What that audio is doing is what the bottom strip says, and
 the song it is on carries a mark of its own in the song list, wherever the
 selection is.
 
+A level takes a moment to arrive, and the screen does not stand still for
+it: Enter asks for it and goes on, the row it was asked for saying so, and
+the answer reaches the screen when it comes. The keys that would move off
+that row, or ask for a second level, are not taken meanwhile; every other
+key is, so the audio answers throughout.
+
 The machine's own media keys reach the screen here too, alongside the beat
 and the terminal's key presses. Each stands for one of the keys the screen
 already binds and is obeyed as that key, so a media key moves the audio, the
@@ -30,11 +36,13 @@ module Havidrome.Browse.Screen
   , command
   , media
   , Ending (..)
+  , Asking (..)
   , step
 
     -- * What reaches the screen without a key being pressed on it
   , Pulse (..)
   , onBeat
+  , arrived
 
     -- * What it looks like
   , draw
@@ -70,10 +78,18 @@ import Brick
 import Brick.BChan (BChan, newBChan, writeBChan)
 import Brick.Widgets.Border (hBorder, vBorder)
 import Brick.Widgets.List (GenericList, list, listMoveTo, listSelectedAttr, renderList)
-import Control.Concurrent (forkIO, killThread, threadDelay)
+import Control.Concurrent
+  ( Chan
+  , forkIO
+  , killThread
+  , newChan
+  , readChan
+  , threadDelay
+  , writeChan
+  )
 import Control.Exception (bracket)
-import Control.Monad (forever)
-import Control.Monad.State (get, liftIO, put)
+import Control.Monad (forever, join)
+import Control.Monad.State (get, liftIO, modify, put)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Text as T (Text)
@@ -86,7 +102,7 @@ import Havidrome.Browse
   , picked
   )
 import Havidrome.Browse qualified as Browse
-import Havidrome.Browse.Row (Mark (..), Row (row), marking)
+import Havidrome.Browse.Row (Carried (Awaited), Mark (..), Row, line, marking, row)
 import Havidrome.Browse.Strip qualified as Strip
 import Havidrome.Clock (Clock (now), HasClock (getClock))
 import Havidrome.Divide (quotientRemainder)
@@ -96,7 +112,7 @@ import Havidrome.Library (Library)
 import Havidrome.Margin (margined)
 import Havidrome.Playback (Playing (..), Session (..), startingAt)
 import Havidrome.Remote (HasRemote (getRemote), Media, Remote (awaits), stands)
-import Havidrome.Subsonic (Artist, Song (..), explain)
+import Havidrome.Subsonic (Artist, Song (..), SubsonicError, explain)
 import Havidrome.Terminal (HasTerminal (getTerminal), onTerminal)
 import Havidrome.Width qualified as Width
 import Optics.Core qualified as Optics
@@ -110,12 +126,18 @@ data Name
   | SongList
   deriving stock (Eq, Ord, Show)
 
-{- | Everything on screen: the level being browsed, the strip along the bottom
-that says what the audio is doing and what last went wrong, the song the
-audio is on, and how browsing ended, once it has ended.
+{- | Everything on screen: the level being browsed, whether the level under it
+is still on its way, the strip along the bottom that says what the audio is
+doing and what last went wrong, the song the audio is on, and how browsing
+ended, once it has ended.
 -}
 data Screen = Screen
   { browse :: Browse
+  , awaiting :: Bool
+  {- ^ Whether a level asked for has yet to arrive, which is what the row it
+  was asked for says with the loading symbol, and what holds the keys that
+  move, descend and go back.
+  -}
   , strip :: Strip.Strip
   , marked :: Maybe Mark
   {- ^ The song playback is on and what the audio is doing with it, which is
@@ -126,13 +148,14 @@ data Screen = Screen
   }
   deriving stock (Show)
 
-{- | The screen a run opens on: the artist list, nothing playing, nothing
-wrong yet, and browsing still going on.
+{- | The screen a run opens on: the artist list, nothing on its way, nothing
+playing, nothing wrong yet, and browsing still going on.
 -}
 opening :: [Artist] -> Screen
 opening artists =
   Screen
     { browse = atArtists artists
+    , awaiting = False
     , strip = Strip.quiet
     , marked = Nothing
     , ending = Nothing
@@ -212,6 +235,15 @@ data Ending
     LoggedOut
   deriving stock (Eq, Show)
 
+{- | Where a level the screen has asked for is asked: the question is handed
+over here and its answer comes back to the screen later, as an 'Arrived'
+pulse, so the key press that asked for it is over before the library has
+said anything.
+-}
+newtype Asking = Asking
+  { ask :: IO (Either SubsonicError Browse) -> IO ()
+  }
+
 {- | The screen a command leaves behind, or the ending it brought about.
 
 Leaving the player and logging out are the two commands that end browsing,
@@ -224,10 +256,11 @@ from that song in place of whatever was playing. The list stays exactly
 where it is, and so does every list above it — picking a song moves the
 audio and nothing else.
 
-Descending anywhere else is the one command that asks the library anything,
-and a library that will not answer leaves the level where it is, with the
-reason in the bottom strip. Moving and going back up ask nothing and touch
-no audio, which is what keeps browsing live under a playing song.
+Descending anywhere else is the one command that asks the library anything.
+It does not wait for the answer: the level is asked for elsewhere and the
+screen goes on, the row it was asked for carrying the loading symbol until
+'arrived' says what came of it. Moving and going back up ask nothing and
+touch no audio, which is what keeps browsing live under a playing song.
 
 The last four go the other way about: they reach the song being played and
 leave the level and the selection exactly as they were, at whichever of the
@@ -237,32 +270,38 @@ to hold, move through or move past, and so they do nothing at all.
 Whichever it was, the screen that stays asks the session afterwards which
 song it is on, so the mark is on a picked song from the key press that
 picked it — while it is still loading — and follows @n@ and @p@ at once.
+
+A level on its way holds the keys that move, descend and go back: pressed
+then, each of them is not taken at all, so nothing moves, no second level is
+asked for and nothing on screen changes. The rest reach the audio, the
+account and the player exactly as they always do.
 -}
 step
   :: Library IO
+  -> Asking
   -> Session
   -> Command
   -> Screen
   -> IO (Either Ending Screen)
-step library session instruction screen = case instruction of
-  Leave -> ends Quit
-  LogOut -> ends LoggedOut
-  MoveUp -> here Browse.moveUp
-  MoveDown -> here Browse.moveDown
-  Ascend -> here Browse.ascend
-  PauseOrResume -> toAudio session.togglePause
-  NextSong -> toAudio session.next
-  PreviousSong -> toAudio session.previous
-  Seek by -> toAudio (session.seekBy by)
-  Descend -> case picked screen.browse of
-    Just (album, song) -> do
-      traverse_ session.start (startingAt album song.id)
-      stays taken
-    Nothing -> do
-      descended <- Browse.descend library screen.browse
-      stays $ case descended of
-        Left failure -> taken{strip = Strip.wrong (explain failure) taken.strip}
-        Right level -> taken{browse = level}
+step library asking session instruction screen
+  | screen.awaiting && held instruction = pure (Right screen)
+  | otherwise = case instruction of
+      Leave -> ends Quit
+      LogOut -> ends LoggedOut
+      MoveUp -> here Browse.moveUp
+      MoveDown -> here Browse.moveDown
+      Ascend -> here Browse.ascend
+      PauseOrResume -> toAudio session.togglePause
+      NextSong -> toAudio session.next
+      PreviousSong -> toAudio session.previous
+      Seek by -> toAudio (session.seekBy by)
+      Descend -> case picked screen.browse of
+        Just (album, song) -> do
+          traverse_ session.start (startingAt album song.id)
+          stays taken
+        Nothing -> case Browse.descend library screen.browse of
+          Nothing -> stays taken
+          Just question -> asking.ask question >> stays taken{awaiting = True}
  where
   -- Whatever a key press does, the strip hears about it first.
   taken = screen{strip = Strip.pressed screen.strip}
@@ -273,9 +312,46 @@ step library session instruction screen = case instruction of
   toAudio act = act >> stays taken
   ends ended = session.stop >> pure (Left ended)
 
+{- | Which commands a level on its way holds: the ones that move within a
+column, descend a level and go back one, which are exactly the ones that
+would move the keys off the row that is waiting or ask the library for a
+second level.
+-}
+held :: Command -> Bool
+held = \case
+  MoveUp -> True
+  MoveDown -> True
+  Descend -> True
+  Ascend -> True
+  Leave -> False
+  LogOut -> False
+  PauseOrResume -> False
+  NextSong -> False
+  PreviousSong -> False
+  Seek _ -> False
+
+{- | The screen the answer to a level asked for leaves behind: its column is on
+screen and the keys that were held answer again.
+
+A level the library would not answer for ends the wait exactly as its
+arrival would — the row stops carrying the loading symbol and the keys
+answer again — leaving the level where it was, with the reason in the bottom
+strip.
+
+An answer nobody is waiting for leaves the screen alone.
+-}
+arrived :: Either SubsonicError Browse -> Screen -> Screen
+arrived answer screen
+  | not screen.awaiting = screen
+  | otherwise = case answer of
+      Left failure -> settled{strip = Strip.wrong (explain failure) screen.strip}
+      Right level -> settled{browse = level}
+ where
+  settled = screen{awaiting = False}
+
 {- | What reaches the screen with no key pressed on the terminal it is drawn
-in: the beat the player hears between key presses, and a media key pressed
-somewhere on the machine.
+in: the beat the player hears between key presses, a media key pressed
+somewhere on the machine, and the answer to a level it asked for.
 
 A beat carries the moment it happened at, which is both when what the audio
 has done is taken in and the clock a line with a few seconds to live is
@@ -284,6 +360,7 @@ measured against.
 data Pulse
   = Beat Strip.Moment
   | Pressed Media
+  | Arrived (Either SubsonicError Browse)
   deriving stock (Eq, Show)
 
 {- | What the player takes in on a beat: everything the audio has done since
@@ -315,9 +392,9 @@ markOf =
     Mark{song = Optics.view (#song Optics.% #id) playing, sound = playing.sound}
 
 {- | Hands the terminal to the browsing screen, takes it back when browsing
-ends, and says how it ended. The beat and the listening for a media key both
-run for exactly as long as the screen is up, and reach it on one channel
-between them.
+ends, and says how it ended. The beat, the listening for a media key and the
+answering of the levels the screen asks for all run for exactly as long as
+the screen is up, and reach it on one channel between them.
 -}
 browsing
   :: (HasClock env, HasRemote env, HasTerminal env)
@@ -328,13 +405,41 @@ browsing
   -> IO Ending
 browsing env library session screen = do
   pulses <- newBChan 1
-  alongside (beating env pulses) . alongside (listening env pulses) $ do
-    final <-
-      onTerminal (getTerminal env) (Just pulses) (application library session) screen
-    -- Only the two commands that end browsing take the screen down, and each
-    -- writes down which of them it was; a screen that is gone for any other
-    -- reason is one the player was left at.
-    pure (fromMaybe Quit final.ending)
+  questions <- newChan
+  alongside (answering pulses questions)
+    . alongside (beating env pulses)
+    . alongside (listening env pulses)
+    $ do
+      final <-
+        onTerminal
+          (getTerminal env)
+          (Just pulses)
+          (application library (queueing questions) session)
+          screen
+      -- Only the two commands that end browsing take the screen down, and
+      -- each writes down which of them it was; a screen that is gone for any
+      -- other reason is one the player was left at.
+      pure (fromMaybe Quit final.ending)
+
+-- | A level asked for, waiting to be asked.
+type Question = IO (Either SubsonicError Browse)
+
+{- | Asking for a level by putting the question where the answering reads it,
+which is over as soon as it is written.
+-}
+queueing :: Chan Question -> Asking
+queueing questions = Asking{ask = writeChan questions}
+
+{- | Every question put there, asked one after another for as long as the
+screen is up, each answer reaching it as a pulse.
+
+The screen asks for one level at a time — while one is on its way the keys
+that would ask for another are not taken — so no question is left waiting
+behind another.
+-}
+answering :: BChan Pulse -> Chan Question -> IO ()
+answering pulses questions =
+  forever (join (readChan questions) >>= writeBChan pulses . Arrived)
 
 {- | Runs something for exactly as long as the screen is up, on a thread of
 its own, and takes that thread down with the screen.
@@ -369,33 +474,35 @@ interval = 100_000
 {- | The player, browsing the library it is given until it is left, over the
 session that plays what is picked in it.
 -}
-application :: Library IO -> Session -> App Screen Pulse Name
-application library session =
+application :: Library IO -> Asking -> Session -> App Screen Pulse Name
+application library asking session =
   App
     { appDraw = draw
     , appChooseCursor = neverShowCursor
-    , appHandleEvent = handle library session
+    , appHandleEvent = handle library asking session
     , appStartEvent = pure ()
     , appAttrMap = const theme
     }
 
 handle
   :: Library IO
+  -> Asking
   -> Session
   -> BrickEvent Name Pulse
   -> EventM Name Screen ()
-handle library session = \case
+handle library asking session = \case
   VtyEvent (Vty.EvKey key modifiers) ->
     obey (pressed key modifiers >>= uncurry command)
   AppEvent (Pressed key) -> obey (media key)
   AppEvent (Beat at) -> get >>= liftIO . onBeat session at >>= put
+  AppEvent (Arrived answer) -> modify (arrived answer)
   _ -> pure ()
  where
   obey = \case
     Nothing -> pure ()
     Just instruction -> do
       screen <- get
-      stepped <- liftIO (step library session instruction screen)
+      stepped <- liftIO (step library asking session instruction screen)
       case stepped of
         Left ended -> put screen{ending = Just ended} >> halt
         Right stepping -> put stepping
@@ -409,13 +516,13 @@ draw :: Screen -> [Widget Name]
 draw screen =
   [ margined $
       vBox
-        [ levels screen.marked screen.browse
+        [ levels screen.awaiting screen.marked screen.browse
         , maybe emptyWidget (padTop (Pad 1) . bottom) (Strip.showing screen.strip)
         ]
   ]
  where
   bottom = \case
-    Strip.Wrong said -> withAttr troubleAttribute (line said)
+    Strip.Wrong said -> withAttr troubleAttribute (spanning said)
     Strip.Overlay at playing -> withAttr overlayAttribute (across (\width -> Strip.overlaid at width playing))
 
 {- | A row laid out for the width the screen has for it when it is drawn, and
@@ -433,38 +540,47 @@ being browsed; the columns left of it show what was picked in them,
 highlighted as the row the keys are on is. The
 song playback is on carries its mark in the song column, if that column is
 on screen and the song is in it.
+
+While a level asked for is on its way, the row it was asked for carries the
+loading symbol: that row is the one the keys are on, in the level being
+browsed, since nothing can move them while it is on its way. No other row of
+an artist or an album column ever carries a symbol — a column to the left
+has already opened, and a song's own mark is the song list's business.
 -}
-levels :: Maybe Mark -> Browse -> Widget Name
-levels on = \case
+levels :: Bool -> Maybe Mark -> Browse -> Widget Name
+levels waiting on = \case
   AtArtists artists ->
-    columns [browsed ArtistList "Artists" row artists]
+    columns [browsed ArtistList "Artists" artists]
   AtAlbums artists albums ->
     columns
-      [ picking ArtistList "Artists" row artists
-      , browsed AlbumList "Albums" row albums
+      [ above ArtistList "Artists" artists
+      , browsed AlbumList "Albums" albums
       ]
   AtSongs artists albums songs ->
     columns
-      [ picking ArtistList "Artists" row artists
-      , picking AlbumList "Albums" row albums
-      , browsed SongList "Songs" (marking on) songs
+      [ above ArtistList "Artists" artists
+      , above AlbumList "Albums" albums
+      , column True SongList "Songs" (const (marking on)) songs
       ]
  where
-  browsed, picking :: Name -> Text -> (a -> Text) -> Rows a -> Widget Name
-  browsed = column True
-  picking = column False
+  browsed, above :: (Row a) => Name -> Text -> Rows a -> Widget Name
+  browsed name heading = column True name heading waited
+  above name heading = column False name heading (const row)
+  waited :: (Row a) => Bool -> a -> Text
+  waited here = line (if waiting && here then Just Awaited else Nothing)
 
 {- | One level's column: its heading, a line across the column under that, and
-its list under the line, each item reading as the text given for it. Its
-selected row is the row the keys are on when the level is the one being
-browsed, and the row picked in it otherwise; the theme draws the two alike.
+its list under the line, each item reading as the text given for it, and
+told whether it is the row this column's selection is on. That row is the
+row the keys are on when the level is the one being browsed, and the row
+picked in it otherwise; the theme draws the two alike.
 -}
-column :: Bool -> Name -> Text -> (a -> Text) -> Rows a -> Widget Name
+column :: Bool -> Name -> Text -> (Bool -> a -> Text) -> Rows a -> Widget Name
 column beingBrowsed name heading reading items =
   vBox
-    [ withAttr headingAttribute (line heading)
+    [ withAttr headingAttribute (spanning heading)
     , hBorder
-    , renderList (const (line . reading)) beingBrowsed (listed name items)
+    , renderList (\here -> spanning . reading here) beingBrowsed (listed name items)
     ]
 
 {- | A level's rows as brick's list widget holds them: the items in the order
@@ -515,8 +631,8 @@ shares count width =
 covers the line and not just its letters, and shortened to that width when
 it runs longer.
 -}
-line :: Text -> Widget Name
-line said = Widget Greedy Fixed $ do
+spanning :: Text -> Widget Name
+spanning said = Widget Greedy Fixed $ do
   width <- (.availWidth) <$> getContext
   render (padRight Max (txt (Width.shorten width said)))
 
