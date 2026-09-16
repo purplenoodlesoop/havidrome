@@ -50,11 +50,11 @@ import Havidrome.Login
   , Entry (..)
   , Field
   , Form (..)
-  , blank
   , command
   , fields
   , labelled
   , masked
+  , opened
   , step
   , value
   )
@@ -89,11 +89,23 @@ data Screen = Screen
 
 {- | Asks for credentials, and hands back the ones a server took — stored by
 then — or nothing at all when the player was left.
+
+The screen opens on empty fields, carrying whatever a server has already
+said about the credentials a run found stored, when it said anything.
 -}
-login :: (HasTerminal env) => env -> Entry IO -> IO (Maybe Credentials.Credentials)
-login env entry = do
+login
+  :: (HasTerminal env)
+  => env
+  -> Entry IO
+  -> Maybe Text
+  -> IO (Maybe Credentials.Credentials)
+login env entry said = do
   final <-
-    onTerminal (getTerminal env) Nothing (application entry) (Screen blank Nothing)
+    onTerminal
+      (getTerminal env)
+      Nothing
+      (application entry)
+      (Screen (opened said) Nothing)
   pure $ case final.ending of
     Just (Entered credentials) -> Just credentials
     Just Abandoned -> Nothing

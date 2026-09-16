@@ -26,6 +26,7 @@ import Havidrome.Login
   , command
   , labelled
   , masked
+  , opened
   , step
   , value
   )
@@ -118,6 +119,18 @@ filling =
   ,
     ( "a rub takes nothing back from a field that is empty"
     , example (filledIn (typing [Rub, Rub]) === Right ["", "", ""])
+    )
+  ,
+    ( "the screen opens on nothing said when nothing has been said"
+    , example (opened Nothing === blank)
+    )
+  ,
+    ( "a refusal the screen opens on stands in the strip, over three empty fields"
+    , example do
+        let refused = opened (Just "The server refused these credentials: no")
+        refused.trouble === Just "The server refused these credentials: no"
+        refused.focus === ServerUrl
+        fmap (`value` refused) fields === ["", "", ""]
     )
   ]
 
