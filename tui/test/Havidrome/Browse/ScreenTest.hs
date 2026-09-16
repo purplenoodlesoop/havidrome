@@ -113,8 +113,8 @@ tests =
         <> leftAlone
         <> overlay
         <> placing
-        <> indicator
-        <> noIndicator
+        <> whileLoading
+        <> howeverStarted
         <> complaints
         <> progress
         <> limits
@@ -676,17 +676,19 @@ placing =
     )
   ]
 
--- | The loading indicator a song picked with Enter is given.
-indicator :: Checks
-indicator =
+{- | The strip while a song loads, which says no more than it does while it
+plays.
+-}
+whileLoading :: Checks
+whileLoading =
   [
-    ( "a song picked with Enter shows a loading indicator in place of the elapsed time"
+    ( "a song picked with Enter shows its name, an empty bar and an elapsed time of 0:00 while it loads"
     , example do
         screen <- driving (\_ session -> loadingDrukqs session)
-        stripRow screen === "  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
+        stripRow screen === "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
     )
   ,
-    ( "the elapsed time takes its place once the audio starts, moving on as it plays"
+    ( "the elapsed time moves on from 0:00 and the bar fills once its audio starts"
     , example do
         (started, moved) <- driving $ \standin session -> do
           screen <- loadingDrukqs session
@@ -698,31 +700,35 @@ indicator =
         stripRow moved === "⏵ Btoum Roumada  " <> bar 7 9 <> "  0:42 / 1:36"
     )
   ,
-    ( "the indicator shows for a song picked while another still loads, until that one starts"
+    ( "a song picked while another still loads leaves the strip on the newly picked one"
     , example do
         (repicked, started) <- driving $ \standin session -> do
           screen <- loadingDrukqs session
           repicked <- pressing session screen [MoveDown, Descend] >>= beaten session 1
           begin standin
           (,) repicked <$> beaten session 2 repicked
-        stripRow repicked === "  Jynweythek  " <> bar 0 19 <> "     ⠋ / 2:09"
+        stripRow repicked === "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
         stripRow started === "⏵ Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
     )
   ]
 
--- | The songs that are given no indicator, and space pressed over one.
-noIndicator :: Checks
-noIndicator =
+{- | The strip for a song that was not picked, and for one held while it
+loads.
+-}
+howeverStarted :: Checks
+howeverStarted =
   [
-    ( "the indicator is never shown for the song the album moves on to by itself"
+    ( "the song the album moves on to by itself loads under the same strip as a picked one"
     , example do
-        moved <- driving $ \standin session -> do
+        (moved, picked) <- driving $ \standin session -> do
           screen <- onDrukqs standin session
-          ranOut standin session screen 1
+          moved <- ranOut standin session screen 1
+          (,) moved <$> (after session (toDrukqs <> [MoveDown, Descend]) >>= beaten session 1)
+        stripRow moved === stripRow picked
         stripRow moved === "  Jynweythek  " <> bar 0 19 <> "  0:00 / 2:09"
     )
   ,
-    ( "nor for the songs n and p move to, even away from a song still loading"
+    ( "so do the songs n and p move to, even away from a song still loading"
     , example do
         (forward, back) <- driving $ \_ session -> do
           screen <- loadingDrukqs session
@@ -742,7 +748,7 @@ noIndicator =
           wasHeld <- motionOf standin
           _ <- pressing session ready [PauseOrResume]
           (,,,,,) holding ready wasHeld <$> motionOf standin <*> elapsed session <*> loaded standin
-        stripRow holding === "  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36"
+        stripRow holding === "  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
         stripRow ready === "⏸ Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36"
         wasHeld === Just Paused
         nowRunning === Just Running
@@ -949,7 +955,7 @@ eitherSymbol =
           loading <- loadingDrukqs session
           holding <- pressing session loading [PauseOrResume] >>= beaten session 1
           pure (fmap stripRow [loading, holding], fmap standing [loading, holding])
-        rows === replicate 2 ("  Btoum Roumada  " <> bar 0 16 <> "     ⠋ / 1:36")
+        rows === replicate 2 ("  Btoum Roumada  " <> bar 0 16 <> "  0:00 / 1:36")
         symbols === [[], []]
     )
   ,

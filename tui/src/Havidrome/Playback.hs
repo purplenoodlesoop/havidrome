@@ -42,8 +42,6 @@ import Havidrome.Audio
 import Havidrome.Playback.Playing
 import Havidrome.Playback.Queue
 import Havidrome.Subsonic.Types (Seconds (..), Song (..), SongId)
-import Optics.Core (view)
-import Optics.Core qualified as Optics
 
 {- | An album played through one audio backend: everything the player can ask
 of it, and everything it has to say back. How far into a song the audio has
@@ -99,13 +97,6 @@ data Session = Session
   }
   deriving stock (Generic)
 
--- | The album position the session is on, and how it got there.
-data Place = Place
-  { queue :: Queue
-  , arrival :: Arrival
-  }
-  deriving stock (Generic)
-
 {- | A session over a backend, told where a song's audio lives — the address
 the Subsonic client gives for a song id. Nothing is playing yet.
 -}
@@ -122,9 +113,9 @@ newSession audio address = do
       onPlace = modifyMVar_ place
   pure
     Session
-      { start = \queue -> onPlace $ \_ -> moveTo backing (Just (Place queue Picked))
-      , next = onPlace $ withPlace $ \here -> moveTo backing (followed <$> forward here.queue)
-      , previous = onPlace $ withPlace $ \here -> moveTo backing (Just (followed (backward here.queue)))
+      { start = \queue -> onPlace $ \_ -> moveTo backing (Just queue)
+      , next = onPlace $ withPlace (moveTo backing . forward)
+      , previous = onPlace $ withPlace (moveTo backing . Just . backward)
       , stop = onPlace $ \_ -> moveTo backing Nothing
       , pause = audio.pause
       , resume = audio.resume
@@ -151,14 +142,11 @@ data Backing = Backing
 the album has run out, leaves it playing nothing. Every change of what is
 playing goes through here.
 -}
-settle :: Backing -> Maybe Place -> IO (Maybe Place)
+settle :: Backing -> Maybe Queue -> IO (Maybe Queue)
 settle backing at = do
   case at of
     Nothing -> backing.audio.stop
-    Just here ->
-      backing.audio.play
-        (trackOf backing.address (view (#queue Optics.% #playing) here))
-        (Seconds 0)
+    Just here -> backing.audio.play (trackOf backing.address here.playing) (Seconds 0)
   pure at
 
 {- | Throws away whatever the backend has already said, because it is about
@@ -175,17 +163,17 @@ discard backing = do
 {- | Leaves the session playing that album position, and nothing of the song
 it replaced still to be heard about.
 -}
-moveTo :: Backing -> Maybe Place -> IO (Maybe Place)
+moveTo :: Backing -> Maybe Queue -> IO (Maybe Queue)
 moveTo backing at = discard backing >> settle backing at
 
 -- | On to the next song of the album, or off the end of it.
-advance :: Backing -> Maybe Place -> IO (Maybe Place)
-advance backing = withPlace (\here -> settle backing (followed <$> forward here.queue))
+advance :: Backing -> Maybe Queue -> IO (Maybe Queue)
+advance backing = withPlace (settle backing . forward)
 
 {- | Everything the backend has said since it was last asked, taken in one
 event at a time, and the failures it said that the player has to show.
 -}
-heed :: Backing -> [Failure] -> Maybe Place -> IO (Maybe Place, [Failure])
+heed :: Backing -> [Failure] -> Maybe Queue -> IO (Maybe Queue, [Failure])
 heed backing shown current = do
   heard <- backing.audio.nextEvent
   case heard of
@@ -209,18 +197,13 @@ toggled audio = do
       Running -> audio.pause
       Paused -> audio.resume
 
-playingAt :: State -> Place -> Playing
-playingAt state place =
+playingAt :: State -> Queue -> Playing
+playingAt state queue =
   Playing
-    { song = view (#queue Optics.% #playing) place
+    { song = queue.playing
     , elapsed = elapsedIn state
-    , arrival = place.arrival
     , sound = soundIn state
     }
-
--- | An album position the session was moved to from another of its songs.
-followed :: Queue -> Place
-followed queue = Place queue Followed
 
 trackOf :: (SongId -> Text) -> Song -> Track
 trackOf address song =
@@ -232,5 +215,5 @@ trackOf address song =
 {- | With no album in hand there is nothing to move through, so a control that
 would move within one does nothing at all.
 -}
-withPlace :: (Place -> IO (Maybe Place)) -> Maybe Place -> IO (Maybe Place)
+withPlace :: (Queue -> IO (Maybe Queue)) -> Maybe Queue -> IO (Maybe Queue)
 withPlace = maybe (pure Nothing)

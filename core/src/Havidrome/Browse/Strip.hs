@@ -5,9 +5,9 @@ were.
 
 While a song is playing the strip is the now-playing overlay — whether its
 audio runs or is held, the track name, a bar of how far into it the audio
-has come, and the elapsed and total time. A song picked with Enter has a
-loading indicator where the elapsed time goes until its audio starts. With
-nothing playing there is no line at all.
+has come, and the elapsed and total time. A song still loading reads the
+same way, its bar empty and its elapsed time at nothing, however it came to
+be playing. With nothing playing there is no line at all.
 
 What goes wrong takes the strip over from the overlay for as long as it
 has to be read, and the overlay is underneath it the whole time. How long
@@ -46,10 +46,9 @@ import Havidrome.Audio.State
   , Motion (Paused, Running)
   , explain
   )
-import Havidrome.Divide (quotient, quotientRemainder, remainder)
+import Havidrome.Divide (quotient, quotientRemainder)
 import Havidrome.Playback.Playing
-  ( Arrival (Picked)
-  , Playing (..)
+  ( Playing (..)
   , Sound (Loading, Sounding)
   )
 import Havidrome.Subsonic.Types (Seconds (Seconds), Song (..))
@@ -73,8 +72,8 @@ briefly :: Double
 briefly = 3
 
 {- | The strip: the song the audio is on, if it is on one, whatever is being
-said over the top of it, and the moment of the last beat, which is what
-turns the loading indicator.
+said over the top of it, and the moment of the last beat, which is the clock
+a line with a few seconds to live is measured against.
 -}
 data Strip = Strip
   { playing :: Maybe Playing
@@ -107,48 +106,40 @@ on screen.
 data Showing
   = -- | What went wrong, in place of the overlay's usual contents.
     Wrong Text
-  | {- | The now-playing overlay for this song at the moment of the last beat,
-    which reads as 'overlaid' at whatever width the screen gives it.
+  | {- | The now-playing overlay for this song, which reads as 'overlaid' at
+    whatever width the screen gives it.
     -}
-    Overlay Moment Playing
+    Overlay Playing
   deriving stock (Eq, Show)
 
 showing :: Strip -> Maybe Showing
 showing strip = case strip.said of
   Just (Said said _) -> Just (Wrong said)
-  Nothing -> Overlay strip.at <$> strip.playing
+  Nothing -> Overlay <$> strip.playing
 
-{- | The overlay's line at a moment, laid out across this many columns: a
-symbol for whether the audio runs or is held, the track name one space after
-it, a bar of how far into it the audio has come, and the elapsed and total
-time.
+{- | The overlay's line, laid out across this many columns: a symbol for
+whether the audio runs or is held, the track name one space after it, a bar
+of how far into it the audio has come, and the elapsed and total time.
 
 The symbol, the name and the times are always there whole, and the bar
 takes the width they leave between them. Once they leave none, there is no
 bar, and the line runs on past the edge rather than onto a second one.
 
 A song whose audio has not started neither runs nor is held, so its symbol's
-column is blank, and nothing after it moves when the audio starts.
-
-A song picked with Enter whose audio has not started has come nowhere yet,
-so the loading indicator stands where the elapsed time goes, in as many
-columns as the elapsed time takes, so that the bar keeps its width when the
-audio starts. A song the album moved on to shows its elapsed time
-throughout, loading or not.
+column is blank, and nothing after it moves when the audio starts. The audio
+has come nowhere into it yet, so its bar is empty and its elapsed time
+stands at nothing; the line says no more than that about the loading,
+however the song came to be playing.
 -}
-overlaid :: Moment -> Int -> Playing -> Text
-overlaid at width playing =
+overlaid :: Int -> Playing -> Text
+overlaid width playing =
   T.intercalate gap [titled, progress (width - taken) elapsed total, times]
  where
   song = playing.song
   titled = symbol playing.sound <> " " <> song.title
   elapsed = playing.elapsed
   total = song.duration
-  times = sofar <> " / " <> clock total
-  sofar
-    | playing.arrival == Picked && playing.sound == Loading =
-        T.justifyRight (Width.text (clock elapsed)) ' ' (spinner at)
-    | otherwise = clock elapsed
+  times = clock elapsed <> " / " <> clock total
   gap = "  "
   taken = Width.text titled + Width.text times + 2 * Width.text gap
 
@@ -161,15 +152,6 @@ symbol = \case
   Loading -> " "
   Sounding Running -> "⏵"
   Sounding Paused -> "⏸"
-
-{- | The loading indicator at a moment: a dot running round a braille cell, a
-step every tenth of a second, which is as often as a beat comes.
--}
-spinner :: Moment -> Text
-spinner (Moment at) = maybe "" frame (remainder (floor (at * 10)) (T.length turns))
- where
-  turns = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-  frame turn = T.take 1 (T.drop turn turns)
 
 {- | A bar this many columns wide, filled for the part of the total that has
 elapsed. Only whole columns fill, so the bar is empty until a column's worth
