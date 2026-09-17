@@ -12,16 +12,16 @@ module Havidrome.AudioTest (tests) where
 import Control.Concurrent (threadDelay)
 import Data.ByteString.Builder qualified as Builder
 import Data.ByteString.Lazy qualified as Lazy
-import Data.Foldable (toList, traverse_)
+import Data.Foldable (traverse_)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Data.Word (Word32)
 import Havidrome.Audio
-import Havidrome.Audio.Ipc (mediaKeys)
+import Havidrome.Audio.Ipc (mediaKey, unbiddenKey)
 import Havidrome.Check (Checks, example)
 import Havidrome.Journal.Fake (silent)
-import Havidrome.Key.Media (Media)
-import Havidrome.Remote (Remote (awaits, presses))
+import Havidrome.Key.Media (Media, Unbidden)
+import Havidrome.Remote (Remote (awaits, presses, sends))
 import Hedgehog (Group (Group), PropertyT, annotate, assert, evalIO, failure, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -41,6 +41,7 @@ tests =
         <> stopping
         <> complaints
         <> media
+        <> unbidden
     )
 
 -- | Which of the two failures a complaint from the player is read as.
@@ -72,26 +73,26 @@ running :: Checks
 running =
   [
     ( "plays a track and reports it finished"
-    , example . driving (playing (Seconds 4) (\audio _ -> waitForEvent audio)) $ \finished ->
+    , example . driving (playing (Seconds 4) (\audio _ _ -> waitForEvent audio)) $ \finished ->
         finished === Just Finished
     )
   ,
     ( "reports the position advancing while it plays"
-    , example . driving (playing (Seconds 0) (\audio _ -> reaches audio (Seconds 1))) $ assert
+    , example . driving (playing (Seconds 0) (\audio _ _ -> reaches audio (Seconds 1))) $ assert
     )
   ,
     ( "starts where it is told to, not at the beginning"
-    , example . driving (playing (Seconds 3) (\audio _ -> reaches audio (Seconds 3))) $ assert
+    , example . driving (playing (Seconds 3) (\audio _ _ -> reaches audio (Seconds 3))) $ assert
     )
   ,
     ( "reports the audio starting once the track has been opened"
-    , example . driving (playing (Seconds 0) (\audio _ -> begun audio)) $ assert
+    , example . driving (playing (Seconds 0) (\audio _ _ -> begun audio)) $ assert
     )
   ,
     ( "reports it for a track held while it loads, which stays held at its start"
     , example
         . driving
-          ( playing (Seconds 0) $ \audio _ -> do
+          ( playing (Seconds 0) $ \audio _ _ -> do
               audio.pause
               started <- begun audio
               threadDelay 1500000
@@ -114,7 +115,7 @@ holding =
     ( "freezes the position on a pause, and resuming continues from it"
     , example
         . driving
-          ( playing (Seconds 0) $ \audio _ -> do
+          ( playing (Seconds 0) $ \audio _ _ -> do
               _ <- reaches audio (Seconds 1)
               audio.pause
               settle
@@ -136,19 +137,19 @@ seeks :: Checks
 seeks =
   [
     ( "moves the audio and the reported position by the amount it is seeked"
-    , example . driving (seeking 3 (\audio _ -> reached audio)) $ \there ->
+    , example . driving (seeking 3 (\audio _ _ -> reached audio)) $ \there ->
         there === Just (Seconds 4)
     )
   ,
     ( "lands at the start rather than before it"
-    , example . driving (seeking (-30) (\audio _ -> reached audio)) $ \there ->
+    , example . driving (seeking (-30) (\audio _ _ -> reached audio)) $ \there ->
         there === Just (Seconds 0)
     )
   ,
     ( "lands at the end rather than past it, and the track then finishes"
     , example
         . driving
-          ( seeking 300 $ \audio track -> do
+          ( seeking 300 $ \audio _ track -> do
               there <- reached audio
               audio.resume
               finished <- waitForEvent audio
@@ -167,7 +168,7 @@ stopping =
     ( "plays nothing more once stopped, and does not call that finishing"
     , example
         . driving
-          ( playing (Seconds 0) $ \audio _ -> do
+          ( playing (Seconds 0) $ \audio _ _ -> do
               _ <- reaches audio (Seconds 1)
               audio.stop
               quiet <- timeout 1500000 audio.awaitEvent
@@ -184,12 +185,12 @@ complaints :: Checks
 complaints =
   [
     ( "reports a file that will not play as a play failure"
-    , example . driving (garbage True (\audio _ -> waitForEvent audio)) $ \failed ->
+    , example . driving (garbage True (\audio _ _ -> waitForEvent audio)) $ \failed ->
         failed === Just (Failed (Unplayable "the file will not play: unrecognized file format"))
     )
   ,
     ( "reports a server it cannot reach as a network failure"
-    , example . driving (garbage False (\audio _ -> waitForEvent audio)) $ \failed ->
+    , example . driving (garbage False (\audio _ _ -> waitForEvent audio)) $ \failed ->
         failed
           === Just (Failed (Unreachable "the server could not be reached: unrecognized file format"))
     )
@@ -217,9 +218,10 @@ back.
 media :: Checks
 media =
   [
-    ( "every key a media key arrives as is a key the player knows by that name"
+    ( "every key the machine can send is a key the player knows by that name"
     , example . driving keyList $ \known ->
-        filter (`notElem` known) (foldMap (toList . mediaKeys) everyMedia) === []
+        filter (`notElem` known) (fmap mediaKey everyMedia <> fmap unbiddenKey everyUnbidden)
+          === []
     )
   ,
     ( "a media key pressed inside the player is heard back as the key it is"
@@ -228,9 +230,65 @@ media =
     )
   ]
 
+{- | What the machine asks of its own accord, against the real player it asks
+it of. There is no machine here to ask, so each ask is made inside the
+player itself, which is where the machine's own lands, and every one of
+them is made at once because a machine sends whichever it likes whenever it
+likes.
+-}
+unbidden :: Checks
+unbidden =
+  [
+    ( "a playing track plays on through them, from where it had reached, to its end"
+    , example
+        . driving
+          ( playing (Seconds 0) $ \audio remote _ -> do
+              _ <- reaches audio (Seconds 1)
+              before <- reached audio
+              traverse_ remote.sends everyUnbidden
+              settle
+              after <- reached audio
+              moving <- waitUntil (fmap (> after) (reached audio))
+              finished <- waitForEvent audio
+              pure (before, after, moving, finished)
+          )
+        $ \(before, after, moving, finished) -> do
+          assert (after >= before)
+          assert (after < Just tone)
+          assert moving
+          finished === Just Finished
+    )
+  ,
+    ( "a held track is left held where it was held, and silent"
+    , example
+        . driving
+          ( playing (Seconds 0) $ \audio remote _ -> do
+              _ <- reaches audio (Seconds 1)
+              audio.pause
+              settle
+              held <- audio.nowPlaying
+              traverse_ remote.sends everyUnbidden
+              threadDelay 1500000
+              (,) held <$> audio.nowPlaying
+          )
+        $ \(held, after) -> after === held
+    )
+  ,
+    ( "with nothing playing they start no audio, and leave a player that still plays"
+    , example . driving sendingIdle $ \(idle, said, played) -> do
+        idle === Stopped
+        said === Nothing
+        assert played
+    )
+  ]
+
 -- | Every media key there is, in the order they are pressed below.
 everyMedia :: [Media]
 everyMedia = [minBound ..]
+
+-- | Everything the machine asks of its own accord.
+everyUnbidden :: [Unbidden]
+everyUnbidden = [minBound ..]
 
 {- | Every media key pressed inside a real player, one after another, and what
 it handed back for each — nothing for a key it said nothing about before
@@ -240,6 +298,24 @@ pressingEach :: Supplied -> IO [Maybe Media]
 pressingEach player = withPlayer player (answering True) $ \_ remote -> do
   traverse_ remote.presses everyMedia
   traverse (const (timeout 10000000 remote.awaits)) everyMedia
+
+{- | Everything the machine asks of its own accord, asked of a real player
+with nothing loaded at all: what it was left playing, what it had to say
+for itself, and whether a track played afterwards still plays — which a
+player that quit on the stop could not.
+-}
+sendingIdle :: Supplied -> IO (State, Maybe Event, Bool)
+sendingIdle player =
+  withSystemTempDirectory "havidrome-audio" $ \dir -> do
+    let file = dir </> "track"
+    Lazy.writeFile file (silence tone)
+    withPlayer player (answering True) $ \audio remote -> do
+      traverse_ remote.sends everyUnbidden
+      threadDelay 1500000
+      idle <- audio.nowPlaying
+      said <- audio.nextEvent
+      audio.play (Track (T.pack file) tone) (Seconds 0)
+      (,,) idle said <$> reaches audio (Seconds 1)
 
 -- | Every key name the supplied player knows.
 keyList :: Supplied -> IO [Text]
@@ -274,24 +350,24 @@ data Song = Song
   }
 
 -- | A tone playing from this point on, and what a scenario made of it.
-playing :: Seconds -> (Audio -> Track -> IO a) -> Supplied -> IO a
+playing :: Seconds -> (Audio -> Remote -> Track -> IO a) -> Supplied -> IO a
 playing = withTrack (Song (silence tone) tone) (answering True)
 
 {- | A tone held one second in and seeked by this much, and what a scenario
 made of it. It is held first so that the position a seek leaves is the one
 read back, and not one the audio has moved past.
 -}
-seeking :: Int -> (Audio -> Track -> IO a) -> Supplied -> IO a
-seeking by use = playing (Seconds 1) $ \audio track -> do
+seeking :: Int -> (Audio -> Remote -> Track -> IO a) -> Supplied -> IO a
+seeking by use = playing (Seconds 1) $ \audio remote track -> do
   audio.pause
   settle
   audio.seekBy by
-  use audio track
+  use audio remote track
 
 {- | Not audio at all, which mpv refuses to play, against a server that
 answers or does not.
 -}
-garbage :: Bool -> (Audio -> Track -> IO a) -> Supplied -> IO a
+garbage :: Bool -> (Audio -> Remote -> Track -> IO a) -> Supplied -> IO a
 garbage answers = withTrack (Song "this is not a song" (Seconds 3)) (answering answers) (Seconds 0)
 
 {- | Runs a scenario against a real mpv over a track in a file of its own,
@@ -301,7 +377,7 @@ withTrack
   :: Song
   -> Reach
   -> Seconds
-  -> (Audio -> Track -> IO a)
+  -> (Audio -> Remote -> Track -> IO a)
   -> Supplied
   -> IO a
 withTrack song reach from use player =
@@ -309,7 +385,7 @@ withTrack song reach from use player =
     let file = dir </> "track"
     Lazy.writeFile file song.content
     let track = Track (T.pack file) song.duration
-    withPlayer player reach $ \audio _ -> audio.play track from >> use audio track
+    withPlayer player reach $ \audio remote -> audio.play track from >> use audio remote track
 
 -- | The supplied mpv, run on a null output.
 withPlayer :: Supplied -> Reach -> (Audio -> Remote -> IO a) -> IO a

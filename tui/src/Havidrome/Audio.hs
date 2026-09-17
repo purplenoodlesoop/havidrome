@@ -14,12 +14,14 @@ only way to name one is 'supplied': nothing is searched for on the machine
 the player runs on, and a build that supplied none makes no sound at all
 rather than reaching for whatever happens to be installed.
 
-mpv is also the player's ear for the machine's own media keys, and so this
-module builds the 'Remote' as well: a machine hands its media keys to
-whatever it takes to be playing, and what is playing is this mpv, not the
-terminal the player is drawn in. mpv is told to hand each of them straight
-back rather than act on it, so that the one thing deciding what a key does
-is still the browsing screen.
+mpv is also the player's ear for what the machine sends the player it takes
+to be playing, and so this module builds the 'Remote' as well: what is
+playing is this mpv, not the terminal the player is drawn in, so that is
+where a machine hands everything. mpv is told to hand the three media keys
+straight back rather than act on them, so that the one thing deciding what
+a key does is still the browsing screen, and to do nothing whatever with
+what the machine asks of its own accord, which nothing in the player ever
+hears of.
 
 'Audio' is a record of operations rather than a handle, so that everything
 built on top of it can be exercised against a stand-in that makes no sound.
@@ -63,7 +65,17 @@ import Data.Foldable (traverse_)
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Havidrome.Audio.Ipc (Notice (..), bindMedia, observePosition, press, quit, readNotice, render)
+import Havidrome.Audio.Ipc
+  ( Notice (..)
+  , bindKeys
+  , mediaKey
+  , observePosition
+  , press
+  , quit
+  , readNotice
+  , render
+  , unbiddenKey
+  )
 import Havidrome.Audio.State
   ( Command (..)
   , Effect (..)
@@ -221,7 +233,7 @@ start env program options reach = do
   events <- newTChanIO
   pressed <- newTChanIO
   let player = Player state events pressed line reach
-  traverse_ (send env player) (observePosition : bindMedia)
+  traverse_ (send env player) (observePosition : bindKeys)
   reader <- forkIO (drain env player)
   pure (Mpv player process reader)
 
@@ -264,15 +276,18 @@ audio env mpv =
  where
   player = mpv.player
 
-{- | The machine's media keys, as this mpv hears them. A press that arrives
-while nobody is listening waits here until somebody is: it is heard in the
-order it was pressed, and never dropped for being early.
+{- | What the machine sends, as this mpv hears it. A press that arrives while
+nobody is listening waits here until somebody is: it is heard in the order
+it was pressed, and never dropped for being early. An ask of the machine's
+own accord waits nowhere, because mpv is told to do nothing with one and so
+says nothing about it.
 -}
 remote :: (HasJournal env) => env -> Mpv -> Remote
 remote env mpv =
   Remote
     { awaits = atomically (readTChan player.pressed)
-    , presses = send env player . press
+    , presses = send env player . press . mediaKey
+    , sends = send env player . press . unbiddenKey
     }
  where
   player = mpv.player
