@@ -7,9 +7,10 @@ mpv's IPC is one JSON object per line in each direction. Everything it says
 that this player has no use for — replies to its own commands, the file
 being loaded, the playlist going idle — reads as 'Nothing'.
 
-mpv is also where the machine's own media keys land, so the lines that make
-it hand one back rather than act on it, and the lines it hands one back in,
-are here as well.
+mpv is also where everything a machine sends the player it takes to be
+playing lands, so the lines that settle what becomes of each of them — a
+media key handed back here, an ask of the machine's own accord dropped
+where it falls — and the lines a press is handed back in, are here as well.
 -}
 module Havidrome.Audio.Ipc
   ( -- * Speaking
@@ -17,9 +18,10 @@ module Havidrome.Audio.Ipc
   , observePosition
   , quit
 
-    -- * The machine's media keys
-  , mediaKeys
-  , bindMedia
+    -- * What the machine sends
+  , mediaKey
+  , unbiddenKey
+  , bindKeys
   , press
 
     -- * Listening
@@ -32,12 +34,10 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser, parseMaybe, withObject)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as Lazy
-import Data.Foldable (toList)
-import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Havidrome.Audio.State (Effect (..))
-import Havidrome.Key.Media (Media (..))
+import Havidrome.Key.Media (Media (..), Unbidden (..))
 import Havidrome.Subsonic.Types (Seconds (..))
 
 -- | The only things mpv says that the backend acts on.
@@ -86,8 +86,8 @@ observePosition = command [word "observe_property", Number 1, word "time-pos"]
 quit :: ByteString
 quit = command [word "quit"]
 
-{- | The keys mpv reports each media key of the machine's as, the first being
-the one the player presses when it presses that media key itself.
+{- | The key mpv reports a media key of the machine's as, which is also the
+name the player presses that key by.
 
 mpv is where a media key arrives, because a machine hands its media keys to
 whatever it takes to be playing, which is the mpv this backend drives and
@@ -95,41 +95,64 @@ not the terminal the player is drawn in. A machine that hands out no media
 keys at all presses none of these, and the player is then driven by its own
 keys alone.
 
-A play\/pause key is one key, and the player toggles on it; a machine tells
-the player it is playing or held, and sends whichever of the three that
-makes right — the toggle, or the one that only plays, or the one that only
-holds. All three are therefore that one key.
+A play\/pause key is one key, and the player toggles on it, so it is mpv's
+@PLAY@ and nothing else. A machine that has decided the player should be
+playing, or should be held, asks for that instead of pressing anything, and
+what it asks for then is an 'Unbidden'.
 -}
-mediaKeys :: Media -> NonEmpty Text
-mediaKeys = \case
-  PlayPause -> "PLAY" :| ["PLAYONLY", "PAUSEONLY"]
-  NextTrack -> "NEXT" :| []
-  PreviousTrack -> "PREV" :| []
+mediaKey :: Media -> Text
+mediaKey = \case
+  PlayPause -> "PLAY"
+  NextTrack -> "NEXT"
+  PreviousTrack -> "PREV"
 
-{- | The lines that bind every key a media key arrives as, so that mpv hands
-the press back here instead of acting on it: left to itself mpv would hold
-its own audio, or skip its own playlist, behind the player's back, and the
-player would go on saying what it last did.
+{- | The key mpv reports an ask of the machine's own accord as. mpv has a key
+for each because a key is how mpv takes anything a machine hands it, and
+these are the ones no keyboard presses.
+-}
+unbiddenKey :: Unbidden -> Text
+unbiddenKey = \case
+  Play -> "PLAYONLY"
+  Pause -> "PAUSEONLY"
+  Stop -> "STOP"
+  SeekForward -> "FORWARD"
+  SeekBack -> "REWIND"
+
+{- | The lines that bind every key the machine can send, so that mpv is left
+to decide none of them.
+
+A media key is bound to a message, which hands the press back here: left to
+itself mpv would hold its own audio, or skip its own playlist, behind the
+player's back, and the player would go on saying what it last did.
+
+An ask of the machine's own accord is bound to doing nothing at all, so
+that mpv does nothing and the player never hears of it: left to itself mpv
+would quit on a stop, jump through the track on a seek, and start on a play
+music nobody asked for.
 
 A bound key says who bound it, so that a message another client of the same
 player sends is not read as a key press.
 -}
-bindMedia :: [ByteString]
-bindMedia =
-  [ command [word "keybind", word key, word (message media)]
-  | media <- [minBound ..]
-  , key <- toList (mediaKeys media)
-  ]
+bindKeys :: [ByteString]
+bindKeys =
+  [binds (mediaKey media) (message media) | media <- [minBound ..]]
+    <> [binds (unbiddenKey ask) nothing | ask <- [minBound ..]]
 
-{- | The line that presses a media key inside mpv. Nothing in the player
-presses one — a media key is pressed on the machine, and mpv is where it
-lands — so this is here for the tests, which have no machine to press one
-on and drive the whole of that path with it instead.
+-- | The line that binds one of mpv's keys to one of its commands.
+binds :: Text -> Text -> ByteString
+binds key said = command [word "keybind", word key, word said]
+
+-- | mpv's command for doing nothing whatever.
+nothing :: Text
+nothing = "ignore"
+
+{- | The line that presses one of mpv's keys inside it. Nothing in the player
+presses one — a key is pressed on the machine, and mpv is where it lands —
+so this is here for the tests, which have no machine to press one on and
+drive the whole of that path with it instead.
 -}
-press :: Media -> ByteString
-press media = command [word "keypress", word name]
- where
-  name :| _ = mediaKeys media
+press :: Text -> ByteString
+press key = command [word "keypress", word key]
 
 {- | What a bound key tells mpv to say, and what the player then reads a press
 back out of.

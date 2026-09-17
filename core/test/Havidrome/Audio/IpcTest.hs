@@ -10,20 +10,19 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.Foldable (traverse_)
-import Data.List.NonEmpty (NonEmpty ((:|)))
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text as T (Text)
 import Data.Text qualified as T
 import Data.Word (Word8)
 import Havidrome.Audio.Ipc
   ( Notice (Broken, Fetching, Pressed, RanOut, Reached, Underway)
-  , bindMedia
-  , mediaKeys
+  , bindKeys
+  , mediaKey
   , observePosition
   , press
   , quit
   , readNotice
   , render
+  , unbiddenKey
   )
 import Havidrome.Audio.State
   ( Effect (Announce, Load, SeekTo, SetPaused, Unload)
@@ -31,7 +30,7 @@ import Havidrome.Audio.State
   , Failure (Unplayable, Unreachable)
   )
 import Havidrome.Check (Checks, example)
-import Havidrome.Key.Media (Media (NextTrack, PlayPause, PreviousTrack))
+import Havidrome.Key.Media (Media (NextTrack, PlayPause, PreviousTrack), Unbidden)
 import Havidrome.Subsonic.Types (Seconds (..))
 import Hedgehog (Gen, Group (Group), PropertyT, evalMaybe, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
@@ -101,17 +100,20 @@ orders =
     )
   ]
 
--- | The keys the player binds in mpv, and the messages it binds them to.
+-- | The keys the player binds in mpv, and what it binds each of them to.
 bindings :: Checks
 bindings =
   [
-    ( "the player binds every key a media key arrives as, and no other"
-    , example (fmap fst bound === ["PLAY", "PLAYONLY", "PAUSEONLY", "NEXT", "PREV"])
+    ( "the player binds the three media keys and every key the machine sends of its own accord, and no other"
+    , example
+        ( fmap fst bound
+            === ["PLAY", "NEXT", "PREV", "PLAYONLY", "PAUSEONLY", "STOP", "FORWARD", "REWIND"]
+        )
     )
   ,
-    ( "a bound key tells the player to say who bound it and which key it was"
+    ( "a media key tells the player to say who bound it and which key it was"
     , example
-        ( fmap Aeson.decodeStrict (take 1 bindMedia)
+        ( fmap Aeson.decodeStrict (take 1 bindKeys)
             === [ Aeson.decodeStrict
                     "{\"command\":[\"keybind\",\"PLAY\",\"script-message havidrome play-pause\"]}"
                     :: Maybe Value
@@ -119,35 +121,36 @@ bindings =
         )
     )
   ,
-    ( "every bound key tells the player to pass a message on to its clients"
-    , example
-        (fmap (fst . snd) bound === replicate (length bound) "script-message")
-    )
-  ,
-    ( "every key a media key arrives as is bound, and a press of it reads back as that key"
+    ( "every media key tells the player to pass a message on to its clients, and a press of it reads back as that key"
     , property do
         key <- forAll anyMedia
-        name <- forAll (Gen.element (NonEmpty.toList (mediaKeys key)))
-        said <- evalMaybe (lookup name bound)
+        said <- evalMaybe (lookup (mediaKey key) bound)
+        fst said === "script-message"
         heard (messageLine (snd said)) === Just (Pressed key)
+    )
+  ,
+    ( "every key the machine sends of its own accord tells the player to do nothing at all"
+    , property do
+        ask <- forAll anyUnbidden
+        lookup (unbiddenKey ask) bound === Just ("ignore", [])
     )
   ]
 
--- | A media key pressed, whether by the machine or by the player itself.
+-- | A key pressed inside the player, which is how a test stands in for the machine.
 presses :: Checks
 presses =
   [
     ( "a media key pressed by the player itself is pressed by the name the machine presses"
     , example
-        ( (Aeson.decodeStrict (press NextTrack) :: Maybe Value)
+        ( (Aeson.decodeStrict (press (mediaKey NextTrack)) :: Maybe Value)
             === Aeson.decodeStrict "{\"command\":[\"keypress\",\"NEXT\"]}"
         )
     )
   ,
-    ( "the player presses a media key by a name it has bound"
+    ( "every key the machine can send is pressed by the name mpv knows it by"
     , property do
-        key <- forAll anyMedia
-        ordered (press key) === Just ["keypress", named key]
+        key <- forAll anyKeyName
+        ordered (press key) === Just ["keypress", key]
     )
   ,
     ( "a press of the play/pause key is read"
@@ -263,12 +266,12 @@ whatever =
     ( "every order for the player is a line, and the whole of one"
     , property do
         order <- forAll anyOrder
-        key <- forAll anyMedia
+        key <- forAll anyKeyName
         traverse_ oneLine (render order)
         oneLine observePosition
         oneLine quit
         oneLine (press key)
-        traverse_ oneLine bindMedia
+        traverse_ oneLine bindKeys
     )
   ,
     ( "what the caller is told is no order for the player, whatever it is"
@@ -325,15 +328,7 @@ ordered line = Aeson.decodeStrict line >>= parseMaybe (withObject "order" (Aeson
 that command is called, and what it is given.
 -}
 bound :: [(Text, (Text, [Text]))]
-bound = [(key, spoken (T.words said)) | Just ["keybind", key, said] <- fmap ordered bindMedia]
-
-{- | The name the player presses a media key by: the first of the names it
-arrives as.
--}
-named :: Media -> Text
-named key = name
- where
-  name :| _ = mediaKeys key
+bound = [(key, spoken (T.words said)) | Just ["keybind", key, said] <- fmap ordered bindKeys]
 
 -- | A command as it is written in a binding: its name, and its arguments.
 spoken :: [Text] -> (Text, [Text])
@@ -350,6 +345,13 @@ messageLine said =
 
 anyMedia :: Gen Media
 anyMedia = Gen.enumBounded
+
+anyUnbidden :: Gen Unbidden
+anyUnbidden = Gen.enumBounded
+
+-- | The name mpv knows any one of the keys the machine can send by.
+anyKeyName :: Gen Text
+anyKeyName = Gen.choice [mediaKey <$> anyMedia, unbiddenKey <$> anyUnbidden]
 
 -- | What the backend makes of one line the player said.
 heard :: ByteString -> Maybe Notice
