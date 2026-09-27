@@ -70,6 +70,7 @@ let
     mkDerivation {
       pname = "havidrome-core";
       version = "1.1.0.0";
+      doHaddock = false;
       src = coreSource;
 
       isLibrary = true;
@@ -128,6 +129,7 @@ let
     mkDerivation {
       pname = "havidrome-tui";
       version = "1.1.0.0";
+      doHaddock = false;
       src = tuiSource;
 
       isLibrary = true;
